@@ -1,0 +1,6 @@
+{
+  "name": "Bakery POS Touch Kasir",
+  "description": "Touchscreen restaurant-style POS system designed for bakery shops with big touch buttons, fast cash and QRIS checkout, cashier shifts, and inventory tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
