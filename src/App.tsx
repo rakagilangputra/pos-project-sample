@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { POSProvider, usePOS } from './context/POSContext';
-import { Header } from './components/Header';
+import { Header, MainWorkspaceTab } from './components/Header';
 import { ProductCatalog } from './components/ProductCatalog';
 import { OrderCart } from './components/OrderCart';
 import { CustomerModal } from './components/CustomerModal';
@@ -9,70 +9,87 @@ import { ReceiptModal } from './components/ReceiptModal';
 import { SessionModal } from './components/SessionModal';
 import { HandoffModal } from './components/HandoffModal';
 import { SetAsideOrdersModal } from './components/SetAsideOrdersModal';
-import { TransactionHistoryModal } from './components/TransactionHistoryModal';
-import { InventoryModal } from './components/InventoryModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AuditLogView } from './components/AuditLogView';
-import { AddProductModal } from './components/AddProductModal';
-import { AddCategoryModal } from './components/AddCategoryModal';
-import { AddSupplierModal } from './components/AddSupplierModal';
-import { ConsignmentManagementModal } from './components/ConsignmentManagementModal';
+import { StockWorkspace } from './components/StockWorkspace';
+import { ConsignmentWorkspace } from './components/ConsignmentWorkspace';
+import { TransactionHistorySubView } from './components/TransactionHistorySubView';
 import { ShoppingCart } from 'lucide-react';
 import { formatIDR } from './utils/formatters';
 
 const POSMainContent: React.FC = () => {
-  const { cart, cartTotal } = usePOS();
+  const { cart, cartTotal, currentUser } = usePOS();
 
-  // Active view tab
-  const [currentTab, setCurrentTab] = useState<'pos' | 'dashboard' | 'audit'>('pos');
+  // Active top-level workspace tab (POS-US-047)
+  const [currentTab, setCurrentTab] = useState<MainWorkspaceTab>('pos');
 
-  // Modal visibility states
+  // Cashier internal sub-view: 'catalog' | 'history' (POS-US-048)
+  const [cashierSubView, setCashierSubView] = useState<'catalog' | 'history'>('catalog');
+
+  // Core Cashier Modals
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isSessionModalOpen, setIsSessionModalOpen] = useState(false);
   const [isHandoffModalOpen, setIsHandoffModalOpen] = useState(false);
   const [isHeldOrdersModalOpen, setIsHeldOrdersModalOpen] = useState(false);
-  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
-  const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
-
-  // New Consignment & Master Data Modals
-  const [isConsignmentModalOpen, setIsConsignmentModalOpen] = useState(false);
-  const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false);
-  const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] = useState(false);
-  const [isAddSupplierModalOpen, setIsAddSupplierModalOpen] = useState(false);
 
   // Mobile cart drawer toggle
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
 
+  // Enforce role-based access control (POS-US-047 AC-02):
+  // Cashier role CANNOT access management tabs (dashboard, audit, konsinyasi, stok)
+  useEffect(() => {
+    if (currentUser.role === 'cashier' && currentTab !== 'pos') {
+      setCurrentTab('pos');
+    }
+  }, [currentUser.role, currentTab]);
+
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  // Guard navigation to cashier history when payment is currently in progress (POS-US-048 AC-03)
+  const handleOpenCashierHistory = () => {
+    if (isPaymentModalOpen) {
+      alert('Selesaikan atau batalkan proses pembayaran terlebih dahulu sebelum membuka riwayat transaksi.');
+      return;
+    }
+    setCashierSubView('history');
+  };
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-[#FDFBF7] text-[#2D241E] font-sans antialiased">
-      {/* Top Header Navigation */}
+      {/* Top Header Navigation (Role-aware 5 primary workspace tabs) */}
       <Header
         currentTab={currentTab}
-        onSelectTab={setCurrentTab}
+        onSelectTab={(tab) => {
+          if (currentUser.role === 'cashier' && tab !== 'pos') {
+            return;
+          }
+          setCurrentTab(tab);
+        }}
         onOpenSessionModal={() => setIsSessionModalOpen(true)}
         onOpenHandoffModal={() => setIsHandoffModalOpen(true)}
         onOpenHeldOrdersModal={() => setIsHeldOrdersModalOpen(true)}
-        onOpenHistoryModal={() => setIsHistoryModalOpen(true)}
-        onOpenInventoryModal={() => setIsInventoryModalOpen(true)}
-        onOpenConsignmentModal={() => setIsConsignmentModalOpen(true)}
       />
 
-      {/* Main Workspace */}
+      {/* Main Workspace Area */}
       <main className="relative flex flex-1 overflow-hidden p-2.5 sm:p-4">
+        {/* TAB 1: KASIR (POS) */}
         {currentTab === 'pos' && (
           <div className="flex h-full w-full gap-3 sm:gap-4 overflow-hidden">
-            {/* Left: Bakery Product Catalog (Bento Layout) */}
+            {/* Left Main Pane: Either Catalog OR Transaction History Sub-View */}
             <section className="flex-1 overflow-hidden flex flex-col">
-              <ProductCatalog
-                onOpenAddProduct={() => setIsAddProductModalOpen(true)}
-                onOpenAddCategory={() => setIsAddCategoryModalOpen(true)}
-              />
+              {cashierSubView === 'catalog' ? (
+                <ProductCatalog
+                  onOpenHistory={handleOpenCashierHistory}
+                />
+              ) : (
+                <TransactionHistorySubView
+                  onBackToCashier={() => setCashierSubView('catalog')}
+                />
+              )}
             </section>
 
-            {/* Right: Order Cart Bento Aside (Desktop view) */}
+            {/* Right Aside: Order Cart (Active cart state preserved during history navigation) */}
             <aside className="hidden md:flex w-[380px] lg:w-[430px] xl:w-[460px] bg-white border-2 border-[#E5DACE] rounded-[2rem] flex flex-col overflow-hidden shadow-lg">
               <OrderCart
                 onOpenCustomerModal={() => setIsCustomerModalOpen(true)}
@@ -130,16 +147,30 @@ const POSMainContent: React.FC = () => {
           </div>
         )}
 
-        {currentTab === 'dashboard' && (
+        {/* TAB 2: DASHBOARD (Supervisors / Admin) */}
+        {currentTab === 'dashboard' && currentUser.role !== 'cashier' && (
           <AdminDashboard
-            onOpenConsignmentModal={() => setIsConsignmentModalOpen(true)}
+            onOpenConsignmentModal={() => setCurrentTab('konsinyasi')}
           />
         )}
 
-        {currentTab === 'audit' && <AuditLogView />}
+        {/* TAB 3: AUDIT LOG (Supervisors / Admin) */}
+        {currentTab === 'audit' && currentUser.role !== 'cashier' && (
+          <AuditLogView />
+        )}
+
+        {/* TAB 4: KONSINYASI (Supervisors / Admin - Dedicated Workspace) */}
+        {currentTab === 'konsinyasi' && currentUser.role !== 'cashier' && (
+          <ConsignmentWorkspace />
+        )}
+
+        {/* TAB 5: STOK (Supervisors / Admin - Dedicated Workspace) */}
+        {currentTab === 'stok' && currentUser.role !== 'cashier' && (
+          <StockWorkspace />
+        )}
       </main>
 
-      {/* CORE MODALS */}
+      {/* ESSENTIAL CASHIER WORKFLOW MODALS */}
       <CustomerModal
         isOpen={isCustomerModalOpen}
         onClose={() => setIsCustomerModalOpen(false)}
@@ -165,43 +196,6 @@ const POSMainContent: React.FC = () => {
       <SetAsideOrdersModal
         isOpen={isHeldOrdersModalOpen}
         onClose={() => setIsHeldOrdersModalOpen(false)}
-      />
-
-      <TransactionHistoryModal
-        isOpen={isHistoryModalOpen}
-        onClose={() => setIsHistoryModalOpen(false)}
-      />
-
-      <InventoryModal
-        isOpen={isInventoryModalOpen}
-        onClose={() => setIsInventoryModalOpen(false)}
-        onOpenAddProduct={() => setIsAddProductModalOpen(true)}
-        onOpenAddCategory={() => setIsAddCategoryModalOpen(true)}
-      />
-
-      {/* CONSIGNMENT & MASTER DATA MODALS */}
-      <ConsignmentManagementModal
-        isOpen={isConsignmentModalOpen}
-        onClose={() => setIsConsignmentModalOpen(false)}
-        onOpenAddSupplier={() => setIsAddSupplierModalOpen(true)}
-        onOpenAddProduct={() => setIsAddProductModalOpen(true)}
-      />
-
-      <AddProductModal
-        isOpen={isAddProductModalOpen}
-        onClose={() => setIsAddProductModalOpen(false)}
-        onOpenAddCategory={() => setIsAddCategoryModalOpen(true)}
-        onOpenAddSupplier={() => setIsAddSupplierModalOpen(true)}
-      />
-
-      <AddCategoryModal
-        isOpen={isAddCategoryModalOpen}
-        onClose={() => setIsAddCategoryModalOpen(false)}
-      />
-
-      <AddSupplierModal
-        isOpen={isAddSupplierModalOpen}
-        onClose={() => setIsAddSupplierModalOpen(false)}
       />
     </div>
   );

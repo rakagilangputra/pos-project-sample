@@ -1,30 +1,27 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Store,
   Clock,
   Coins,
-  History,
   Package,
   ShieldCheck,
   LayoutDashboard,
   ShoppingBag,
-  UserCheck,
   ChevronDown,
   Building2,
-  AlertTriangle,
+  MoreHorizontal,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 import { formatIDR } from '../utils/formatters';
 
+export type MainWorkspaceTab = 'pos' | 'dashboard' | 'audit' | 'konsinyasi' | 'stok';
+
 interface HeaderProps {
-  currentTab: 'pos' | 'dashboard' | 'audit';
-  onSelectTab: (tab: 'pos' | 'dashboard' | 'audit') => void;
+  currentTab: MainWorkspaceTab;
+  onSelectTab: (tab: MainWorkspaceTab) => void;
   onOpenSessionModal: () => void;
   onOpenHandoffModal: () => void;
   onOpenHeldOrdersModal: () => void;
-  onOpenHistoryModal: () => void;
-  onOpenInventoryModal: () => void;
-  onOpenConsignmentModal: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -33,15 +30,70 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSessionModal,
   onOpenHandoffModal,
   onOpenHeldOrdersModal,
-  onOpenHistoryModal,
-  onOpenInventoryModal,
-  onOpenConsignmentModal,
 }) => {
   const { currentSession, currentUser, setAsideOrders, settlementCycles } = usePOS();
+  const [isOverflowMenuOpen, setIsOverflowMenuOpen] = useState(false);
 
-  // Check overdue or due cycles (POS-US-034)
+  // Check overdue or due cycles (POS-US-034 & POS-US-047)
   const overdueCount = settlementCycles.filter((c) => c.status === 'overdue').length;
   const dueTodayCount = settlementCycles.filter((c) => c.status === 'due').length;
+
+  const isCashier = currentUser.role === 'cashier';
+
+  // Navigation tabs configuration (POS-US-047 AC-01, AC-02)
+  const allTabs: {
+    id: MainWorkspaceTab;
+    label: string;
+    icon: React.ReactNode;
+    badge?: React.ReactNode;
+    restrictedToManagement?: boolean;
+  }[] = [
+    {
+      id: 'pos',
+      label: 'Kasir (POS)',
+      icon: <ShoppingBag className="h-3.5 w-3.5" />,
+    },
+    {
+      id: 'dashboard',
+      label: 'Dashboard',
+      icon: <LayoutDashboard className="h-3.5 w-3.5" />,
+      restrictedToManagement: true,
+    },
+    {
+      id: 'audit',
+      label: 'Audit Log',
+      icon: <ShieldCheck className="h-3.5 w-3.5" />,
+      restrictedToManagement: true,
+    },
+    {
+      id: 'konsinyasi',
+      label: 'Konsinyasi',
+      icon: <Building2 className="h-3.5 w-3.5" />,
+      restrictedToManagement: true,
+      badge:
+        overdueCount > 0 ? (
+          <span className="rounded-full bg-rose-600 px-1.5 py-0.2 text-[9px] font-bold text-white">
+            {overdueCount} Overdue
+          </span>
+        ) : dueTodayCount > 0 ? (
+          <span className="rounded-full bg-amber-600 px-1.5 py-0.2 text-[9px] font-bold text-white">
+            {dueTodayCount} Due
+          </span>
+        ) : null,
+    },
+    {
+      id: 'stok',
+      label: 'Stok',
+      icon: <Package className="h-3.5 w-3.5" />,
+      restrictedToManagement: true,
+    },
+  ];
+
+  // Filter tabs by role: Cashiers only see 'pos' (POS-US-047 AC-02)
+  const visibleTabs = allTabs.filter((tab) => {
+    if (isCashier && tab.restrictedToManagement) return false;
+    return true;
+  });
 
   return (
     <header className="h-14 shrink-0 bg-white border-b border-[#E5E7EB] px-3 sm:px-5 flex items-center justify-between select-none">
@@ -62,43 +114,30 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Center Navigation Tabs */}
-      <nav className="flex items-center gap-1 rounded-lg bg-[#F7F7F5] border border-[#E5E7EB] p-0.5">
-        <button
-          onClick={() => onSelectTab('pos')}
-          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition active:scale-95 ${
-            currentTab === 'pos'
-              ? 'bg-white text-[#1F2937] shadow-xs border border-[#E5E7EB]'
-              : 'text-[#6B7280] hover:text-[#1F2937]'
-          }`}
-        >
-          <ShoppingBag className="h-3.5 w-3.5" />
-          <span>Kasir (POS)</span>
-        </button>
-
-        <button
-          onClick={() => onSelectTab('dashboard')}
-          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition active:scale-95 ${
-            currentTab === 'dashboard'
-              ? 'bg-white text-[#1F2937] shadow-xs border border-[#E5E7EB]'
-              : 'text-[#6B7280] hover:text-[#1F2937]'
-          }`}
-        >
-          <LayoutDashboard className="h-3.5 w-3.5" />
-          <span>Dashboard</span>
-        </button>
-
-        <button
-          onClick={() => onSelectTab('audit')}
-          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition active:scale-95 ${
-            currentTab === 'audit'
-              ? 'bg-white text-[#1F2937] shadow-xs border border-[#E5E7EB]'
-              : 'text-[#6B7280] hover:text-[#1F2937]'
-          }`}
-        >
-          <ShieldCheck className="h-3.5 w-3.5" />
-          <span>Audit Log</span>
-        </button>
+      {/* Center Navigation Tabs (POS-US-047 AC-01, AC-02, AC-03, AC-04) */}
+      <nav className="flex items-center gap-1 rounded-lg bg-[#F7F7F5] border border-[#E5E7EB] p-0.5 max-w-full">
+        {/* Desktop Visible Tabs */}
+        <div className="flex items-center gap-1">
+          {visibleTabs.map((tab) => {
+            const isActive = currentTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                id={`nav-tab-${tab.id}`}
+                onClick={() => onSelectTab(tab.id)}
+                className={`flex items-center gap-1.5 rounded-md px-2.5 sm:px-3 py-1.5 text-xs font-semibold transition active:scale-95 whitespace-nowrap ${
+                  isActive
+                    ? 'bg-white text-[#1F2937] shadow-xs border border-[#E5E7EB]'
+                    : 'text-[#6B7280] hover:text-[#1F2937]'
+                }`}
+              >
+                {tab.icon}
+                <span>{tab.label}</span>
+                {tab.badge}
+              </button>
+            );
+          })}
+        </div>
       </nav>
 
       {/* Right Actions & Operator Status */}
@@ -108,58 +147,12 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onOpenHeldOrdersModal}
             className="flex items-center gap-1.5 rounded-lg bg-[#D97706] px-2.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-amber-700 active:scale-95"
+            title="Daftar Nota Diparkir / Ditunda"
           >
             <Clock className="h-3.5 w-3.5" />
             <span>{setAsideOrders.length} Diparkir</span>
           </button>
         )}
-
-        {/* Konsinyasi Management Shortcut (POS-US-030 to 035) */}
-        <button
-          id="header-consignment-btn"
-          onClick={onOpenConsignmentModal}
-          className={`relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition active:scale-95 ${
-            overdueCount > 0
-              ? 'border-rose-400 bg-rose-50 text-rose-800'
-              : dueTodayCount > 0
-              ? 'border-amber-400 bg-amber-50 text-amber-900'
-              : 'border-[#E5E7EB] bg-white text-[#1F2937] hover:border-[#D97706]'
-          }`}
-          title="Manajemen Titipan & Settlement Konsinyasi"
-        >
-          <Building2 className="h-3.5 w-3.5 text-[#D97706]" />
-          <span className="hidden sm:inline">Konsinyasi</span>
-          {(overdueCount > 0 || dueTodayCount > 0) && (
-            <span
-              className={`rounded-full px-1.5 py-0.2 text-[9px] font-bold text-white ${
-                overdueCount > 0 ? 'bg-rose-600' : 'bg-amber-600'
-              }`}
-            >
-              {overdueCount > 0 ? `${overdueCount} Overdue` : `${dueTodayCount} Due`}
-            </span>
-          )}
-        </button>
-
-        {/* Riwayat Transaksi Shortcut */}
-        <button
-          onClick={onOpenHistoryModal}
-          className="hidden md:flex items-center gap-1.5 rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#1F2937] hover:border-[#D97706] active:scale-95 transition"
-          title="Lihat Riwayat Nota, Void & Refund"
-        >
-          <History className="h-3.5 w-3.5 text-[#6B7280]" />
-          <span>Riwayat</span>
-        </button>
-
-        {/* Manajemen Stok Shortcut */}
-        <button
-          id="header-stock-btn"
-          onClick={onOpenInventoryModal}
-          className="hidden md:flex items-center gap-1.5 rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#1F2937] hover:border-[#D97706] active:scale-95 transition"
-          title="Manajemen & Koreksi Stok Roti"
-        >
-          <Package className="h-3.5 w-3.5 text-[#6B7280]" />
-          <span>Stok</span>
-        </button>
 
         {/* Status Shift & Kas (POS-US-003, POS-US-005) */}
         <button
@@ -192,6 +185,5 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
       </div>
     </header>
-
   );
 };

@@ -7,6 +7,7 @@ import {
   List,
   Plus,
   Package,
+  History,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 import { Product } from '../types';
@@ -15,9 +16,14 @@ import { formatIDR } from '../utils/formatters';
 interface ProductCatalogProps {
   onOpenAddProduct?: () => void;
   onOpenAddCategory?: () => void;
+  onOpenHistory?: () => void;
 }
 
-export const ProductCatalog: React.FC<ProductCatalogProps> = () => {
+export const ProductCatalog: React.FC<ProductCatalogProps> = ({
+  onOpenAddProduct,
+  onOpenAddCategory,
+  onOpenHistory,
+}) => {
   const { products, categories: contextCategories, addToCart, cart } = usePOS();
 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -172,26 +178,42 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = () => {
             </button>
           </div>
 
-          {/* View Mode Switch (Grid / List) */}
-          <div className="flex rounded-lg border border-[#E5E7EB] bg-white p-0.5">
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`p-1.5 rounded-md transition ${
-                viewMode === 'grid' ? 'bg-[#D97706] text-white' : 'text-[#6B7280] hover:text-[#1F2937]'
-              }`}
-              title="Tampilan Grid"
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`p-1.5 rounded-md transition ${
-                viewMode === 'list' ? 'bg-[#D97706] text-white' : 'text-[#6B7280] hover:text-[#1F2937]'
-              }`}
-              title="Tampilan List"
-            >
-              <List className="h-3.5 w-3.5" />
-            </button>
+          {/* Right Toolbar Controls: History Sub-View Toggle & View Mode Switch */}
+          <div className="flex items-center gap-2">
+            {onOpenHistory && (
+              <button
+                id="cashier-history-toggle-btn"
+                type="button"
+                onClick={onOpenHistory}
+                className="flex items-center gap-1.5 rounded-xl border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-bold text-[#1F2937] hover:border-[#D97706] hover:bg-amber-50/60 active:scale-95 transition shadow-2xs"
+                title="Lihat Riwayat Transaksi & Nota Kasir"
+              >
+                <History className="h-3.5 w-3.5 text-[#D97706]" />
+                <span>Riwayat Transaksi</span>
+              </button>
+            )}
+
+            {/* View Mode Switch (Grid / List) */}
+            <div className="flex rounded-lg border border-[#E5E7EB] bg-white p-0.5">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-1.5 rounded-md transition ${
+                  viewMode === 'grid' ? 'bg-[#D97706] text-white' : 'text-[#6B7280] hover:text-[#1F2937]'
+                }`}
+                title="Tampilan Grid"
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-1.5 rounded-md transition ${
+                  viewMode === 'list' ? 'bg-[#D97706] text-white' : 'text-[#6B7280] hover:text-[#1F2937]'
+                }`}
+                title="Tampilan List"
+              >
+                <List className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
