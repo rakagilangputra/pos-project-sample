@@ -640,8 +640,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose }) =
           )}
         </div>
 
-        {/* Bottom Giant Action Button */}
-        <div className="border-t border-gray-100 bg-white p-4 sm:p-6">
+        {/* Bottom Action Area with Primary and Close (POS-US-040) */}
+        <div className="border-t border-gray-100 bg-white p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-end gap-3">
           <button
             type="button"
             onClick={handleFinalizePayment}
@@ -651,14 +651,21 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose }) =
               (paymentTab === 'split' && (splitCash <= 0 || splitRemaining <= 0 || splitCash >= cartTotal)) ||
               (paymentTab === 'dp' && (dpAmount <= 0 || dpAmount >= cartTotal))
             }
-            className="flex w-full items-center justify-center gap-3 rounded-2xl bg-emerald-600 py-4 text-xl font-black text-white shadow-xl transition hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full sm:flex-1 flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3.5 text-base sm:text-lg font-bold text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed uppercase"
           >
-            <CheckCircle2 className="h-7 w-7" />
+            <CheckCircle2 className="h-5 w-5" />
             <span>
               {paymentTab === 'dp'
-                ? `TERIMA DP ${formatIDR(dpAmount)} & CETAK NOTA PO`
-                : `SELESAIKAN PEMBAYARAN ${formatIDR(cartTotal)}`}
+                ? `Terima DP ${formatIDR(dpAmount)} & Cetak PO`
+                : `Selesaikan Pembayaran ${formatIDR(cartTotal)}`}
             </span>
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full sm:w-auto rounded-xl border border-gray-300 bg-white px-6 py-3.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 active:scale-95 transition text-center"
+          >
+            Tutup
           </button>
         </div>
       </div>

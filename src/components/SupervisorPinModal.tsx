@@ -145,6 +145,21 @@ export const SupervisorPinModal: React.FC<SupervisorPinModalProps> = ({
             Demo PIN SPV: <strong className="text-gray-600">8888</strong> | Admin: <strong className="text-gray-600">9999</strong>
           </p>
         </div>
+
+        {/* Modal Footer with Close button (POS-US-040) */}
+        <div className="border-t border-gray-100 bg-white px-6 py-3 flex justify-end">
+          <button
+            id="spv-modal-close-btn"
+            type="button"
+            onClick={() => {
+              setPin('');
+              onClose();
+            }}
+            className="rounded-xl border border-gray-300 bg-white px-5 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 active:scale-95 transition"
+          >
+            Tutup
+          </button>
+        </div>
       </div>
     </div>
   );

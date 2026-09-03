@@ -182,43 +182,45 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({ isOpen, onClose })
               />
             </div>
 
-            <div className="pt-4 flex gap-3">
+            <div className="pt-4 flex items-center justify-end gap-3 border-t border-gray-100">
+              <button
+                type="submit"
+                className="rounded-xl bg-amber-600 px-6 py-2.5 text-sm font-bold text-white shadow-xs hover:bg-amber-700 active:scale-95"
+              >
+                Simpan & Pilih
+              </button>
               <button
                 type="button"
                 onClick={() => setIsAddingNew(false)}
-                className="flex-1 rounded-2xl border border-gray-200 py-3.5 text-base font-bold text-gray-700 hover:bg-gray-100"
+                className="rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 active:scale-95"
               >
-                Batal
-              </button>
-              <button
-                type="submit"
-                className="flex-1 rounded-2xl bg-amber-600 py-3.5 text-base font-bold text-white shadow-md hover:bg-amber-700 active:scale-95"
-              >
-                Simpan & Pilih
+                Tutup
               </button>
             </div>
           </form>
         ) : (
-          <div className="flex flex-1 flex-col overflow-hidden p-6">
-            {/* Action Bar */}
-            <div className="mb-4 flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
-                <Search className="absolute left-4 top-3.5 h-5 w-5 text-gray-400" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Cari nama atau no. telepon..."
-                  className="w-full rounded-2xl border border-gray-200 bg-gray-50 pl-12 pr-4 py-3 text-base focus:border-amber-500 focus:bg-white focus:outline-none"
-                />
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="p-6 pb-2">
+              {/* Action Bar */}
+              <div className="mb-3 flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-4 top-3 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Cari nama atau no. telepon..."
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-4 py-2.5 text-sm focus:border-amber-500 focus:bg-white focus:outline-none"
+                  />
+                </div>
+                <button
+                  onClick={() => setIsAddingNew(true)}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-bold text-white shadow-xs hover:bg-amber-700 active:scale-95"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  <span>Tambah Baru</span>
+                </button>
               </div>
-              <button
-                onClick={() => setIsAddingNew(true)}
-                className="flex items-center justify-center gap-2 rounded-2xl bg-amber-600 px-5 py-3 font-bold text-white shadow-sm hover:bg-amber-700 active:scale-95"
-              >
-                <UserPlus className="h-5 w-5" />
-                <span>Tambah Baru</span>
-              </button>
             </div>
 
             {/* Quick Walk-in Button */}
@@ -339,6 +341,18 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({ isOpen, onClose })
                   </button>
                 </div>
               )}
+            </div>
+
+            {/* Modal Footer with Close button (POS-US-040) */}
+            <div className="border-t border-gray-100 bg-white px-6 py-3 flex justify-end">
+              <button
+                id="customer-modal-close-btn"
+                type="button"
+                onClick={onClose}
+                className="rounded-xl border border-gray-300 bg-white px-5 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 active:scale-95 transition"
+              >
+                Tutup
+              </button>
             </div>
           </div>
         )}

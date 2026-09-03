@@ -122,74 +122,74 @@ export const OrderCart: React.FC<OrderCartProps> = ({
 
   return (
     <div className="flex h-full flex-col bg-white overflow-hidden select-none">
-      {/* Customer Header Bar (POS-US-001, POS-US-002) */}
-      <div className="flex items-center justify-between border-b-2 border-[#E5DACE] bg-white px-5 py-4">
+      {/* Customer Header Bar (POS-US-038) */}
+      <div className="flex items-center justify-between border-b border-[#E5E7EB] bg-white px-4 py-3">
         <button
           onClick={onOpenCustomerModal}
-          className="flex items-center gap-3 text-left group max-w-[240px] truncate"
+          className="flex items-center gap-2.5 text-left group max-w-[220px] truncate"
         >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#D97706] text-white shadow-xs">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#D97706] text-white shadow-xs">
             <User className="h-4 w-4" />
           </div>
           <div className="truncate">
-            <span className="block text-[10px] font-semibold uppercase tracking-wider text-[#8C7B6C]">
+            <span className="block text-[10px] font-semibold uppercase tracking-wider text-[#6B7280]">
               Pelanggan
             </span>
-            <span className="block text-sm font-bold text-[#2D241E] truncate group-hover:text-[#D97706]">
+            <span className="block text-xs sm:text-sm font-bold text-[#1F2937] truncate group-hover:text-[#D97706]">
               {selectedCustomer.name}
             </span>
           </div>
         </button>
 
-        <div className="flex items-center gap-2">
-          <span className="bg-[#E5DACE] text-[11px] font-bold px-2.5 py-1 rounded-lg text-[#2D241E]">
-            {cart.reduce((s, i) => s + i.quantity, 0)} ITEM
+        <div className="flex items-center gap-1.5">
+          <span className="bg-[#F7F7F5] border border-[#E5E7EB] text-[10px] font-semibold px-2 py-0.5 rounded-md text-[#6B7280]">
+            {cart.reduce((s, i) => s + i.quantity, 0)} item
           </span>
           <button
             onClick={onOpenCustomerModal}
-            className="rounded-xl border-2 border-[#E5DACE] bg-[#FDFBF7] px-2.5 py-1 text-xs font-bold text-[#2D241E] hover:border-[#D97706] active:scale-95 transition"
+            className="rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1 text-xs font-semibold text-[#1F2937] hover:border-[#D97706] hover:bg-[#F7F7F5] active:scale-95 transition"
           >
             Ubah
           </button>
         </div>
       </div>
 
-      {/* Cart Items List */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      {/* Cart Items List (POS-US-038) */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {cart.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center text-center p-6 text-[#8C7B6C]">
-            <ShoppingBag className="h-14 w-14 mb-3 stroke-[1.3] text-[#E5DACE]" />
-            <p className="font-bold text-[#2D241E] text-base">Keranjang Kosong</p>
-            <p className="text-xs text-[#8C7B6C] max-w-xs mt-1">
-              Sentuh menu roti atau pastry di sebelah kiri untuk menambahkan pesanan ke nota.
+          <div className="flex h-full flex-col items-center justify-center text-center p-6 text-[#6B7280]">
+            <ShoppingBag className="h-10 w-10 mb-2 stroke-[1.4] text-[#E5E7EB]" />
+            <p className="font-semibold text-[#1F2937] text-sm">Nota Masih Kosong</p>
+            <p className="text-xs text-[#6B7280] max-w-xs mt-0.5">
+              Pilih menu dari katalog untuk memasukkan pesanan ke kasir.
             </p>
           </div>
         ) : (
           cart.map((item) => (
             <div
               key={item.id}
-              className="flex flex-col rounded-2xl border-2 border-[#E5DACE] bg-white p-3.5 shadow-2xs hover:border-[#D97706] transition"
+              className="flex flex-col rounded-xl border border-[#E5E7EB] bg-white p-2.5 hover:border-[#D97706] transition"
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1">
                   <div className="flex items-center gap-1.5">
-                    <h5 className="text-sm font-bold text-[#2D241E] leading-snug">
+                    <h5 className="text-xs sm:text-sm font-bold text-[#1F2937] leading-snug">
                       {item.productName}
                     </h5>
                     {item.isMadeToOrder && (
-                      <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[9px] font-bold text-rose-800">
+                      <span className="rounded bg-rose-50 border border-rose-200 px-1 text-[9px] font-semibold text-rose-700">
                         PO
                       </span>
                     )}
                   </div>
 
                   {/* Price & Overridden status */}
-                  <div className="flex items-center gap-2 mt-0.5 text-xs">
-                    <span className="font-bold text-[#D97706]">
+                  <div className="flex items-center gap-1.5 mt-0.5 text-xs">
+                    <span className="font-semibold text-[#D97706]">
                       {formatIDR(item.unitPrice)}
                     </span>
                     {item.isPriceOverridden && (
-                      <span className="rounded bg-amber-100 px-1.5 py-0.2 text-[10px] font-bold text-amber-900">
+                      <span className="rounded bg-amber-50 border border-amber-200 px-1 text-[9px] font-medium text-amber-800">
                         Nego (Asli: {formatIDR(item.originalPrice)})
                       </span>
                     )}
@@ -197,58 +197,57 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                 </div>
 
                 {/* Line Total */}
-                <span className="text-sm font-bold text-[#2D241E]">
+                <span className="text-xs sm:text-sm font-bold text-[#1F2937]">
                   {formatIDR(item.unitPrice * item.quantity)}
                 </span>
               </div>
 
-              {/* Touch Controls for Quantity & Price Override */}
-              <div className="mt-2.5 flex items-center justify-between pt-2 border-t border-[#E5DACE]/60">
+              {/* Contextual Controls: Price Override, Delete, Quantity [-] [+] */}
+              <div className="mt-2 flex items-center justify-between pt-1.5 border-t border-[#E5E7EB]">
                 <div className="flex items-center gap-1">
-                  {/* Price Override button (POS-US-009) */}
                   <button
                     type="button"
                     onClick={() => {
                       setOverrideLineId(item.id);
                       setOverridePriceInput(String(item.unitPrice));
                     }}
-                    title="Ubah / Override Harga Item Ini"
-                    className="flex items-center gap-1 rounded-xl bg-[#FDFBF7] border border-[#E5DACE] px-2 py-1.5 text-[11px] font-bold text-[#2D241E] hover:border-[#D97706]"
+                    title="Ubah Harga Item Ini"
+                    className="flex items-center gap-1 rounded-md border border-[#E5E7EB] bg-white px-2 py-1 text-[10px] font-semibold text-[#6B7280] hover:text-[#1F2937] hover:border-[#D97706]"
                   >
-                    <Pencil className="h-3 w-3 text-[#8C7B6C]" />
+                    <Pencil className="h-2.5 w-2.5" />
                     <span>Ubah</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => removeFromCart(item.id)}
-                    className="p-1.5 rounded-xl text-[#8C7B6C] hover:bg-rose-50 hover:text-rose-600"
+                    className="p-1 rounded-md text-[#6B7280] hover:bg-rose-50 hover:text-rose-600"
                     title="Hapus Item"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
 
-                {/* BENTO TOUCH QUANTITY BUTTONS */}
-                <div className="flex items-center gap-2">
+                {/* Quantity Controls */}
+                <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => updateCartQty(item.id, item.quantity - 1)}
-                    className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#FDFBF7] border border-[#E5DACE] text-[#2D241E] font-bold hover:bg-[#E5DACE] active:scale-90"
+                    className="flex h-6 w-6 items-center justify-center rounded-md border border-[#E5E7EB] bg-white text-[#1F2937] font-semibold hover:bg-[#F7F7F5] active:scale-95 transition"
                   >
-                    <Minus className="h-3.5 w-3.5" />
+                    <Minus className="h-3 w-3" />
                   </button>
 
-                  <span className="w-7 text-center text-sm font-bold text-[#2D241E]">
+                  <span className="w-6 text-center text-xs font-bold text-[#1F2937]">
                     {item.quantity}
                   </span>
 
                   <button
                     type="button"
                     onClick={() => updateCartQty(item.id, item.quantity + 1)}
-                    className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#D97706] text-white font-bold hover:brightness-95 active:scale-90 shadow-2xs"
+                    className="flex h-6 w-6 items-center justify-center rounded-md bg-[#D97706] text-white font-semibold hover:bg-amber-700 active:scale-95 transition"
                   >
-                    <Plus className="h-3.5 w-3.5" />
+                    <Plus className="h-3 w-3" />
                   </button>
                 </div>
               </div>
@@ -257,82 +256,84 @@ export const OrderCart: React.FC<OrderCartProps> = ({
         )}
       </div>
 
-      {/* Cart Actions Toolbar */}
+      {/* Cart Actions Toolbar (POS-US-038) */}
       {cart.length > 0 && (
-        <div className="border-t-2 border-[#E5DACE] bg-[#FDFBF7] p-3">
-          <div className="grid grid-cols-4 gap-2">
-            {/* Parkir Pesanan (POS-US-012) */}
+        <div className="border-t border-[#E5E7EB] bg-[#F7F7F5] p-3 space-y-2">
+          {/* Prominent Secondary Order Action: Parkir Pesanan */}
+          <div className="flex items-center gap-2">
             <button
               onClick={handleHoldOrder}
-              className="flex flex-col items-center justify-center rounded-2xl border-2 border-[#E5DACE] bg-white py-2 text-center text-[11px] font-bold text-[#2D241E] hover:border-[#D97706] active:scale-95 transition"
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-[#E5E7EB] bg-white py-2 text-xs font-semibold text-[#1F2937] hover:border-[#D97706] hover:bg-amber-50/50 active:scale-95 transition"
             >
-              <Clock className="h-4 w-4 mb-0.5 text-[#D97706]" />
-              <span>Parkir</span>
+              <Clock className="h-4 w-4 text-[#D97706]" />
+              <span>Parkir Pesanan</span>
             </button>
+          </div>
 
-            {/* Diskon Nota (POS-US-011) */}
+          {/* Secondary Actions: Diskon, PPN, Batal */}
+          <div className="grid grid-cols-3 gap-1.5 pt-1">
+            {/* Diskon Nota */}
             <button
               onClick={() => setIsDiscountModalOpen(true)}
-              className={`flex flex-col items-center justify-center rounded-2xl border-2 py-2 text-center text-[11px] font-bold transition active:scale-95 ${
+              className={`flex items-center justify-center gap-1.5 rounded-lg border py-1.5 text-xs font-medium transition active:scale-95 ${
                 orderDiscountValue > 0
                   ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
-                  : 'border-[#E5DACE] bg-white text-[#2D241E] hover:border-[#D97706]'
+                  : 'border-[#E5E7EB] bg-white text-[#6B7280] hover:text-[#1F2937]'
               }`}
             >
-              <Percent className="h-4 w-4 mb-0.5 text-[#059669]" />
-              <span>{orderDiscountValue > 0 ? 'Diskon' : 'Diskon'}</span>
+              <Percent className="h-3.5 w-3.5 text-[#059669]" />
+              <span>{orderDiscountValue > 0 ? 'Diskon Aktif' : 'Diskon'}</span>
             </button>
 
-            {/* PPN 11% Toggle (POS-US-010) */}
+            {/* PPN 11% Toggle */}
             <button
               onClick={() => {
                 setTaxApplied(!taxApplied);
                 posSound.beep();
               }}
-              className={`flex flex-col items-center justify-center rounded-2xl border-2 py-2 text-center text-[11px] font-bold transition active:scale-95 ${
+              className={`flex items-center justify-center gap-1.5 rounded-lg border py-1.5 text-xs font-medium transition active:scale-95 ${
                 taxApplied
                   ? 'border-blue-500 bg-blue-50 text-blue-800'
-                  : 'border-[#E5DACE] bg-white text-[#8C7B6C] hover:border-[#D97706]'
+                  : 'border-[#E5E7EB] bg-white text-[#6B7280] hover:text-[#1F2937]'
               }`}
             >
-              <Tag className={`h-4 w-4 mb-0.5 ${taxApplied ? 'text-blue-600' : 'text-[#8C7B6C]'}`} />
+              <Tag className={`h-3.5 w-3.5 ${taxApplied ? 'text-blue-600' : 'text-[#6B7280]'}`} />
               <span>PPN 11% {taxApplied ? '✓' : ''}</span>
             </button>
 
             {/* Clear Cart */}
             <button
+              type="button"
               onClick={() => {
-                if (window.confirm('Kosongkan semua item di keranjang ini?')) {
-                  clearCart();
-                }
+                clearCart();
               }}
-              className="flex flex-col items-center justify-center rounded-2xl border-2 border-[#E5DACE] bg-white py-2 text-center text-[11px] font-bold text-rose-600 hover:border-rose-300 hover:bg-rose-50 active:scale-95 transition"
+              className="flex items-center justify-center gap-1.5 rounded-lg border border-[#E5E7EB] bg-white py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 active:scale-95 transition"
             >
-              <Trash2 className="h-4 w-4 mb-0.5 text-rose-500" />
-              <span>Batal</span>
+              <Trash2 className="h-3.5 w-3.5 text-rose-500" />
+              <span>Kosongkan</span>
             </button>
           </div>
         </div>
       )}
 
-      {/* Totals & Grand Checkout Area - Bento Style */}
-      <div className="p-5 sm:p-6 bg-[#FDFBF7] border-t-2 border-[#E5DACE] flex flex-col gap-4">
+      {/* Totals & Grand Checkout Area (POS-US-038) */}
+      <div className="p-4 sm:p-5 bg-white border-t border-[#E5E7EB] flex flex-col gap-3">
         {/* Breakdown Summary */}
-        <div className="space-y-1">
-          <div className="flex justify-between text-sm text-[#8C7B6C]">
+        <div className="space-y-1 text-xs">
+          <div className="flex justify-between text-[#6B7280]">
             <span>Subtotal ({cart.reduce((s, i) => s + i.quantity, 0)} item)</span>
-            <span className="font-bold text-[#2D241E]">{formatIDR(cartSubtotal)}</span>
+            <span className="font-semibold text-[#1F2937]">{formatIDR(cartSubtotal)}</span>
           </div>
 
           {cartDiscountAmount > 0 && (
-            <div className="flex justify-between text-sm text-rose-600 font-bold">
+            <div className="flex justify-between text-rose-600 font-semibold">
               <span className="flex items-center gap-1">
                 <span>Diskon ({orderDiscountReason || 'Nota'})</span>
                 <button
                   onClick={removeOrderDiscount}
                   className="text-[10px] text-rose-500 underline ml-1"
                 >
-                  hapus
+                  Hapus
                 </button>
               </span>
               <span>-{formatIDR(cartDiscountAmount)}</span>
@@ -340,102 +341,105 @@ export const OrderCart: React.FC<OrderCartProps> = ({
           )}
 
           {taxApplied && (
-            <div className="flex justify-between text-sm text-[#8C7B6C]">
+            <div className="flex justify-between text-[#6B7280]">
               <span>PPN (11%)</span>
-              <span className="font-bold text-[#2D241E]">{formatIDR(cartTaxAmount)}</span>
+              <span className="font-semibold text-[#1F2937]">{formatIDR(cartTaxAmount)}</span>
             </div>
           )}
 
-          <div className="flex justify-between text-2xl font-black mt-2 text-[#2D241E]">
+          <div className="flex justify-between text-lg sm:text-xl font-bold pt-2 border-t border-[#E5E7EB] text-[#1F2937]">
             <span>Total</span>
-            <span>{formatIDR(cartTotal)}</span>
+            <span className="text-[#D97706]">{formatIDR(cartTotal)}</span>
           </div>
         </div>
 
-        {/* BENTO CHARGE BUTTON */}
+        {/* ONE DOMINANT PRIMARY ACTION: BAYAR */}
         <button
+          id="cart-pay-grand-btn"
           onClick={onOpenPaymentModal}
           disabled={cart.length === 0}
-          className="bg-[#059669] text-white w-full py-4 sm:py-5 rounded-2xl font-black text-xl sm:text-2xl shadow-md hover:brightness-95 active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed uppercase"
+          className="bg-[#D97706] text-white w-full py-3.5 sm:py-4 rounded-xl font-bold text-base sm:text-lg shadow-sm hover:bg-amber-700 active:scale-[0.99] transition disabled:opacity-40 disabled:cursor-not-allowed uppercase flex items-center justify-center gap-2"
         >
-          CHARGE {formatIDR(cartTotal)}
+          <CreditCard className="h-5 w-5" />
+          <span>Bayar {formatIDR(cartTotal)}</span>
         </button>
       </div>
 
-      {/* MODAL 1: PRICE OVERRIDE (POS-US-009) */}
+      {/* MODAL 1: PRICE OVERRIDE (POS-US-040 standard bottom-right Close) */}
       {overrideLineId && activeOverrideItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-sm rounded-3xl border-2 border-[#E5DACE] bg-white p-6 shadow-2xl space-y-4">
-            <h3 className="text-base font-bold text-[#2D241E]">
-              Override Harga: {activeOverrideItem.productName}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-2xl border border-[#E5E7EB] bg-white p-5 shadow-xl space-y-4">
+            <h3 className="text-base font-bold text-[#1F2937]">
+              Ubah Harga: {activeOverrideItem.productName}
             </h3>
-            <p className="text-xs text-[#8C7B6C]">
-              Harga master katalog: <strong className="text-[#2D241E]">{formatIDR(activeOverrideItem.originalPrice)}</strong>. Perubahan harga hanya berlaku untuk nota ini.
+            <p className="text-xs text-[#6B7280]">
+              Harga master: <strong className="text-[#1F2937]">{formatIDR(activeOverrideItem.originalPrice)}</strong>. Perubahan hanya berlaku pada nota aktif ini.
             </p>
 
             <div>
-              <label className="block text-xs font-bold text-[#2D241E] mb-1">
+              <label className="block text-xs font-semibold text-[#1F2937] mb-1">
                 Harga Baru per Satuan (Rp) *
               </label>
               <input
                 type="number"
                 value={overridePriceInput}
                 onChange={(e) => setOverridePriceInput(e.target.value)}
-                className="w-full rounded-2xl border-2 border-[#E5DACE] p-3 text-lg font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none"
+                className="w-full rounded-xl border border-[#E5E7EB] p-2.5 text-base font-bold text-[#1F2937] focus:border-[#D97706] focus:outline-none"
                 autoFocus
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[#2D241E] mb-1">
+              <label className="block text-xs font-semibold text-[#1F2937] mb-1">
                 Alasan Perubahan Harga
               </label>
               <input
                 type="text"
                 value={overrideReasonInput}
                 onChange={(e) => setOverrideReasonInput(e.target.value)}
-                placeholder="Misal: Nego borongan / dekat expired"
-                className="w-full rounded-2xl border-2 border-[#E5DACE] p-2.5 text-sm focus:border-[#D97706] focus:outline-none"
+                placeholder="Contoh: Kesepakatan borongan / diskon fisik"
+                className="w-full rounded-xl border border-[#E5E7EB] p-2 text-xs focus:border-[#D97706] focus:outline-none"
               />
             </div>
 
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setOverrideLineId(null)}
-                className="flex-1 rounded-2xl border-2 border-[#E5DACE] py-2.5 text-sm font-bold text-[#8C7B6C] hover:text-[#2D241E]"
-              >
-                Batal
-              </button>
+            {/* Footer with primary before Close, Close at bottom right (POS-US-040) */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E5E7EB]">
               <button
                 type="button"
                 onClick={handleConfirmPriceOverride}
-                className="flex-1 rounded-2xl bg-[#D97706] py-2.5 text-sm font-bold text-white shadow-sm hover:brightness-95 active:scale-95"
+                className="rounded-xl bg-[#D97706] px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-amber-700 active:scale-95"
               >
-                Terapkan
+                Terapkan Perubahan
+              </button>
+              <button
+                type="button"
+                onClick={() => setOverrideLineId(null)}
+                className="rounded-xl border border-[#E5E7EB] bg-white px-4 py-2 text-xs font-semibold text-[#6B7280] hover:text-[#1F2937] hover:bg-[#F7F7F5]"
+              >
+                Tutup
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL 2: ORDER DISCOUNT (POS-US-011) */}
+      {/* MODAL 2: ORDER DISCOUNT (POS-US-040 standard bottom-right Close) */}
       {isDiscountModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-sm rounded-3xl border-2 border-[#E5DACE] bg-white p-6 shadow-2xl space-y-4">
-            <h3 className="text-base font-bold text-[#2D241E]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-2xl border border-[#E5E7EB] bg-white p-5 shadow-xl space-y-4">
+            <h3 className="text-base font-bold text-[#1F2937]">
               Terapkan Diskon Nota
             </h3>
 
             {/* Percent or Fixed Switch */}
-            <div className="grid grid-cols-2 gap-2 bg-[#FDFBF7] border border-[#E5DACE] p-1 rounded-2xl">
+            <div className="grid grid-cols-2 gap-1.5 bg-[#F7F7F5] border border-[#E5E7EB] p-1 rounded-xl">
               <button
                 type="button"
                 onClick={() => setDiscountTypeInput('percent')}
-                className={`py-2 rounded-xl text-xs font-bold transition ${
+                className={`py-1.5 rounded-lg text-xs font-semibold transition ${
                   discountTypeInput === 'percent'
-                    ? 'bg-white text-[#2D241E] shadow-sm border border-[#E5DACE]'
-                    : 'text-[#8C7B6C]'
+                    ? 'bg-white text-[#1F2937] shadow-xs border border-[#E5E7EB]'
+                    : 'text-[#6B7280]'
                 }`}
               >
                 Persentase (%)
@@ -443,40 +447,40 @@ export const OrderCart: React.FC<OrderCartProps> = ({
               <button
                 type="button"
                 onClick={() => setDiscountTypeInput('fixed')}
-                className={`py-2 rounded-xl text-xs font-bold transition ${
+                className={`py-1.5 rounded-lg text-xs font-semibold transition ${
                   discountTypeInput === 'fixed'
-                    ? 'bg-white text-[#2D241E] shadow-sm border border-[#E5DACE]'
-                    : 'text-[#8C7B6C]'
+                    ? 'bg-white text-[#1F2937] shadow-xs border border-[#E5E7EB]'
+                    : 'text-[#6B7280]'
                 }`}
               >
-                Nominal Tetap (Rp)
+                Nominal (Rp)
               </button>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[#2D241E] mb-1">
+              <label className="block text-xs font-semibold text-[#1F2937] mb-1">
                 Besaran Diskon {discountTypeInput === 'percent' ? '(%)' : '(Rp)'} *
               </label>
               <input
                 type="number"
                 value={discountValueInput}
                 onChange={(e) => setDiscountValueInput(e.target.value)}
-                className="w-full rounded-2xl border-2 border-[#E5DACE] p-3 text-xl font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none"
+                className="w-full rounded-xl border border-[#E5E7EB] p-2.5 text-lg font-bold text-[#1F2937] focus:border-[#D97706] focus:outline-none"
               />
             </div>
 
             {/* Predefined Reasons */}
             <div>
-              <label className="block text-xs font-bold text-[#2D241E] mb-1">
+              <label className="block text-xs font-semibold text-[#1F2937] mb-1">
                 Alasan Diskon
               </label>
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {['Promo Member', 'Promo Grand Opening', 'Karyawan Toko', 'Roti Kemarin (Disc)'].map((r) => (
+              <div className="flex flex-wrap gap-1 mb-2">
+                {['Promo Member', 'Promo Pembukaan', 'Karyawan', 'Diskon Khusus'].map((r) => (
                   <button
                     key={r}
                     type="button"
                     onClick={() => setDiscountReasonInput(r)}
-                    className="rounded-xl border border-[#E5DACE] bg-[#FDFBF7] px-2.5 py-1 text-[11px] font-medium text-[#2D241E] hover:border-[#D97706]"
+                    className="rounded-lg border border-[#E5E7EB] bg-[#F7F7F5] px-2 py-1 text-[11px] font-medium text-[#1F2937] hover:border-[#D97706]"
                   >
                     {r}
                   </button>
@@ -487,29 +491,31 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                 value={discountReasonInput}
                 onChange={(e) => setDiscountReasonInput(e.target.value)}
                 placeholder="Atau tulis alasan manual..."
-                className="w-full rounded-2xl border-2 border-[#E5DACE] p-2 text-xs focus:border-[#D97706] focus:outline-none"
+                className="w-full rounded-xl border border-[#E5E7EB] p-2 text-xs focus:border-[#D97706] focus:outline-none"
               />
             </div>
 
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsDiscountModalOpen(false)}
-                className="flex-1 rounded-2xl border-2 border-[#E5DACE] py-2.5 text-sm font-bold text-[#8C7B6C] hover:text-[#2D241E]"
-              >
-                Batal
-              </button>
+            {/* Footer with primary before Close, Close at bottom right (POS-US-040) */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E5E7EB]">
               <button
                 type="button"
                 onClick={handleApplyDiscount}
-                className="flex-1 rounded-2xl bg-[#059669] py-2.5 text-sm font-bold text-white shadow-sm hover:brightness-95 active:scale-95"
+                className="rounded-xl bg-[#059669] px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 active:scale-95"
               >
                 Terapkan Diskon
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsDiscountModalOpen(false)}
+                className="rounded-xl border border-[#E5E7EB] bg-white px-4 py-2 text-xs font-semibold text-[#6B7280] hover:text-[#1F2937] hover:bg-[#F7F7F5]"
+              >
+                Tutup
               </button>
             </div>
           </div>
         </div>
       )}
+
 
       {/* Reusable Supervisor PIN Modal */}
       <SupervisorPinModal

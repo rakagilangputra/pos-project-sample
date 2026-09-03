@@ -357,20 +357,20 @@ export const SessionModal: React.FC<SessionModalProps> = ({ isOpen, onClose }) =
                 </div>
               </div>
 
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setMode('overview')}
-                  className="flex-1 rounded-2xl border border-gray-200 py-3.5 text-sm font-bold text-gray-600 hover:bg-gray-100"
-                >
-                  Batal
-                </button>
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-100">
                 <button
                   type="button"
                   onClick={handleOpenShift}
-                  className="flex-1 rounded-2xl bg-amber-600 py-3.5 text-sm font-bold text-white shadow-md hover:bg-amber-700 active:scale-95"
+                  className="rounded-xl bg-amber-600 px-5 py-2.5 text-sm font-bold text-white shadow-xs hover:bg-amber-700 active:scale-95"
                 >
                   Mulai Sesi Kasir
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode('overview')}
+                  className="rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 active:scale-95"
+                >
+                  Tutup
                 </button>
               </div>
             </div>
@@ -474,20 +474,20 @@ export const SessionModal: React.FC<SessionModalProps> = ({ isOpen, onClose }) =
               )}
 
               {/* Close Shift Submit */}
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setMode('overview')}
-                  className="flex-1 rounded-2xl border border-gray-200 py-3.5 text-sm font-bold text-gray-600 hover:bg-gray-100"
-                >
-                  Batal
-                </button>
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-100">
                 <button
                   type="button"
                   onClick={handleRequestClose}
-                  className="flex-1 rounded-2xl bg-rose-600 py-3.5 text-sm font-bold text-white shadow-md hover:bg-rose-700 active:scale-95"
+                  className="rounded-xl bg-rose-600 px-5 py-2.5 text-sm font-bold text-white shadow-xs hover:bg-rose-700 active:scale-95"
                 >
                   Otorisasi & Tutup Sesi
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode('overview')}
+                  className="rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 active:scale-95"
+                >
+                  Tutup
                 </button>
               </div>
             </div>
@@ -574,6 +574,18 @@ export const SessionModal: React.FC<SessionModalProps> = ({ isOpen, onClose }) =
               )}
             </div>
           )}
+        </div>
+
+        {/* Modal Footer with Close button (POS-US-040) */}
+        <div className="border-t border-gray-100 bg-white px-6 py-3 flex justify-end">
+          <button
+            id="session-modal-close-btn"
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-gray-300 bg-white px-5 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 active:scale-95 transition"
+          >
+            Tutup
+          </button>
         </div>
       </div>
 

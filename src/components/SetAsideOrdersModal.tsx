@@ -72,12 +72,11 @@ export const SetAsideOrdersModal: React.FC<SetAsideOrdersModalProps> = ({ isOpen
 
                 <div className="flex items-center gap-2">
                   <button
+                    type="button"
                     onClick={() => {
-                      if (window.confirm(`Batalkan pesanan parkir "${held.label}"?`)) {
-                        cancelHoldOrder(held.id);
-                      }
+                      cancelHoldOrder(held.id);
                     }}
-                    className="flex items-center gap-1 rounded-xl border border-rose-200 bg-white px-3 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 active:scale-95"
+                    className="flex items-center gap-1 rounded-xl border border-rose-200 bg-white px-3 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 active:scale-95 transition cursor-pointer"
                   >
                     <Trash2 className="h-4 w-4" />
                     <span>Hapus</span>
@@ -97,6 +96,18 @@ export const SetAsideOrdersModal: React.FC<SetAsideOrdersModalProps> = ({ isOpen
               </div>
             ))
           )}
+        </div>
+
+        {/* Modal Footer with Close button (POS-US-040) */}
+        <div className="border-t border-gray-100 bg-white px-6 py-3 flex justify-end">
+          <button
+            id="held-orders-close-btn"
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-gray-300 bg-white px-5 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 active:scale-95 transition"
+          >
+            Tutup
+          </button>
         </div>
       </div>
     </div>

@@ -380,6 +380,18 @@ export const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = (
             })
           )}
         </div>
+
+        {/* Modal Footer with Close button (POS-US-040) */}
+        <div className="border-t border-gray-100 bg-white px-6 py-3 flex justify-end">
+          <button
+            id="transaction-history-close-btn"
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-gray-300 bg-white px-5 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 active:scale-95 transition"
+          >
+            Tutup
+          </button>
+        </div>
       </div>
 
       {/* DIALOG 1: PELUNASAN MADE-TO-ORDER CAKE */}
@@ -434,20 +446,21 @@ export const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = (
               </div>
             </div>
 
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsSettling(false)}
-                className="flex-1 rounded-xl border border-gray-200 py-2.5 text-xs font-bold text-gray-600"
-              >
-                Batal
-              </button>
+            {/* Dialog Footer with primary before Close (POS-US-040) */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
               <button
                 type="button"
                 onClick={() => handleTriggerSettlement(selectedOrder)}
-                className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700"
+                className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 active:scale-95"
               >
-                Konfirmasi Lunas & Potong Bahan
+                Konfirmasi Lunas
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsSettling(false)}
+                className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 active:scale-95"
+              >
+                Tutup
               </button>
             </div>
           </div>
@@ -479,20 +492,21 @@ export const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = (
               />
             </div>
 
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsVoiding(false)}
-                className="flex-1 rounded-xl border border-gray-200 py-2.5 text-xs font-bold text-gray-600"
-              >
-                Batal
-              </button>
+            {/* Dialog Footer with primary before Close (POS-US-040) */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
               <button
                 type="button"
                 onClick={() => handleTriggerVoid(selectedOrder)}
-                className="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-rose-700"
+                className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-rose-700 active:scale-95"
               >
-                Minta Otorisasi SPV
+                Otorisasi SPV
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsVoiding(false)}
+                className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 active:scale-95"
+              >
+                Tutup
               </button>
             </div>
           </div>
@@ -503,7 +517,10 @@ export const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = (
       {isRefunding && selectedOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
           <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl space-y-4">
-            <h3 className="text-base font-black text-gray-900">Proses Refund Dana</h3>
+            <div className="flex items-center gap-3 text-purple-600">
+              <RotateCcw className="h-6 w-6" />
+              <h3 className="text-base font-black text-gray-900">Proses Refund Dana</h3>
+            </div>
             <p className="text-xs text-gray-500">
               Nota: <strong>{selectedOrder.receiptNumber}</strong>. Total Dibayar: {formatIDR(selectedOrder.paidAmount)}
             </p>
@@ -516,8 +533,7 @@ export const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = (
                 type="number"
                 value={refundAmountInput}
                 onChange={(e) => setRefundAmountInput(e.target.value)}
-                max={selectedOrder.paidAmount}
-                className="w-full rounded-xl border border-gray-300 p-2.5 text-base font-black text-gray-900"
+                className="w-full rounded-xl border border-gray-300 p-2.5 text-base font-bold focus:border-purple-500 focus:outline-none"
               />
             </div>
 
@@ -553,20 +569,21 @@ export const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = (
               />
             </div>
 
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsRefunding(false)}
-                className="flex-1 rounded-xl border border-gray-200 py-2.5 text-xs font-bold text-gray-600"
-              >
-                Batal
-              </button>
+            {/* Dialog Footer with primary before Close (POS-US-040) */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
               <button
                 type="button"
                 onClick={() => handleTriggerRefund(selectedOrder)}
-                className="flex-1 rounded-xl bg-purple-600 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-purple-700"
+                className="rounded-xl bg-purple-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-purple-700 active:scale-95"
               >
                 Minta Otorisasi SPV
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsRefunding(false)}
+                className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 active:scale-95"
+              >
+                Tutup
               </button>
             </div>
           </div>

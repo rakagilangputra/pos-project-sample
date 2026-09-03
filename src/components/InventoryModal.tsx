@@ -79,9 +79,9 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-4 backdrop-blur-sm">
       <div className="flex h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl bg-[#FDFBF7] border-2 border-[#E5DACE] shadow-2xl">
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between border-b-2 border-[#E5DACE] bg-amber-100/60 px-6 py-4 gap-2">
+        <div className="flex items-center justify-between border-b-2 border-[#E5DACE] bg-amber-100/60 px-6 py-3.5">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#D97706] text-white shadow-sm">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#D97706] text-white shadow-sm font-black">
               <Package className="h-6 w-6" />
             </div>
             <div>
@@ -92,12 +92,49 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
             </div>
           </div>
 
+          <button
+            id="close-inventory-modal-btn"
+            onClick={onClose}
+            className="rounded-xl p-2 text-[#8C7B6C] hover:bg-[#E5DACE] hover:text-[#2D241E] transition cursor-pointer"
+            title="Tutup Modal"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Tab & Action Navigation Bar (aligned with Konsinyasi popup layout) */}
+        <div className="flex items-center justify-between border-b-2 border-[#E5DACE] bg-white px-6 py-2">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowHistory(false)}
+              className={`flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-black transition ${
+                !showHistory
+                  ? 'bg-[#D97706] text-white shadow-xs'
+                  : 'text-[#8C7B6C] hover:bg-[#FDFBF7] hover:text-[#2D241E]'
+              }`}
+            >
+              <Package className="h-4 w-4" />
+              <span>Daftar Produk ({products.length})</span>
+            </button>
+            <button
+              onClick={() => setShowHistory(true)}
+              className={`flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-black transition ${
+                showHistory
+                  ? 'bg-[#D97706] text-white shadow-xs'
+                  : 'text-[#8C7B6C] hover:bg-[#FDFBF7] hover:text-[#2D241E]'
+              }`}
+            >
+              <History className="h-4 w-4" />
+              <span>Riwayat Koreksi</span>
+            </button>
+          </div>
+
           <div className="flex items-center gap-2">
             {onOpenAddCategory && (
               <button
                 id="inv-add-category-btn"
                 onClick={onOpenAddCategory}
-                className="flex items-center gap-1.5 rounded-xl border-2 border-[#E5DACE] bg-white px-3 py-1.5 text-xs font-bold text-[#2D241E] hover:bg-amber-50 shadow-xs transition"
+                className="flex items-center gap-1.5 rounded-xl border border-[#D97706] bg-amber-50 px-3 py-1.5 text-xs font-black text-[#D97706] hover:bg-amber-100 transition shadow-xs"
               >
                 <FolderPlus className="h-4 w-4 text-[#D97706]" />
                 <span className="hidden sm:inline">+ Kategori</span>
@@ -108,23 +145,12 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
               <button
                 id="inv-add-product-btn"
                 onClick={onOpenAddProduct}
-                className="flex items-center gap-1.5 rounded-xl border-2 border-[#D97706] bg-[#D97706] px-3.5 py-1.5 text-xs font-black text-white hover:bg-amber-700 shadow-xs transition"
+                className="flex items-center gap-1.5 rounded-xl bg-[#D97706] px-3.5 py-1.5 text-xs font-black text-white hover:bg-amber-700 shadow-xs transition"
               >
                 <PackagePlus className="h-4 w-4" />
                 <span>+ Tambah Produk</span>
               </button>
             )}
-
-            <button
-              onClick={() => setShowHistory(!showHistory)}
-              className="flex items-center gap-1.5 rounded-xl border-2 border-[#E5DACE] bg-white px-3 py-1.5 text-xs font-bold text-[#8C7B6C] hover:bg-[#E5DACE]"
-            >
-              <History className="h-4 w-4" />
-              <span>{showHistory ? 'Daftar Produk' : 'Riwayat Koreksi'}</span>
-            </button>
-            <button onClick={onClose} className="rounded-full p-2 text-[#8C7B6C] hover:bg-[#E5DACE]">
-              <X className="h-5 w-5" />
-            </button>
           </div>
         </div>
 
@@ -301,6 +327,18 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
             </div>
           )}
         </div>
+
+        {/* Modal Footer with Close button (POS-US-040) */}
+        <div className="border-t border-[#E5DACE] bg-white px-6 py-3 flex justify-end">
+          <button
+            id="inventory-modal-close-btn"
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-gray-300 bg-white px-5 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 active:scale-95 transition"
+          >
+            Tutup
+          </button>
+        </div>
       </div>
 
       {/* ADJUSTMENT MODAL (POS-US-021) */}
@@ -412,17 +450,17 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
 
             <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#E5DACE]">
               <button
-                type="button"
-                onClick={() => setSelectedProduct(null)}
-                className="rounded-xl border border-[#E5DACE] bg-white px-4 py-2 text-xs font-bold text-[#8C7B6C] hover:bg-[#E5DACE]"
-              >
-                Batal
-              </button>
-              <button
                 type="submit"
-                className="rounded-xl bg-[#D97706] px-5 py-2 text-xs font-black text-white hover:bg-amber-700 shadow-xs"
+                className="rounded-xl bg-[#D97706] px-5 py-2 text-xs font-black text-white hover:bg-amber-700 shadow-xs active:scale-95 transition"
               >
                 Simpan Penyesuaian
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedProduct(null)}
+                className="rounded-xl border border-[#E5DACE] bg-white px-4 py-2 text-xs font-bold text-[#8C7B6C] hover:bg-[#E5DACE] active:scale-95 transition"
+              >
+                Tutup
               </button>
             </div>
           </form>

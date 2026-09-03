@@ -158,6 +158,21 @@ export const HandoffModal: React.FC<HandoffModalProps> = ({ isOpen, onClose }) =
             Demo PIN Rina: <strong>1234</strong> | Budi: <strong>2345</strong> | Siti SPV: <strong>8888</strong>
           </p>
         </div>
+
+        {/* Modal Footer with Close button (POS-US-040) */}
+        <div className="border-t border-gray-100 bg-white px-6 py-3 flex justify-end">
+          <button
+            id="handoff-modal-close-btn"
+            type="button"
+            onClick={() => {
+              setPin('');
+              onClose();
+            }}
+            className="rounded-xl border border-gray-300 bg-white px-5 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 active:scale-95 transition"
+          >
+            Tutup
+          </button>
+        </div>
       </div>
     </div>
   );

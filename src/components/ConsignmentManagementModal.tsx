@@ -187,18 +187,18 @@ export const ConsignmentManagementModal: React.FC<ConsignmentManagementModalProp
         className="flex h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl bg-[#FDFBF7] border-2 border-[#E5DACE] shadow-2xl animate-in fade-in zoom-in duration-200"
       >
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between border-b-2 border-[#E5DACE] bg-amber-100/70 px-6 py-3.5 gap-2">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#D97706] text-white shadow-sm font-black">
+        <div className="flex items-center justify-between border-b-2 border-[#E5DACE] bg-amber-100/70 px-6 py-3.5 gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#D97706] text-white shadow-sm font-black">
               <Building2 className="h-6 w-6" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-black text-[#2D241E]">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base font-black text-[#2D241E] truncate">
                   Manajemen Konsinyasi & Komisi Titipan
                 </h3>
                 {(overdueCount > 0 || dueTodayCount > 0) && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-black text-white shadow-xs">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-black text-white shadow-xs shrink-0">
                     <AlertTriangle className="h-3 w-3" />
                     <span>
                       {overdueCount > 0 ? `${overdueCount} Terlambat` : `${dueTodayCount} Jatuh Tempo`}
@@ -206,13 +206,13 @@ export const ConsignmentManagementModal: React.FC<ConsignmentManagementModalProp
                   </span>
                 )}
               </div>
-              <p className="text-xs text-[#8C7B6C] font-semibold">
+              <p className="text-xs text-[#8C7B6C] font-semibold truncate">
                 Buku Besar, Perhitungan Komisi Bersih & Jadwal Settlement Mitra (POS-US-030 s/d POS-US-035)
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => {
                 const res = generateSettlementCycles();
@@ -220,7 +220,7 @@ export const ConsignmentManagementModal: React.FC<ConsignmentManagementModalProp
                   alert(`${res.count} Siklus Settlement baru berhasil digenerate!`);
                 }
               }}
-              className="flex items-center gap-1.5 rounded-xl border border-[#E5DACE] bg-white px-3 py-1.5 text-xs font-bold text-[#2D241E] hover:bg-[#FDFBF7] transition shadow-xs"
+              className="flex items-center gap-1.5 rounded-xl border border-[#E5DACE] bg-white px-3 py-1.5 text-xs font-bold text-[#2D241E] hover:bg-[#FDFBF7] transition shadow-xs cursor-pointer"
               title="Perbarui / Hitung Ulang Siklus Settlement"
             >
               <RefreshCw className="h-3.5 w-3.5 text-[#D97706]" />
@@ -229,7 +229,8 @@ export const ConsignmentManagementModal: React.FC<ConsignmentManagementModalProp
             <button
               id="close-consignment-modal-btn"
               onClick={onClose}
-              className="rounded-xl p-2 text-[#8C7B6C] hover:bg-[#E5DACE] transition"
+              className="rounded-xl p-2 text-[#8C7B6C] hover:bg-[#E5DACE] hover:text-[#2D241E] transition cursor-pointer"
+              title="Tutup Modal"
             >
               <X className="h-5 w-5" />
             </button>
@@ -911,6 +912,18 @@ export const ConsignmentManagementModal: React.FC<ConsignmentManagementModalProp
           )}
         </div>
 
+        {/* Modal Footer with Close button (POS-US-040) */}
+        <div className="border-t border-[#E5DACE] bg-white px-6 py-3 flex justify-end">
+          <button
+            id="consignment-modal-close-btn"
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-gray-300 bg-white px-5 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 active:scale-95 transition"
+          >
+            Tutup
+          </button>
+        </div>
+
         {/* Modal Sub-Dialog: Record Settlement Payment (POS-US-035) */}
         {paymentCycle && (
           <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
@@ -1025,21 +1038,21 @@ export const ConsignmentManagementModal: React.FC<ConsignmentManagementModalProp
                   </div>
                 )}
 
-                {/* Actions */}
-                <div className="flex items-center justify-end gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setPaymentCycle(null)}
-                    className="rounded-xl border border-[#E5DACE] bg-white px-4 py-2 text-xs font-bold text-[#8C7B6C]"
-                  >
-                    Batal
-                  </button>
+                {/* Actions (POS-US-040: primary before Close) */}
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E5DACE]">
                   <button
                     id="confirm-settlement-payment-btn"
                     type="submit"
                     className="rounded-xl bg-[#D97706] px-5 py-2 text-xs font-black text-white hover:bg-amber-700 active:scale-[0.98] transition shadow-xs cursor-pointer"
                   >
                     Konfirmasi LUNAS ({formatIDR(paymentCycle.storeNetAfterCommission)})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentCycle(null)}
+                    className="rounded-xl border border-[#E5DACE] bg-white px-4 py-2 text-xs font-bold text-[#8C7B6C] hover:bg-gray-50"
+                  >
+                    Tutup
                   </button>
                 </div>
               </form>

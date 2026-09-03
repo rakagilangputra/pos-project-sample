@@ -6,12 +6,7 @@ import {
   LayoutGrid,
   List,
   Plus,
-  Cake,
-  Coffee,
-  Cookie,
-  PackagePlus,
-  FolderPlus,
-  Building2,
+  Package,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 import { Product } from '../types';
@@ -22,10 +17,7 @@ interface ProductCatalogProps {
   onOpenAddCategory?: () => void;
 }
 
-export const ProductCatalog: React.FC<ProductCatalogProps> = ({
-  onOpenAddProduct,
-  onOpenAddCategory,
-}) => {
+export const ProductCatalog: React.FC<ProductCatalogProps> = () => {
   const { products, categories: contextCategories, addToCart, cart } = usePOS();
 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -34,34 +26,40 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [stockWarningToast, setStockWarningToast] = useState<string | null>(null);
 
-  // Dynamic category tabs merged with 'all'
+  // Dynamic category tabs merged with 'all' and 'Made-to-Order' (POS-US-037)
   const categoryList = [
     { id: 'all', name: 'Semua Menu', icon: '🍞' },
     ...contextCategories
-      .filter((c) => c.id !== 'all')
+      .filter((c) => c.id !== 'all' && c.id !== 'custom_cake')
       .map((c) => ({
         id: c.id,
         name: c.name,
         icon: c.icon || '🥐',
       })),
+    // Made-to-Order category
+    { id: 'mto', name: 'Made-to-Order', icon: '🎂' },
   ];
 
   // Filter logic
   const filteredProducts = products.filter((prod) => {
     // Category match
-    if (selectedCategory !== 'all' && prod.category !== selectedCategory) {
+    if (selectedCategory === 'mto') {
+      if (!prod.isMadeToOrder && prod.category !== 'custom_cake') return false;
+    } else if (selectedCategory !== 'all' && prod.category !== selectedCategory) {
       return false;
     }
+
     // Shortcut filters
     if (filterShortcut === 'popular' && !prod.popular) {
       return false;
     }
-    if (filterShortcut === 'low_stock' && prod.stock >= prod.lowStockThreshold) {
+    if (filterShortcut === 'low_stock' && (prod.stock >= prod.lowStockThreshold || prod.stock <= 0)) {
       return false;
     }
     if (filterShortcut === 'consignment' && prod.ownershipType !== 'consignment') {
       return false;
     }
+
     // Search query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -84,173 +82,155 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-transparent">
-      {/* Category Pills - Bento touch navigation */}
-      <div className="pb-3">
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+      {/* 1. Product Search Bar (POS-US-037) */}
+      <div className="pb-2.5">
+        <div className="relative w-full">
+          <Search className="absolute left-3.5 top-3 h-4 w-4 text-[#6B7280]" />
+          <input
+            id="catalog-search-input"
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Cari nama roti, cake, pastry, SKU, atau mitra..."
+            className="w-full rounded-xl border border-[#E5E7EB] bg-white pl-10 pr-8 py-2.5 text-sm text-[#1F2937] placeholder-[#6B7280] focus:border-[#D97706] focus:outline-none focus:ring-1 focus:ring-[#D97706] shadow-xs font-medium"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-3 text-xs text-[#6B7280] hover:text-[#1F2937]"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {/* 2. Horizontally scrollable category navigation */}
+        <div className="mt-2.5 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
           {categoryList.map((cat) => {
             const isSelected = selectedCategory === cat.id;
             return (
               <button
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id)}
-                className={`flex shrink-0 items-center gap-2 rounded-2xl px-4 py-2.5 text-sm sm:text-base font-bold transition active:scale-95 ${
+                className={`flex shrink-0 items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition active:scale-95 ${
                   isSelected
-                    ? 'bg-[#D97706] text-white border-2 border-[#D97706] shadow-sm'
-                    : 'bg-white border-2 border-[#E5DACE] text-[#2D241E] hover:border-[#D97706] shadow-2xs'
+                    ? 'bg-[#D97706] text-white shadow-xs'
+                    : 'bg-white border border-[#E5E7EB] text-[#1F2937] hover:border-[#D97706] hover:bg-[#F7F7F5]'
                 }`}
               >
-                <span className="text-lg leading-none">{cat.icon}</span>
+                <span>{cat.icon}</span>
                 <span className="whitespace-nowrap">{cat.name}</span>
               </button>
             );
           })}
-
-          {onOpenAddCategory && (
-            <button
-              onClick={onOpenAddCategory}
-              className="flex shrink-0 items-center gap-1.5 rounded-2xl border-2 border-dashed border-[#D97706] bg-amber-50/60 px-3 py-2 text-xs font-bold text-[#D97706] hover:bg-amber-100 transition shadow-2xs"
-              title="Tambah Kategori Baru"
-            >
-              <FolderPlus className="h-4 w-4" />
-              <span className="whitespace-nowrap">+ Kategori</span>
-            </button>
-          )}
         </div>
 
-        {/* Search Bar & Shortcuts Filter */}
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2.5">
-          <div className="relative flex-1 min-w-[180px]">
-            <Search className="absolute left-3.5 top-3 h-4 w-4 text-[#8C7B6C]" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Ketik nama roti, croissant, SKU, atau supplier..."
-              className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white pl-10 pr-8 py-2.5 text-sm text-[#2D241E] placeholder-[#8C7B6C] focus:border-[#D97706] focus:outline-none shadow-2xs font-semibold"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-3 text-xs text-[#8C7B6C] hover:text-[#2D241E]"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Shortcut: Paling Laris */}
+        {/* 3. Filter shortcuts and view mode */}
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              onClick={() => setFilterShortcut('all')}
+              className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
+                filterShortcut === 'all'
+                  ? 'bg-[#1F2937] text-white'
+                  : 'bg-white border border-[#E5E7EB] text-[#6B7280] hover:text-[#1F2937]'
+              }`}
+            >
+              Semua
+            </button>
             <button
               onClick={() => setFilterShortcut(filterShortcut === 'popular' ? 'all' : 'popular')}
-              className={`flex items-center gap-1.5 rounded-2xl px-3 py-2 text-xs font-bold transition active:scale-95 ${
+              className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition ${
                 filterShortcut === 'popular'
-                  ? 'bg-[#D97706] text-white border-2 border-[#D97706] shadow-2xs'
-                  : 'bg-white text-[#8C7B6C] border-2 border-[#E5DACE] hover:border-[#D97706] hover:text-[#2D241E]'
+                  ? 'bg-[#D97706] text-white'
+                  : 'bg-white border border-[#E5E7EB] text-[#6B7280] hover:text-[#1F2937]'
               }`}
             >
-              <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-              <span>Terlaris</span>
+              <Sparkles className="h-3 w-3 text-amber-500" />
+              <span>Populer</span>
             </button>
-
-            {/* Shortcut: Stok Menipis */}
             <button
               onClick={() => setFilterShortcut(filterShortcut === 'low_stock' ? 'all' : 'low_stock')}
-              className={`flex items-center gap-1.5 rounded-2xl px-3 py-2 text-xs font-bold transition active:scale-95 ${
+              className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition ${
                 filterShortcut === 'low_stock'
-                  ? 'bg-rose-600 text-white border-2 border-rose-600 shadow-2xs'
-                  : 'bg-white text-[#8C7B6C] border-2 border-[#E5DACE] hover:border-rose-400 hover:text-rose-600'
+                  ? 'bg-rose-600 text-white'
+                  : 'bg-white border border-[#E5E7EB] text-[#6B7280] hover:text-[#1F2937]'
               }`}
             >
-              <AlertTriangle className="h-3.5 w-3.5 text-rose-500" />
+              <AlertTriangle className="h-3 w-3 text-rose-500" />
               <span>Stok Menipis</span>
             </button>
-
-            {/* Shortcut: Konsinyasi */}
             <button
               onClick={() => setFilterShortcut(filterShortcut === 'consignment' ? 'all' : 'consignment')}
-              className={`flex items-center gap-1.5 rounded-2xl px-3 py-2 text-xs font-bold transition active:scale-95 ${
+              className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
                 filterShortcut === 'consignment'
-                  ? 'bg-purple-700 text-white border-2 border-purple-700 shadow-2xs'
-                  : 'bg-white text-[#8C7B6C] border-2 border-[#E5DACE] hover:border-purple-500 hover:text-purple-700'
+                  ? 'bg-purple-700 text-white'
+                  : 'bg-white border border-[#E5E7EB] text-[#6B7280] hover:text-[#1F2937]'
               }`}
             >
-              <span>🤝 Konsinyasi</span>
+              Konsinyasi
             </button>
+          </div>
 
-            {/* Add Product Button */}
-            {onOpenAddProduct && (
-              <button
-                id="catalog-add-product-quick-btn"
-                onClick={onOpenAddProduct}
-                className="flex items-center gap-1 rounded-2xl bg-[#D97706] px-3.5 py-2 text-xs font-black text-white hover:bg-amber-700 transition active:scale-95 shadow-2xs"
-              >
-                <PackagePlus className="h-3.5 w-3.5" />
-                <span>+ Produk</span>
-              </button>
-            )}
-
-            {/* View Mode Switch */}
-            <div className="flex rounded-2xl border-2 border-[#E5DACE] bg-white p-0.5">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`p-1.5 rounded-xl transition ${
-                  viewMode === 'grid' ? 'bg-[#D97706] text-white' : 'text-[#8C7B6C] hover:text-[#2D241E]'
-                }`}
-                title="Tampilan Bento Grid"
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`p-1.5 rounded-xl transition ${
-                  viewMode === 'list' ? 'bg-[#D97706] text-white' : 'text-[#8C7B6C] hover:text-[#2D241E]'
-                }`}
-                title="Tampilan List"
-              >
-                <List className="h-4 w-4" />
-              </button>
-            </div>
+          {/* View Mode Switch (Grid / List) */}
+          <div className="flex rounded-lg border border-[#E5E7EB] bg-white p-0.5">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-1.5 rounded-md transition ${
+                viewMode === 'grid' ? 'bg-[#D97706] text-white' : 'text-[#6B7280] hover:text-[#1F2937]'
+              }`}
+              title="Tampilan Grid"
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-1.5 rounded-md transition ${
+                viewMode === 'list' ? 'bg-[#D97706] text-white' : 'text-[#6B7280] hover:text-[#1F2937]'
+              }`}
+              title="Tampilan List"
+            >
+              <List className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Warning Notification Toast */}
+      {/* Stock warning notification */}
       {stockWarningToast && (
-        <div className="mb-2 rounded-2xl bg-amber-50 border-2 border-[#D97706] p-3 text-xs font-bold text-amber-900 shadow-sm flex items-center gap-2 animate-fadeIn">
+        <div className="mb-2 rounded-xl bg-amber-50 border border-[#D97706] p-2.5 text-xs font-medium text-amber-900 shadow-xs flex items-center gap-2 animate-fadeIn">
           <AlertTriangle className="h-4 w-4 text-[#D97706] shrink-0" />
           <span>{stockWarningToast}</span>
         </div>
       )}
 
-      {/* Products Display Area - Bento Grid */}
-      <div className="flex-1 overflow-y-auto pr-1">
+      {/* 4. Product Results Display */}
+      <div className="flex-1 overflow-y-auto pr-0.5">
         {filteredProducts.length === 0 ? (
-          <div className="flex h-64 flex-col items-center justify-center text-center rounded-3xl border-2 border-dashed border-[#E5DACE] bg-white/50 p-6">
-            <p className="text-[#8C7B6C] text-sm font-medium">Tidak ada produk yang cocok dengan filter saat ini.</p>
-            <div className="mt-3 flex gap-2">
+          <div className="flex h-60 flex-col items-center justify-center text-center rounded-2xl border border-dashed border-[#E5E7EB] bg-white p-6">
+            <Package className="h-10 w-10 text-[#6B7280]/60 mb-2" />
+            <p className="text-sm font-semibold text-[#1F2937]">Tidak ada produk ditemukan</p>
+            <p className="text-xs text-[#6B7280] mt-1 max-w-xs">
+              {searchQuery
+                ? `Tidak ada menu yang sesuai dengan pencarian "${searchQuery}".`
+                : 'Tidak ada produk dalam kategori atau filter ini.'}
+            </p>
+            {(searchQuery || filterShortcut !== 'all' || selectedCategory !== 'all') && (
               <button
                 onClick={() => {
                   setSelectedCategory('all');
                   setFilterShortcut('all');
                   setSearchQuery('');
                 }}
-                className="text-xs font-bold text-[#D97706] underline"
+                className="mt-3 rounded-lg border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-semibold text-[#D97706] hover:bg-[#F7F7F5]"
               >
-                Reset semua filter
+                Reset Filter & Pencarian
               </button>
-              {onOpenAddProduct && (
-                <button
-                  onClick={onOpenAddProduct}
-                  className="rounded-xl bg-[#D97706] px-3 py-1.5 text-xs font-bold text-white shadow-xs"
-                >
-                  + Tambah Produk Baru
-                </button>
-              )}
-            </div>
+            )}
           </div>
         ) : viewMode === 'grid' ? (
-          /* BENTO GRID PRODUCT TILES */
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-3.5">
+          /* Grid View: Compact, uniform card height */
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3">
             {filteredProducts.map((product) => {
               const inCartCount = cart
                 .filter((item) => item.productId === product.id)
@@ -264,72 +244,72 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                 <div
                   key={product.id}
                   onClick={() => handleProductClick(product)}
-                  className="group relative flex flex-col justify-between overflow-hidden rounded-3xl border-2 border-[#E5DACE] bg-white p-4 shadow-sm hover:border-[#D97706] hover:shadow-md cursor-pointer active:scale-95 transition-all select-none"
+                  className="group relative flex flex-col justify-between overflow-hidden rounded-xl border border-[#E5E7EB] bg-white p-3 hover:border-[#D97706] hover:shadow-xs cursor-pointer active:scale-[0.98] transition select-none"
                 >
-                  {/* In Cart Badge */}
+                  {/* In Cart Count Badge */}
                   {inCartCount > 0 && (
-                    <div className="absolute top-3 left-3 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-[#059669] text-xs font-black text-white shadow-md ring-2 ring-white">
+                    <div className="absolute top-2 left-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-[#059669] text-[11px] font-bold text-white shadow-xs">
                       {inCartCount}
                     </div>
                   )}
 
-                  {/* Stock Tag Badge */}
-                  <div className="absolute top-3 right-3 z-10">
+                  {/* Stock Status Badge */}
+                  <div className="absolute top-2 right-2 z-10">
                     {isOutOfStock ? (
-                      <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-extrabold text-white shadow-xs">
+                      <span className="rounded-md bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
                         Habis
                       </span>
                     ) : isLowStock ? (
-                      <span className="rounded-full bg-[#D97706] px-2 py-0.5 text-[10px] font-extrabold text-white shadow-xs">
+                      <span className="rounded-md bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
                         Sisa {product.stock}
                       </span>
                     ) : (
-                      <span className="rounded-full bg-[#FDFBF7] border border-[#E5DACE] px-2 py-0.5 text-[10px] font-bold text-[#8C7B6C]">
-                        {product.stock} pcs
+                      <span className="rounded-md bg-[#F7F7F5] border border-[#E5E7EB] px-1.5 py-0.5 text-[10px] font-medium text-[#6B7280]">
+                        {product.stock}
                       </span>
                     )}
                   </div>
 
-                  {/* Product Image */}
-                  <div className="relative mb-3 aspect-4/3 w-full overflow-hidden rounded-2xl bg-[#FDFBF7] border border-[#E5DACE]/50">
+                  {/* Image */}
+                  <div className="relative mb-2 aspect-4/3 w-full overflow-hidden rounded-lg bg-[#F7F7F5] border border-[#E5E7EB]/70">
                     <img
                       src={product.image}
                       alt={product.name}
-                      className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                      className="h-full w-full object-cover transition duration-200 group-hover:scale-105"
                       loading="lazy"
                     />
                     {product.isMadeToOrder && (
-                      <div className="absolute bottom-1 left-1 right-1 rounded-lg bg-black/70 px-1.5 py-0.5 text-center text-[10px] font-bold text-white backdrop-blur-xs">
-                        🎂 Bisa DP / Custom
+                      <div className="absolute bottom-1 left-1 right-1 rounded bg-black/75 px-1 py-0.5 text-center text-[9px] font-semibold text-white">
+                        Made-to-Order
                       </div>
                     )}
                   </div>
 
-                  {/* Product Info */}
+                  {/* Content */}
                   <div>
-                    <h4 className="line-clamp-2 text-base font-bold text-[#2D241E] leading-tight">
+                    <h4 className="line-clamp-1 text-sm font-bold text-[#1F2937] leading-tight">
                       {product.name}
                     </h4>
-                    <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                      <p className="text-xs font-medium text-[#8C7B6C]">{product.categoryLabel}</p>
+                    <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                      <span className="text-[11px] text-[#6B7280]">{product.categoryLabel}</span>
                       {isConsignment && (
-                        <span className="rounded-md bg-purple-100 border border-purple-200 px-1.5 py-0.2 text-[9px] font-black text-purple-900">
-                          🤝 Titipan {product.supplierName ? `: ${product.supplierName}` : ''}
+                        <span className="rounded bg-purple-50 border border-purple-200 px-1 text-[9px] font-semibold text-purple-800">
+                          Konsinyasi
                         </span>
                       )}
                     </div>
                   </div>
 
-                  {/* Price & Add Action */}
-                  <div className="mt-3 flex items-center justify-between pt-2 border-t border-[#E5DACE]/50">
-                    <span className="text-base sm:text-lg font-bold text-[#D97706]">
+                  {/* Price & Add */}
+                  <div className="mt-2.5 flex items-center justify-between pt-1.5 border-t border-[#E5E7EB]">
+                    <span className="text-sm font-bold text-[#D97706]">
                       {formatIDR(product.price)}
                     </span>
                     <button
                       type="button"
-                      className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#D97706] text-white shadow-xs transition group-hover:brightness-95 active:scale-90"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#D97706] text-white hover:bg-amber-700 active:scale-95 transition"
                     >
-                      <Plus className="h-5 w-5" />
+                      <Plus className="h-4 w-4" />
                     </button>
                   </div>
                 </div>
@@ -337,62 +317,63 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
             })}
           </div>
         ) : (
-          /* COMPACT LIST VIEW IN BENTO STYLE */
-          <div className="space-y-2.5">
+          /* List View */
+          <div className="space-y-1.5">
             {filteredProducts.map((product) => {
               const inCartCount = cart
                 .filter((item) => item.productId === product.id)
                 .reduce((sum, item) => sum + item.quantity, 0);
-
               const isConsignment = product.ownershipType === 'consignment';
 
               return (
                 <div
                   key={product.id}
                   onClick={() => handleProductClick(product)}
-                  className="flex items-center justify-between rounded-3xl border-2 border-[#E5DACE] bg-white p-3.5 transition hover:border-[#D97706] hover:shadow-xs active:scale-[0.99] cursor-pointer"
+                  className="flex items-center justify-between gap-3 rounded-xl border border-[#E5E7EB] bg-white p-2.5 hover:border-[#D97706] cursor-pointer active:scale-[0.99] transition select-none"
                 >
                   <div className="flex items-center gap-3">
                     <img
                       src={product.image}
                       alt={product.name}
-                      className="h-14 w-14 rounded-2xl object-cover border border-[#E5DACE]"
+                      className="h-12 w-12 rounded-lg object-cover bg-[#F7F7F5] border border-[#E5E7EB]"
+                      loading="lazy"
                     />
                     <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-bold text-[#2D241E]">{product.name}</h4>
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="text-sm font-bold text-[#1F2937]">{product.name}</h4>
                         {product.isMadeToOrder && (
-                          <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-800">
-                            PO/DP
+                          <span className="rounded bg-black/75 px-1 py-0.2 text-[9px] font-semibold text-white">
+                            MTO
                           </span>
                         )}
                         {isConsignment && (
-                          <span className="rounded-md bg-purple-100 border border-purple-200 px-1.5 py-0.5 text-[10px] font-black text-purple-900">
-                            🤝 Titipan {product.supplierName ? `(${product.supplierName})` : ''}
+                          <span className="rounded bg-purple-50 border border-purple-200 px-1 text-[9px] font-semibold text-purple-800">
+                            Konsinyasi
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-3 text-xs text-[#8C7B6C] mt-0.5">
-                        <span>SKU: {product.sku}</span>
+                      <div className="flex items-center gap-2 text-xs text-[#6B7280] mt-0.5">
+                        <span>{product.sku}</span>
                         <span>•</span>
-                        <span className={product.stock <= 0 ? 'text-rose-600 font-bold' : ''}>
-                          Stok: {product.stock}
-                        </span>
+                        <span>Stok: {product.stock} pcs</span>
                       </div>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <span className="text-base font-bold text-[#D97706]">
-                      {formatIDR(product.price)}
-                    </span>
                     {inCartCount > 0 && (
-                      <span className="rounded-full bg-[#059669] px-2.5 py-1 text-xs font-black text-white">
+                      <span className="rounded-full bg-[#059669] px-2 py-0.5 text-xs font-bold text-white">
                         {inCartCount} di nota
                       </span>
                     )}
-                    <button className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#D97706] text-white hover:brightness-95">
-                      <Plus className="h-5 w-5" />
+                    <span className="text-sm font-bold text-[#D97706]">
+                      {formatIDR(product.price)}
+                    </span>
+                    <button
+                      type="button"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#D97706] text-white hover:bg-amber-700 active:scale-95 transition"
+                    >
+                      <Plus className="h-4 w-4" />
                     </button>
                   </div>
                 </div>

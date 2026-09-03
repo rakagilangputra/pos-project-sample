@@ -174,22 +174,22 @@ export const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
             </div>
           </div>
 
-          {/* Actions */}
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-2xl border-2 border-[#E5DACE] bg-white px-5 py-2.5 text-xs font-black text-[#8C7B6C] hover:bg-[#E5DACE] transition"
-            >
-              Batal
-            </button>
+          {/* Actions (POS-US-040: primary before Close) */}
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E5DACE]">
             <button
               id="submit-create-category-btn"
               type="submit"
-              className="flex items-center gap-2 rounded-2xl border-2 border-[#D97706] bg-[#D97706] px-6 py-2.5 text-xs font-black text-white shadow-md hover:bg-amber-700 transition"
+              className="flex items-center gap-2 rounded-xl bg-[#D97706] px-5 py-2 text-xs font-black text-white shadow-xs hover:bg-amber-700 active:scale-95 transition"
             >
               <Check className="h-4 w-4" />
               <span>Simpan Kategori</span>
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl border border-[#E5DACE] bg-white px-4 py-2 text-xs font-bold text-[#8C7B6C] hover:bg-[#E5DACE] active:scale-95 transition"
+            >
+              Tutup
             </button>
           </div>
         </form>

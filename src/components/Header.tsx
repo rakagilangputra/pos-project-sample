@@ -44,73 +44,72 @@ export const Header: React.FC<HeaderProps> = ({
   const dueTodayCount = settlementCycles.filter((c) => c.status === 'due').length;
 
   return (
-    <header className="h-16 shrink-0 bg-white border-b-2 border-[#E5DACE] px-3 sm:px-6 flex items-center justify-between shadow-xs select-none">
+    <header className="h-14 shrink-0 bg-white border-b border-[#E5E7EB] px-3 sm:px-5 flex items-center justify-between select-none">
       {/* Brand & Store Name */}
-      <div className="flex items-center gap-3.5">
-        <div className="w-10 h-10 bg-[#D97706] rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-xs">
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 bg-[#D97706] rounded-lg flex items-center justify-center text-white font-bold text-base shadow-xs">
           S
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-base sm:text-xl font-bold tracking-tight text-[#2D241E]">
+            <h1 className="text-sm sm:text-base font-bold tracking-tight text-[#1F2937]">
               SweetCrust Bakery
             </h1>
-            <span className="hidden sm:inline-block rounded-md bg-[#E5DACE]/60 px-2 py-0.5 text-[10px] font-bold text-[#8C7B6C] uppercase tracking-wider">
-              Register 01
+            <span className="hidden sm:inline-block rounded bg-[#F7F7F5] border border-[#E5E7EB] px-1.5 py-0.2 text-[10px] font-medium text-[#6B7280]">
+              Reg 01
             </span>
           </div>
-          <p className="text-xs font-medium text-[#8C7B6C] hidden sm:block">Touchscreen Bakery POS</p>
         </div>
       </div>
 
       {/* Center Navigation Tabs */}
-      <nav className="flex items-center gap-1 rounded-2xl bg-[#FDFBF7] border border-[#E5DACE] p-1">
+      <nav className="flex items-center gap-1 rounded-lg bg-[#F7F7F5] border border-[#E5E7EB] p-0.5">
         <button
           onClick={() => onSelectTab('pos')}
-          className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition active:scale-95 ${
+          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition active:scale-95 ${
             currentTab === 'pos'
-              ? 'bg-[#D97706] text-white shadow-xs'
-              : 'text-[#8C7B6C] hover:text-[#2D241E]'
+              ? 'bg-white text-[#1F2937] shadow-xs border border-[#E5E7EB]'
+              : 'text-[#6B7280] hover:text-[#1F2937]'
           }`}
         >
-          <ShoppingBag className="h-4 w-4" />
+          <ShoppingBag className="h-3.5 w-3.5" />
           <span>Kasir (POS)</span>
         </button>
 
         <button
           onClick={() => onSelectTab('dashboard')}
-          className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition active:scale-95 ${
+          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition active:scale-95 ${
             currentTab === 'dashboard'
-              ? 'bg-[#D97706] text-white shadow-xs'
-              : 'text-[#8C7B6C] hover:text-[#2D241E]'
+              ? 'bg-white text-[#1F2937] shadow-xs border border-[#E5E7EB]'
+              : 'text-[#6B7280] hover:text-[#1F2937]'
           }`}
         >
-          <LayoutDashboard className="h-4 w-4" />
+          <LayoutDashboard className="h-3.5 w-3.5" />
           <span>Dashboard</span>
         </button>
 
         <button
           onClick={() => onSelectTab('audit')}
-          className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition active:scale-95 ${
+          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition active:scale-95 ${
             currentTab === 'audit'
-              ? 'bg-[#D97706] text-white shadow-xs'
-              : 'text-[#8C7B6C] hover:text-[#2D241E]'
+              ? 'bg-white text-[#1F2937] shadow-xs border border-[#E5E7EB]'
+              : 'text-[#6B7280] hover:text-[#1F2937]'
           }`}
         >
-          <ShieldCheck className="h-4 w-4" />
+          <ShieldCheck className="h-3.5 w-3.5" />
           <span>Audit Log</span>
         </button>
       </nav>
 
       {/* Right Actions & Operator Status */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5 sm:gap-2">
         {/* Parkir Nota Shortcut Badge (POS-US-012) */}
         {setAsideOrders.length > 0 && (
           <button
             onClick={onOpenHeldOrdersModal}
-            className="flex items-center gap-1.5 rounded-2xl bg-[#D97706] px-3 py-2 text-xs font-bold text-white shadow-sm hover:brightness-95 active:scale-95 animate-pulse"
+            className="flex items-center gap-1.5 rounded-lg bg-[#D97706] px-2.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-amber-700 active:scale-95"
           >
-            <Clock className="h-4 w-4" />
+            <Clock className="h-3.5 w-3.5" />
             <span>{setAsideOrders.length} Diparkir</span>
           </button>
         )}
@@ -119,21 +118,21 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           id="header-consignment-btn"
           onClick={onOpenConsignmentModal}
-          className={`relative flex items-center gap-1.5 rounded-2xl border-2 px-3 py-2 text-xs font-bold transition active:scale-95 shadow-2xs ${
+          className={`relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition active:scale-95 ${
             overdueCount > 0
               ? 'border-rose-400 bg-rose-50 text-rose-800'
               : dueTodayCount > 0
               ? 'border-amber-400 bg-amber-50 text-amber-900'
-              : 'border-[#E5DACE] bg-white text-[#2D241E] hover:border-[#D97706]'
+              : 'border-[#E5E7EB] bg-white text-[#1F2937] hover:border-[#D97706]'
           }`}
           title="Manajemen Titipan & Settlement Konsinyasi"
         >
-          <Building2 className="h-4 w-4 text-[#D97706]" />
+          <Building2 className="h-3.5 w-3.5 text-[#D97706]" />
           <span className="hidden sm:inline">Konsinyasi</span>
           {(overdueCount > 0 || dueTodayCount > 0) && (
             <span
-              className={`rounded-full px-1.5 py-0.2 text-[9px] font-black text-white ${
-                overdueCount > 0 ? 'bg-rose-600 animate-pulse' : 'bg-amber-600'
+              className={`rounded-full px-1.5 py-0.2 text-[9px] font-bold text-white ${
+                overdueCount > 0 ? 'bg-rose-600' : 'bg-amber-600'
               }`}
             >
               {overdueCount > 0 ? `${overdueCount} Overdue` : `${dueTodayCount} Due`}
@@ -144,10 +143,10 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Riwayat Transaksi Shortcut */}
         <button
           onClick={onOpenHistoryModal}
-          className="hidden md:flex items-center gap-1.5 rounded-2xl border-2 border-[#E5DACE] bg-white px-3 py-2 text-xs font-bold text-[#2D241E] hover:border-[#D97706] active:scale-95 transition"
+          className="hidden md:flex items-center gap-1.5 rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#1F2937] hover:border-[#D97706] active:scale-95 transition"
           title="Lihat Riwayat Nota, Void & Refund"
         >
-          <History className="h-4 w-4 text-[#8C7B6C]" />
+          <History className="h-3.5 w-3.5 text-[#6B7280]" />
           <span>Riwayat</span>
         </button>
 
@@ -155,43 +154,44 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           id="header-stock-btn"
           onClick={onOpenInventoryModal}
-          className="hidden md:flex items-center gap-1.5 rounded-2xl border-2 border-[#E5DACE] bg-white px-3 py-2 text-xs font-bold text-[#2D241E] hover:border-[#D97706] active:scale-95 transition"
+          className="hidden md:flex items-center gap-1.5 rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#1F2937] hover:border-[#D97706] active:scale-95 transition"
           title="Manajemen & Koreksi Stok Roti"
         >
-          <Package className="h-4 w-4 text-[#8C7B6C]" />
+          <Package className="h-3.5 w-3.5 text-[#6B7280]" />
           <span>Stok</span>
         </button>
 
         {/* Status Shift & Kas (POS-US-003, POS-US-005) */}
         <button
           onClick={onOpenSessionModal}
-          className={`flex items-center gap-2 rounded-2xl border-2 px-3 py-2 text-xs font-bold transition active:scale-95 ${
+          className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition active:scale-95 ${
             currentSession
               ? 'border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100'
               : 'border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100'
           }`}
         >
-          <Coins className={`h-4 w-4 ${currentSession ? 'text-[#059669]' : 'text-rose-600'}`} />
+          <Coins className={`h-3.5 w-3.5 ${currentSession ? 'text-[#059669]' : 'text-rose-600'}`} />
           <span className="hidden sm:inline">
-            {currentSession ? `Shift: ${formatIDR(currentSession.expectedCash)}` : 'Buka Shift'}
+            {currentSession ? `Kas: ${formatIDR(currentSession.expectedCash)}` : 'Buka Shift'}
           </span>
         </button>
 
         {/* Active Cashier Switcher Profile (POS-US-004) */}
         <button
           onClick={onOpenHandoffModal}
-          className="flex items-center gap-2.5 rounded-2xl border-2 border-[#E5DACE] bg-white p-1.5 pr-3 hover:border-[#D97706] active:scale-95 transition shadow-xs"
+          className="flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white p-1 pr-2 hover:border-[#D97706] active:scale-95 transition"
         >
-          <div className="h-8 w-8 rounded-full bg-[#E5DACE] text-[#2D241E] flex items-center justify-center font-bold text-xs">
+          <div className="h-6 w-6 rounded-full bg-[#F7F7F5] border border-[#E5E7EB] text-[#1F2937] flex items-center justify-center font-bold text-[10px]">
             {currentUser.name.split(' ').map((n) => n[0]).slice(0, 2).join('')}
           </div>
           <div className="text-left leading-tight hidden lg:block">
-            <span className="block text-xs font-bold text-[#2D241E]">{currentUser.name}</span>
-            <span className="block text-[10px] font-semibold text-[#8C7B6C] uppercase">{currentUser.role}</span>
+            <span className="block text-xs font-bold text-[#1F2937]">{currentUser.name}</span>
+            <span className="block text-[9px] font-medium text-[#6B7280] uppercase">{currentUser.role}</span>
           </div>
-          <ChevronDown className="h-3.5 w-3.5 text-[#8C7B6C]" />
+          <ChevronDown className="h-3 w-3 text-[#6B7280]" />
         </button>
       </div>
     </header>
+
   );
 };
