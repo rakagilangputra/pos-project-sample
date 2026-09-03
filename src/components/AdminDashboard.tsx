@@ -84,7 +84,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenConsignmen
   const consignmentCommission = validLedger.reduce((sum, e) => sum + e.commissionAmount, 0);
   const consignmentUnits = validLedger.reduce((sum, e) => sum + e.quantity, 0);
   const unsettledCycles = settlementCycles.filter((s) => s.status !== 'settled');
-  const unsettledDebt = unsettledCycles.reduce((sum, s) => sum + s.commissionPayable, 0);
+  const unsettledDebt = unsettledCycles.reduce((sum, s) => sum + s.storeNetAfterCommission, 0);
   const overdueCount = settlementCycles.filter((s) => s.status === 'overdue').length;
 
   return (

@@ -957,7 +957,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       'SETTLEMENT_PAYMENT',
       'consignment',
       cycleId,
-      `Pembayaran Settlement Komisi Konsinyasi: ${target.supplierName} sebesar Rp ${target.commissionPayable.toLocaleString('id-ID')} via ${paymentMethod.toUpperCase()}${reference ? ' (Ref: ' + reference + ')' : ''}. Dicatat oleh ${currentUser.name}`
+      `Pembayaran Settlement Hak Supplier: ${target.supplierName} sebesar Rp ${target.storeNetAfterCommission.toLocaleString('id-ID')} via ${paymentMethod.toUpperCase()}${reference ? ' (Ref: ' + reference + ')' : ''}. Dicatat oleh ${currentUser.name}`
     );
 
     posSound.cashRegister();

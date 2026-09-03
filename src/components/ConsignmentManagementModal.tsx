@@ -115,7 +115,7 @@ export const ConsignmentManagementModal: React.FC<ConsignmentManagementModalProp
 
     // Outstanding unpaid settlements
     const unpaidSettlements = settlementCycles.filter((s) => s.status !== 'settled');
-    const totalUnsettledDebt = unpaidSettlements.reduce((sum, s) => sum + s.commissionPayable, 0);
+    const totalUnsettledDebt = unpaidSettlements.reduce((sum, s) => sum + s.storeNetAfterCommission, 0);
 
     return {
       totalUnits,
@@ -822,10 +822,10 @@ export const ConsignmentManagementModal: React.FC<ConsignmentManagementModalProp
                               setPayError('');
                               setPaySuccess('');
                             }}
-                            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#D97706] py-2.5 text-xs font-black text-white hover:bg-amber-700 transition shadow-xs"
+                            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#D97706] py-2.5 px-4 text-xs font-black text-white hover:bg-amber-700 active:scale-[0.98] transition shadow-xs cursor-pointer"
                           >
-                            <CreditCard className="h-4 w-4" />
-                            <span>Bayar Settlement ({formatIDR(cycle.commissionPayable)})</span>
+                            <CreditCard className="h-4 w-4 shrink-0" />
+                            <span>Bayar Settlement ({formatIDR(cycle.storeNetAfterCommission)})</span>
                           </button>
                         </div>
                       )}
@@ -945,8 +945,14 @@ export const ConsignmentManagementModal: React.FC<ConsignmentManagementModalProp
                 <span className="text-[10px] uppercase font-bold text-[#8C7B6C]">Penerima:</span>
                 <div className="text-sm font-black text-[#2D241E]">{paymentCycle.supplierName}</div>
                 <div className="flex justify-between text-xs pt-1">
-                  <span className="text-[#8C7B6C]">Total Kewajiban Komisi:</span>
-                  <span className="text-sm font-black text-[#D97706]">
+                  <span className="text-[#8C7B6C]">Total Hak Supplier (Settlement):</span>
+                  <span className="text-sm font-black text-emerald-800">
+                    {formatIDR(paymentCycle.storeNetAfterCommission)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-[11px] text-[#8C7B6C] pt-0.5">
+                  <span>Komisi Toko:</span>
+                  <span className="font-bold text-[#D97706]">
                     {formatIDR(paymentCycle.commissionPayable)}
                   </span>
                 </div>
@@ -1031,9 +1037,9 @@ export const ConsignmentManagementModal: React.FC<ConsignmentManagementModalProp
                   <button
                     id="confirm-settlement-payment-btn"
                     type="submit"
-                    className="rounded-xl bg-[#D97706] px-5 py-2 text-xs font-black text-white hover:bg-amber-700 shadow-xs"
+                    className="rounded-xl bg-[#D97706] px-5 py-2 text-xs font-black text-white hover:bg-amber-700 active:scale-[0.98] transition shadow-xs cursor-pointer"
                   >
-                    Konfirmasi LUNAS
+                    Konfirmasi LUNAS ({formatIDR(paymentCycle.storeNetAfterCommission)})
                   </button>
                 </div>
               </form>
