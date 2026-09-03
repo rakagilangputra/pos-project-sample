@@ -180,11 +180,11 @@ export const ConsignmentManagementModal: React.FC<ConsignmentManagementModalProp
   return (
     <div
       id="consignment-modal-backdrop"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 sm:p-6 backdrop-blur-sm"
     >
       <div
         id="consignment-modal-card"
-        className="flex h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl bg-[#FDFBF7] border-2 border-[#E5DACE] shadow-2xl animate-in fade-in zoom-in duration-200"
+        className="flex h-[72vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-[#FDFBF7] border-2 border-[#E5DACE] shadow-2xl animate-in fade-in zoom-in duration-200"
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b-2 border-[#E5DACE] bg-amber-100/70 px-6 py-3.5 gap-3">
