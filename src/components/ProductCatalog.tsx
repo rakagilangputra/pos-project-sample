@@ -1,26 +1,49 @@
 import React, { useState } from 'react';
-import { Search, Sparkles, AlertTriangle, LayoutGrid, List, Plus, Cake, Coffee, Cookie } from 'lucide-react';
+import {
+  Search,
+  Sparkles,
+  AlertTriangle,
+  LayoutGrid,
+  List,
+  Plus,
+  Cake,
+  Coffee,
+  Cookie,
+  PackagePlus,
+  FolderPlus,
+  Building2,
+} from 'lucide-react';
 import { usePOS } from '../context/POSContext';
-import { Product, ProductCategory } from '../types';
+import { Product } from '../types';
 import { formatIDR } from '../utils/formatters';
 
-export const ProductCatalog: React.FC = () => {
-  const { products, addToCart, cart } = usePOS();
+interface ProductCatalogProps {
+  onOpenAddProduct?: () => void;
+  onOpenAddCategory?: () => void;
+}
+
+export const ProductCatalog: React.FC<ProductCatalogProps> = ({
+  onOpenAddProduct,
+  onOpenAddCategory,
+}) => {
+  const { products, categories: contextCategories, addToCart, cart } = usePOS();
 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [filterShortcut, setFilterShortcut] = useState<'all' | 'popular' | 'low_stock'>('all');
+  const [filterShortcut, setFilterShortcut] = useState<'all' | 'popular' | 'low_stock' | 'consignment'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [stockWarningToast, setStockWarningToast] = useState<string | null>(null);
 
-  const categories = [
-    { id: 'all', label: 'Semua Menu', icon: '🍞' },
-    { id: 'roti', label: 'Roti Manis', icon: '🥐' },
-    { id: 'pastry', label: 'Pastry & Croissant', icon: '🥖' },
-    { id: 'cake', label: 'Cakes & Tart', icon: '🍰' },
-    { id: 'cookies', label: 'Cookies & Hampers', icon: '🍪' },
-    { id: 'beverage', label: 'Minuman & Kopi', icon: '☕' },
-    { id: 'custom_cake', label: 'Custom Cake (PO / DP)', icon: '🎂' },
+  // Dynamic category tabs merged with 'all'
+  const categoryList = [
+    { id: 'all', name: 'Semua Menu', icon: '🍞' },
+    ...contextCategories
+      .filter((c) => c.id !== 'all')
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        icon: c.icon || '🥐',
+      })),
   ];
 
   // Filter logic
@@ -36,13 +59,17 @@ export const ProductCatalog: React.FC = () => {
     if (filterShortcut === 'low_stock' && prod.stock >= prod.lowStockThreshold) {
       return false;
     }
+    if (filterShortcut === 'consignment' && prod.ownershipType !== 'consignment') {
+      return false;
+    }
     // Search query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchName = prod.name.toLowerCase().includes(q);
       const matchSku = prod.sku.toLowerCase().includes(q);
       const matchCat = prod.categoryLabel.toLowerCase().includes(q);
-      if (!matchName && !matchSku && !matchCat) return false;
+      const matchSupplier = prod.supplierName && prod.supplierName.toLowerCase().includes(q);
+      if (!matchName && !matchSku && !matchCat && !matchSupplier) return false;
     }
     return true;
   });
@@ -59,36 +86,47 @@ export const ProductCatalog: React.FC = () => {
     <div className="flex h-full flex-col overflow-hidden bg-transparent">
       {/* Category Pills - Bento touch navigation */}
       <div className="pb-3">
-        <div className="flex gap-2.5 overflow-x-auto pb-1 scrollbar-none">
-          {categories.map((cat) => {
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+          {categoryList.map((cat) => {
             const isSelected = selectedCategory === cat.id;
             return (
               <button
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id)}
-                className={`flex shrink-0 items-center gap-2 rounded-2xl px-5 py-3 text-sm sm:text-base font-bold transition active:scale-95 ${
+                className={`flex shrink-0 items-center gap-2 rounded-2xl px-4 py-2.5 text-sm sm:text-base font-bold transition active:scale-95 ${
                   isSelected
                     ? 'bg-[#D97706] text-white border-2 border-[#D97706] shadow-sm'
                     : 'bg-white border-2 border-[#E5DACE] text-[#2D241E] hover:border-[#D97706] shadow-2xs'
                 }`}
               >
-                <span className="text-xl leading-none">{cat.icon}</span>
-                <span className="whitespace-nowrap">{cat.label}</span>
+                <span className="text-lg leading-none">{cat.icon}</span>
+                <span className="whitespace-nowrap">{cat.name}</span>
               </button>
             );
           })}
+
+          {onOpenAddCategory && (
+            <button
+              onClick={onOpenAddCategory}
+              className="flex shrink-0 items-center gap-1.5 rounded-2xl border-2 border-dashed border-[#D97706] bg-amber-50/60 px-3 py-2 text-xs font-bold text-[#D97706] hover:bg-amber-100 transition shadow-2xs"
+              title="Tambah Kategori Baru"
+            >
+              <FolderPlus className="h-4 w-4" />
+              <span className="whitespace-nowrap">+ Kategori</span>
+            </button>
+          )}
         </div>
 
         {/* Search Bar & Shortcuts Filter */}
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="relative flex-1 min-w-[200px]">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2.5">
+          <div className="relative flex-1 min-w-[180px]">
             <Search className="absolute left-3.5 top-3 h-4 w-4 text-[#8C7B6C]" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Ketik nama roti, croissant, SKU..."
-              className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white pl-10 pr-8 py-2.5 text-sm text-[#2D241E] placeholder-[#8C7B6C] focus:border-[#D97706] focus:outline-none shadow-2xs"
+              placeholder="Ketik nama roti, croissant, SKU, atau supplier..."
+              className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white pl-10 pr-8 py-2.5 text-sm text-[#2D241E] placeholder-[#8C7B6C] focus:border-[#D97706] focus:outline-none shadow-2xs font-semibold"
             />
             {searchQuery && (
               <button
@@ -100,11 +138,11 @@ export const ProductCatalog: React.FC = () => {
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {/* Shortcut: Paling Laris */}
             <button
               onClick={() => setFilterShortcut(filterShortcut === 'popular' ? 'all' : 'popular')}
-              className={`flex items-center gap-1.5 rounded-2xl px-3.5 py-2.5 text-xs font-bold transition active:scale-95 ${
+              className={`flex items-center gap-1.5 rounded-2xl px-3 py-2 text-xs font-bold transition active:scale-95 ${
                 filterShortcut === 'popular'
                   ? 'bg-[#D97706] text-white border-2 border-[#D97706] shadow-2xs'
                   : 'bg-white text-[#8C7B6C] border-2 border-[#E5DACE] hover:border-[#D97706] hover:text-[#2D241E]'
@@ -117,7 +155,7 @@ export const ProductCatalog: React.FC = () => {
             {/* Shortcut: Stok Menipis */}
             <button
               onClick={() => setFilterShortcut(filterShortcut === 'low_stock' ? 'all' : 'low_stock')}
-              className={`flex items-center gap-1.5 rounded-2xl px-3.5 py-2.5 text-xs font-bold transition active:scale-95 ${
+              className={`flex items-center gap-1.5 rounded-2xl px-3 py-2 text-xs font-bold transition active:scale-95 ${
                 filterShortcut === 'low_stock'
                   ? 'bg-rose-600 text-white border-2 border-rose-600 shadow-2xs'
                   : 'bg-white text-[#8C7B6C] border-2 border-[#E5DACE] hover:border-rose-400 hover:text-rose-600'
@@ -127,18 +165,46 @@ export const ProductCatalog: React.FC = () => {
               <span>Stok Menipis</span>
             </button>
 
+            {/* Shortcut: Konsinyasi */}
+            <button
+              onClick={() => setFilterShortcut(filterShortcut === 'consignment' ? 'all' : 'consignment')}
+              className={`flex items-center gap-1.5 rounded-2xl px-3 py-2 text-xs font-bold transition active:scale-95 ${
+                filterShortcut === 'consignment'
+                  ? 'bg-purple-700 text-white border-2 border-purple-700 shadow-2xs'
+                  : 'bg-white text-[#8C7B6C] border-2 border-[#E5DACE] hover:border-purple-500 hover:text-purple-700'
+              }`}
+            >
+              <span>🤝 Konsinyasi</span>
+            </button>
+
+            {/* Add Product Button */}
+            {onOpenAddProduct && (
+              <button
+                id="catalog-add-product-quick-btn"
+                onClick={onOpenAddProduct}
+                className="flex items-center gap-1 rounded-2xl bg-[#D97706] px-3.5 py-2 text-xs font-black text-white hover:bg-amber-700 transition active:scale-95 shadow-2xs"
+              >
+                <PackagePlus className="h-3.5 w-3.5" />
+                <span>+ Produk</span>
+              </button>
+            )}
+
             {/* View Mode Switch */}
-            <div className="flex rounded-2xl border-2 border-[#E5DACE] bg-white p-1">
+            <div className="flex rounded-2xl border-2 border-[#E5DACE] bg-white p-0.5">
               <button
                 onClick={() => setViewMode('grid')}
-                className={`p-2 rounded-xl transition ${viewMode === 'grid' ? 'bg-[#D97706] text-white' : 'text-[#8C7B6C] hover:text-[#2D241E]'}`}
+                className={`p-1.5 rounded-xl transition ${
+                  viewMode === 'grid' ? 'bg-[#D97706] text-white' : 'text-[#8C7B6C] hover:text-[#2D241E]'
+                }`}
                 title="Tampilan Bento Grid"
               >
                 <LayoutGrid className="h-4 w-4" />
               </button>
               <button
                 onClick={() => setViewMode('list')}
-                className={`p-2 rounded-xl transition ${viewMode === 'list' ? 'bg-[#D97706] text-white' : 'text-[#8C7B6C] hover:text-[#2D241E]'}`}
+                className={`p-1.5 rounded-xl transition ${
+                  viewMode === 'list' ? 'bg-[#D97706] text-white' : 'text-[#8C7B6C] hover:text-[#2D241E]'
+                }`}
                 title="Tampilan List"
               >
                 <List className="h-4 w-4" />
@@ -160,17 +226,27 @@ export const ProductCatalog: React.FC = () => {
       <div className="flex-1 overflow-y-auto pr-1">
         {filteredProducts.length === 0 ? (
           <div className="flex h-64 flex-col items-center justify-center text-center rounded-3xl border-2 border-dashed border-[#E5DACE] bg-white/50 p-6">
-            <p className="text-[#8C7B6C] text-sm font-medium">Tidak ada produk yang cocok dengan pencarian.</p>
-            <button
-              onClick={() => {
-                setSelectedCategory('all');
-                setFilterShortcut('all');
-                setSearchQuery('');
-              }}
-              className="mt-3 text-xs font-bold text-[#D97706] underline"
-            >
-              Reset semua filter
-            </button>
+            <p className="text-[#8C7B6C] text-sm font-medium">Tidak ada produk yang cocok dengan filter saat ini.</p>
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={() => {
+                  setSelectedCategory('all');
+                  setFilterShortcut('all');
+                  setSearchQuery('');
+                }}
+                className="text-xs font-bold text-[#D97706] underline"
+              >
+                Reset semua filter
+              </button>
+              {onOpenAddProduct && (
+                <button
+                  onClick={onOpenAddProduct}
+                  className="rounded-xl bg-[#D97706] px-3 py-1.5 text-xs font-bold text-white shadow-xs"
+                >
+                  + Tambah Produk Baru
+                </button>
+              )}
+            </div>
           </div>
         ) : viewMode === 'grid' ? (
           /* BENTO GRID PRODUCT TILES */
@@ -182,6 +258,7 @@ export const ProductCatalog: React.FC = () => {
 
               const isOutOfStock = product.stock <= 0;
               const isLowStock = !isOutOfStock && product.stock < product.lowStockThreshold;
+              const isConsignment = product.ownershipType === 'consignment';
 
               return (
                 <div
@@ -233,7 +310,14 @@ export const ProductCatalog: React.FC = () => {
                     <h4 className="line-clamp-2 text-base font-bold text-[#2D241E] leading-tight">
                       {product.name}
                     </h4>
-                    <p className="text-xs font-medium text-[#8C7B6C] mt-0.5">{product.categoryLabel}</p>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                      <p className="text-xs font-medium text-[#8C7B6C]">{product.categoryLabel}</p>
+                      {isConsignment && (
+                        <span className="rounded-md bg-purple-100 border border-purple-200 px-1.5 py-0.2 text-[9px] font-black text-purple-900">
+                          🤝 Titipan {product.supplierName ? `: ${product.supplierName}` : ''}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Price & Add Action */}
@@ -260,6 +344,8 @@ export const ProductCatalog: React.FC = () => {
                 .filter((item) => item.productId === product.id)
                 .reduce((sum, item) => sum + item.quantity, 0);
 
+              const isConsignment = product.ownershipType === 'consignment';
+
               return (
                 <div
                   key={product.id}
@@ -278,6 +364,11 @@ export const ProductCatalog: React.FC = () => {
                         {product.isMadeToOrder && (
                           <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-800">
                             PO/DP
+                          </span>
+                        )}
+                        {isConsignment && (
+                          <span className="rounded-md bg-purple-100 border border-purple-200 px-1.5 py-0.5 text-[10px] font-black text-purple-900">
+                            🤝 Titipan {product.supplierName ? `(${product.supplierName})` : ''}
                           </span>
                         )}
                       </div>

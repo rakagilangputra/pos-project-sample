@@ -13,6 +13,10 @@ import { TransactionHistoryModal } from './components/TransactionHistoryModal';
 import { InventoryModal } from './components/InventoryModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AuditLogView } from './components/AuditLogView';
+import { AddProductModal } from './components/AddProductModal';
+import { AddCategoryModal } from './components/AddCategoryModal';
+import { AddSupplierModal } from './components/AddSupplierModal';
+import { ConsignmentManagementModal } from './components/ConsignmentManagementModal';
 import { ShoppingCart } from 'lucide-react';
 import { formatIDR } from './utils/formatters';
 
@@ -31,6 +35,12 @@ const POSMainContent: React.FC = () => {
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
 
+  // New Consignment & Master Data Modals
+  const [isConsignmentModalOpen, setIsConsignmentModalOpen] = useState(false);
+  const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false);
+  const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] = useState(false);
+  const [isAddSupplierModalOpen, setIsAddSupplierModalOpen] = useState(false);
+
   // Mobile cart drawer toggle
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
 
@@ -47,6 +57,7 @@ const POSMainContent: React.FC = () => {
         onOpenHeldOrdersModal={() => setIsHeldOrdersModalOpen(true)}
         onOpenHistoryModal={() => setIsHistoryModalOpen(true)}
         onOpenInventoryModal={() => setIsInventoryModalOpen(true)}
+        onOpenConsignmentModal={() => setIsConsignmentModalOpen(true)}
       />
 
       {/* Main Workspace */}
@@ -55,7 +66,10 @@ const POSMainContent: React.FC = () => {
           <div className="flex h-full w-full gap-3 sm:gap-4 overflow-hidden">
             {/* Left: Bakery Product Catalog (Bento Layout) */}
             <section className="flex-1 overflow-hidden flex flex-col">
-              <ProductCatalog />
+              <ProductCatalog
+                onOpenAddProduct={() => setIsAddProductModalOpen(true)}
+                onOpenAddCategory={() => setIsAddCategoryModalOpen(true)}
+              />
             </section>
 
             {/* Right: Order Cart Bento Aside (Desktop view) */}
@@ -116,12 +130,16 @@ const POSMainContent: React.FC = () => {
           </div>
         )}
 
-        {currentTab === 'dashboard' && <AdminDashboard />}
+        {currentTab === 'dashboard' && (
+          <AdminDashboard
+            onOpenConsignmentModal={() => setIsConsignmentModalOpen(true)}
+          />
+        )}
 
         {currentTab === 'audit' && <AuditLogView />}
       </main>
 
-      {/* MODALS */}
+      {/* CORE MODALS */}
       <CustomerModal
         isOpen={isCustomerModalOpen}
         onClose={() => setIsCustomerModalOpen(false)}
@@ -157,6 +175,33 @@ const POSMainContent: React.FC = () => {
       <InventoryModal
         isOpen={isInventoryModalOpen}
         onClose={() => setIsInventoryModalOpen(false)}
+        onOpenAddProduct={() => setIsAddProductModalOpen(true)}
+        onOpenAddCategory={() => setIsAddCategoryModalOpen(true)}
+      />
+
+      {/* CONSIGNMENT & MASTER DATA MODALS */}
+      <ConsignmentManagementModal
+        isOpen={isConsignmentModalOpen}
+        onClose={() => setIsConsignmentModalOpen(false)}
+        onOpenAddSupplier={() => setIsAddSupplierModalOpen(true)}
+        onOpenAddProduct={() => setIsAddProductModalOpen(true)}
+      />
+
+      <AddProductModal
+        isOpen={isAddProductModalOpen}
+        onClose={() => setIsAddProductModalOpen(false)}
+        onOpenAddCategory={() => setIsAddCategoryModalOpen(true)}
+        onOpenAddSupplier={() => setIsAddSupplierModalOpen(true)}
+      />
+
+      <AddCategoryModal
+        isOpen={isAddCategoryModalOpen}
+        onClose={() => setIsAddCategoryModalOpen(false)}
+      />
+
+      <AddSupplierModal
+        isOpen={isAddSupplierModalOpen}
+        onClose={() => setIsAddSupplierModalOpen(false)}
       />
     </div>
   );

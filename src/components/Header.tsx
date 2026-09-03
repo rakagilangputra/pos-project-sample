@@ -10,6 +10,8 @@ import {
   ShoppingBag,
   UserCheck,
   ChevronDown,
+  Building2,
+  AlertTriangle,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 import { formatIDR } from '../utils/formatters';
@@ -22,6 +24,7 @@ interface HeaderProps {
   onOpenHeldOrdersModal: () => void;
   onOpenHistoryModal: () => void;
   onOpenInventoryModal: () => void;
+  onOpenConsignmentModal: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -32,8 +35,13 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenHeldOrdersModal,
   onOpenHistoryModal,
   onOpenInventoryModal,
+  onOpenConsignmentModal,
 }) => {
-  const { currentSession, currentUser, setAsideOrders, cart } = usePOS();
+  const { currentSession, currentUser, setAsideOrders, settlementCycles } = usePOS();
+
+  // Check overdue or due cycles (POS-US-034)
+  const overdueCount = settlementCycles.filter((c) => c.status === 'overdue').length;
+  const dueTodayCount = settlementCycles.filter((c) => c.status === 'due').length;
 
   return (
     <header className="h-16 shrink-0 bg-white border-b-2 border-[#E5DACE] px-3 sm:px-6 flex items-center justify-between shadow-xs select-none">
@@ -107,6 +115,32 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
+        {/* Konsinyasi Management Shortcut (POS-US-030 to 035) */}
+        <button
+          id="header-consignment-btn"
+          onClick={onOpenConsignmentModal}
+          className={`relative flex items-center gap-1.5 rounded-2xl border-2 px-3 py-2 text-xs font-bold transition active:scale-95 shadow-2xs ${
+            overdueCount > 0
+              ? 'border-rose-400 bg-rose-50 text-rose-800'
+              : dueTodayCount > 0
+              ? 'border-amber-400 bg-amber-50 text-amber-900'
+              : 'border-[#E5DACE] bg-white text-[#2D241E] hover:border-[#D97706]'
+          }`}
+          title="Manajemen Titipan & Settlement Konsinyasi"
+        >
+          <Building2 className="h-4 w-4 text-[#D97706]" />
+          <span className="hidden sm:inline">Konsinyasi</span>
+          {(overdueCount > 0 || dueTodayCount > 0) && (
+            <span
+              className={`rounded-full px-1.5 py-0.2 text-[9px] font-black text-white ${
+                overdueCount > 0 ? 'bg-rose-600 animate-pulse' : 'bg-amber-600'
+              }`}
+            >
+              {overdueCount > 0 ? `${overdueCount} Overdue` : `${dueTodayCount} Due`}
+            </span>
+          )}
+        </button>
+
         {/* Riwayat Transaksi Shortcut */}
         <button
           onClick={onOpenHistoryModal}
@@ -119,6 +153,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Manajemen Stok Shortcut */}
         <button
+          id="header-stock-btn"
           onClick={onOpenInventoryModal}
           className="hidden md:flex items-center gap-1.5 rounded-2xl border-2 border-[#E5DACE] bg-white px-3 py-2 text-xs font-bold text-[#2D241E] hover:border-[#D97706] active:scale-95 transition"
           title="Manajemen & Koreksi Stok Roti"

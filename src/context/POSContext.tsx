@@ -3,6 +3,7 @@ import {
   User,
   Customer,
   Product,
+  ProductCategoryItem,
   CartItem,
   Order,
   CashierSession,
@@ -10,12 +11,19 @@ import {
   AuditLog,
   PaymentComponent,
   StockAdjustmentRecord,
+  Supplier,
+  CommissionLedgerEntry,
+  SupplierSettlementCycle,
 } from '../types';
 import {
   INITIAL_USERS,
   INITIAL_CUSTOMERS,
   DEFAULT_WALKIN_CUSTOMER,
   INITIAL_PRODUCTS,
+  INITIAL_CATEGORIES,
+  INITIAL_SUPPLIERS,
+  INITIAL_COMMISSION_LEDGER,
+  INITIAL_SETTLEMENT_CYCLES,
   STORE_INFO,
 } from '../data/mockData';
 import { generateReceiptNumber, posSound } from '../utils/formatters';
@@ -51,14 +59,36 @@ interface POSContextType {
     adminPin: string
   ) => boolean;
 
-  // Catalog & Inventory
+  // Category Master (POS-US-028)
+  categories: ProductCategoryItem[];
+  addCategory: (name: string, description?: string) => { success: boolean; category?: ProductCategoryItem; message: string };
+
+  // Product Master (POS-US-029)
   products: Product[];
+  addProduct: (productData: Omit<Product, 'id'>) => { success: boolean; product?: Product; message: string };
   manualAdjustStock: (
     productId: string,
     type: 'increase' | 'decrease',
     quantity: number,
     reason: string
   ) => { success: boolean; message: string };
+
+  // Supplier Master (POS-US-030)
+  suppliers: Supplier[];
+  addSupplier: (supplierData: Omit<Supplier, 'id' | 'createdAt'>) => { success: boolean; supplier?: Supplier; message: string };
+  updateSupplier: (id: string, supplierData: Partial<Supplier>) => { success: boolean; supplier?: Supplier; message: string };
+
+  // Consignment Commission & Settlements (POS-US-031, POS-US-032, POS-US-034, POS-US-035)
+  commissionLedger: CommissionLedgerEntry[];
+  settlementCycles: SupplierSettlementCycle[];
+  recordSettlementPayment: (
+    cycleId: string,
+    paymentMethod: 'cash' | 'transfer' | 'qris' | 'other',
+    reference: string,
+    notes: string,
+    supervisorPin?: string
+  ) => { success: boolean; message: string };
+  generateSettlementCycles: () => { count: number };
 
   // Customers
   customers: Customer[];
@@ -212,11 +242,74 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     localStorage.setItem('pos_closed_sessions', JSON.stringify(closedSessions));
   }, [closedSessions]);
 
-  // Catalog & Products
+  // Category Master (POS-US-028)
+  const [categories, setCategories] = useState<ProductCategoryItem[]>(() => {
+    const saved = localStorage.getItem('pos_categories');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const seen = new Set<string>();
+          const result: ProductCategoryItem[] = [];
+          for (const item of parsed) {
+            if (item && item.id && !seen.has(item.id)) {
+              seen.add(item.id);
+              result.push(item);
+            }
+          }
+          return result;
+        }
+      } catch {}
+    }
+    return INITIAL_CATEGORIES;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('pos_categories', JSON.stringify(categories));
+  }, [categories]);
+
+  // Catalog & Products (POS-US-029)
   const [products, setProducts] = useState<Product[]>(() => {
     const saved = localStorage.getItem('pos_products');
     if (saved) {
-      try { return JSON.parse(saved); } catch {}
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const seenIds = new Set<string>();
+          const result: Product[] = [];
+
+          for (const item of parsed) {
+            if (!item || !item.id || seenIds.has(item.id)) continue;
+            seenIds.add(item.id);
+
+            const initMatch = INITIAL_PRODUCTS.find((p) => p.id === item.id);
+            if (initMatch) {
+              result.push({
+                ...initMatch,
+                ...item,
+                ownershipType: item.ownershipType || initMatch.ownershipType || 'own',
+                supplierId: item.supplierId || initMatch.supplierId,
+                supplierName: item.supplierName || initMatch.supplierName,
+                commissionMethod: item.commissionMethod || initMatch.commissionMethod,
+                commissionValue: item.commissionValue ?? initMatch.commissionValue,
+                commissionBasis: item.commissionBasis || initMatch.commissionBasis,
+              });
+            } else {
+              result.push(item);
+            }
+          }
+
+          // Add any missing initial products (e.g. prod-23, prod-24)
+          for (const init of INITIAL_PRODUCTS) {
+            if (!seenIds.has(init.id)) {
+              seenIds.add(init.id);
+              result.push(init);
+            }
+          }
+
+          return result;
+        }
+      } catch {}
     }
     return INITIAL_PRODUCTS;
   });
@@ -224,6 +317,96 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     localStorage.setItem('pos_products', JSON.stringify(products));
   }, [products]);
+
+  // Supplier Master (POS-US-030)
+  const [suppliers, setSuppliers] = useState<Supplier[]>(() => {
+    const saved = localStorage.getItem('pos_suppliers');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const seen = new Set<string>();
+          const result: Supplier[] = [];
+          for (const s of parsed) {
+            if (s && s.id && !seen.has(s.id)) {
+              seen.add(s.id);
+              result.push(s);
+            }
+          }
+          for (const init of INITIAL_SUPPLIERS) {
+            if (!seen.has(init.id)) {
+              seen.add(init.id);
+              result.push(init);
+            }
+          }
+          return result;
+        }
+      } catch {}
+    }
+    return INITIAL_SUPPLIERS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('pos_suppliers', JSON.stringify(suppliers));
+  }, [suppliers]);
+
+  // Consignment Commission Ledger (POS-US-031)
+  const [commissionLedger, setCommissionLedger] = useState<CommissionLedgerEntry[]>(() => {
+    const saved = localStorage.getItem('pos_commission_ledger');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const seen = new Set<string>();
+          const result: CommissionLedgerEntry[] = [];
+          for (const entry of parsed) {
+            if (entry && entry.id && !seen.has(entry.id)) {
+              seen.add(entry.id);
+              result.push(entry);
+            }
+          }
+          return result;
+        }
+      } catch {}
+    }
+    return INITIAL_COMMISSION_LEDGER;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('pos_commission_ledger', JSON.stringify(commissionLedger));
+  }, [commissionLedger]);
+
+  // Supplier Settlement Cycles (POS-US-032, POS-US-034, POS-US-035)
+  const [settlementCycles, setSettlementCycles] = useState<SupplierSettlementCycle[]>(() => {
+    const saved = localStorage.getItem('pos_settlement_cycles');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const seen = new Set<string>();
+          const result: SupplierSettlementCycle[] = [];
+          for (const cycle of parsed) {
+            if (cycle && cycle.id && !seen.has(cycle.id)) {
+              seen.add(cycle.id);
+              result.push(cycle);
+            }
+          }
+          for (const init of INITIAL_SETTLEMENT_CYCLES) {
+            if (!seen.has(init.id)) {
+              seen.add(init.id);
+              result.push(init);
+            }
+          }
+          return result;
+        }
+      } catch {}
+    }
+    return INITIAL_SETTLEMENT_CYCLES;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('pos_settlement_cycles', JSON.stringify(settlementCycles));
+  }, [settlementCycles]);
 
   // Customers
   const [customers, setCustomers] = useState<Customer[]>(() => {
@@ -305,7 +488,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Helper to log an audit event
   const addAudit = (
     action: string,
-    entityType: 'order' | 'session' | 'stock' | 'user' | 'price' | 'discount',
+    entityType: 'order' | 'session' | 'stock' | 'user' | 'price' | 'discount' | 'supplier' | 'consignment' | 'category' | 'product',
     entityId: string,
     details: string,
     beforeValue?: string,
@@ -584,6 +767,262 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return newCust;
   };
 
+  // Product Category Master (POS-US-028)
+  const addCategory = (name: string, description?: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return { success: false, message: 'Nama kategori produk tidak boleh kosong!' };
+    }
+    const isDuplicate = categories.some(
+      (c) => c.name.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (isDuplicate) {
+      return { success: false, message: `Kategori "${trimmed}" sudah ada!` };
+    }
+
+    const id = trimmed.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const newCat: ProductCategoryItem = {
+      id,
+      name: trimmed,
+      description: description?.trim() || undefined,
+      icon: '🏷️',
+    };
+
+    setCategories((prev) => [...prev, newCat]);
+    addAudit(
+      'CATEGORY_CREATE',
+      'category',
+      id,
+      `Kategori produk baru dibuat: "${trimmed}" oleh ${currentUser.name}`
+    );
+    posSound.beep();
+    return { success: true, category: newCat, message: `Kategori "${trimmed}" berhasil dibuat!` };
+  };
+
+  // Product Master (POS-US-029)
+  const addProduct = (productData: Omit<Product, 'id'>) => {
+    const trimmedName = productData.name.trim();
+    const trimmedSku = productData.sku.trim().toUpperCase();
+
+    if (!trimmedName) {
+      return { success: false, message: 'Nama produk wajib diisi!' };
+    }
+    if (!trimmedSku) {
+      return { success: false, message: 'Kode produk / SKU wajib diisi!' };
+    }
+
+    const isDuplicateSku = products.some(
+      (p) => p.sku.toLowerCase() === trimmedSku.toLowerCase()
+    );
+    if (isDuplicateSku) {
+      return { success: false, message: `Kode SKU "${trimmedSku}" sudah terdaftar!` };
+    }
+
+    const id = 'prod-' + Date.now().toString().slice(-6);
+    const newProd: Product = {
+      ...productData,
+      id,
+      name: trimmedName,
+      sku: trimmedSku,
+      stock: Math.max(0, productData.stock || 0),
+      lowStockThreshold: Math.max(0, productData.lowStockThreshold || 3),
+      price: Math.max(0, productData.price || 0),
+    };
+
+    setProducts((prev) => [newProd, ...prev]);
+
+    // If opening stock > 0, log stock adjustment history record
+    if (newProd.stock > 0) {
+      const stockRec: StockAdjustmentRecord = {
+        id: 'adj-' + Date.now().toString().slice(-5),
+        productId: id,
+        productName: newProd.name,
+        type: 'increase',
+        quantity: newProd.stock,
+        previousStock: 0,
+        resultingStock: newProd.stock,
+        reason: 'Stok Awal Pembuatan Master Produk Baru',
+        adminId: currentUser.id,
+        adminName: currentUser.name,
+        timestamp: new Date().toISOString(),
+      };
+      setStockAdjustments((prev) => [stockRec, ...prev]);
+    }
+
+    addAudit(
+      'PRODUCT_CREATE',
+      'product',
+      id,
+      `Master Produk baru: ${newProd.name} (SKU: ${newProd.sku}), Kepemilikan: ${newProd.ownershipType === 'consignment' ? 'Konsinyasi (' + newProd.supplierName + ')' : 'Milik Sendiri'}, Stok Awal: ${newProd.stock}, Harga: Rp ${newProd.price.toLocaleString('id-ID')}`
+    );
+    posSound.beep();
+    return { success: true, product: newProd, message: `Produk "${newProd.name}" berhasil ditambahkan!` };
+  };
+
+  // Supplier Master (POS-US-030)
+  const addSupplier = (supplierData: Omit<Supplier, 'id' | 'createdAt'>) => {
+    const trimmedName = supplierData.name.trim();
+    if (!trimmedName) {
+      return { success: false, message: 'Nama supplier wajib diisi!' };
+    }
+    const isDuplicate = suppliers.some(
+      (s) => s.name.toLowerCase() === trimmedName.toLowerCase()
+    );
+    if (isDuplicate) {
+      return { success: false, message: `Supplier "${trimmedName}" sudah terdaftar!` };
+    }
+
+    const id = 'sup-' + Date.now().toString().slice(-5);
+    const newSup: Supplier = {
+      ...supplierData,
+      id,
+      name: trimmedName,
+      picName: supplierData.picName.trim(),
+      phone: supplierData.phone.trim(),
+      createdAt: new Date().toISOString(),
+    };
+
+    setSuppliers((prev) => [...prev, newSup]);
+    addAudit(
+      'SUPPLIER_CREATE',
+      'supplier',
+      id,
+      `Supplier baru terdaftar: ${newSup.name} (PIC: ${newSup.picName || '-'}, Jadwal: ${newSup.scheduleType})`
+    );
+    posSound.beep();
+    return { success: true, supplier: newSup, message: `Supplier "${newSup.name}" berhasil disimpan!` };
+  };
+
+  const updateSupplier = (id: string, supplierData: Partial<Supplier>) => {
+    const target = suppliers.find((s) => s.id === id);
+    if (!target) return { success: false, message: 'Supplier tidak ditemukan!' };
+
+    setSuppliers((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, ...supplierData, updatedAt: new Date().toISOString() } : s))
+    );
+    addAudit(
+      'SUPPLIER_UPDATE',
+      'supplier',
+      id,
+      `Data supplier diperbarui: ${target.name} oleh ${currentUser.name}`
+    );
+    posSound.beep();
+    return { success: true, message: `Data supplier "${target.name}" berhasil diperbarui!` };
+  };
+
+  // Supplier Settlement Payment (POS-US-035)
+  const recordSettlementPayment = (
+    cycleId: string,
+    paymentMethod: 'cash' | 'transfer' | 'qris' | 'other',
+    reference: string,
+    notes: string,
+    supervisorPin?: string
+  ) => {
+    const target = settlementCycles.find((c) => c.id === cycleId);
+    if (!target) return { success: false, message: 'Siklus settlement tidak ditemukan' };
+    if (target.status === 'settled') {
+      return { success: false, message: 'Siklus ini sudah lunas sebelumnya!' };
+    }
+    if (['transfer', 'qris'].includes(paymentMethod) && !reference.trim()) {
+      return { success: false, message: 'Nomor referensi / bukti transfer wajib diisi!' };
+    }
+
+    const now = new Date().toISOString();
+    setSettlementCycles((prev) =>
+      prev.map((c) =>
+        c.id === cycleId
+          ? {
+              ...c,
+              status: 'settled',
+              paymentMethod,
+              paymentReference: reference.trim() || undefined,
+              settlementNotes: notes.trim() || undefined,
+              settledBy: currentUser.name,
+              settledAt: now,
+            }
+          : c
+      )
+    );
+
+    // Update associated commission ledger entries to 'settled'
+    setCommissionLedger((prev) =>
+      prev.map((entry) =>
+        target.commissionEntryIds.includes(entry.id)
+          ? { ...entry, status: 'settled', settlementId: cycleId }
+          : entry
+      )
+    );
+
+    addAudit(
+      'SETTLEMENT_PAYMENT',
+      'consignment',
+      cycleId,
+      `Pembayaran Settlement Komisi Konsinyasi: ${target.supplierName} sebesar Rp ${target.commissionPayable.toLocaleString('id-ID')} via ${paymentMethod.toUpperCase()}${reference ? ' (Ref: ' + reference + ')' : ''}. Dicatat oleh ${currentUser.name}`
+    );
+
+    posSound.cashRegister();
+    return { success: true, message: `Settlement untuk ${target.supplierName} berhasil dicatat LUNAS.` };
+  };
+
+  // Generate / Recalculate Settlement Cycles (POS-US-032)
+  const generateSettlementCycles = () => {
+    // Check accrued entries not yet in any cycle
+    const accruedEntries = commissionLedger.filter((c) => c.status === 'accrued');
+    if (accruedEntries.length === 0) return { count: 0 };
+
+    // Group by supplier
+    const bySupplier: { [key: string]: CommissionLedgerEntry[] } = {};
+    accruedEntries.forEach((entry) => {
+      if (!bySupplier[entry.supplierId]) bySupplier[entry.supplierId] = [];
+      bySupplier[entry.supplierId].push(entry);
+    });
+
+    const newCycles: SupplierSettlementCycle[] = [];
+    Object.entries(bySupplier).forEach(([supId, entries]) => {
+      const sup = suppliers.find((s) => s.id === supId);
+      const gross = entries.reduce((sum, e) => sum + e.grossAmount, 0);
+      const discs = entries.reduce((sum, e) => sum + e.allocatedDiscount, 0);
+      const net = entries.reduce((sum, e) => sum + e.netAmount, 0);
+      const comm = entries.reduce((sum, e) => sum + e.commissionAmount, 0);
+      const storeNet = entries.reduce((sum, e) => sum + e.storeNetAmount, 0);
+
+      const cycleId = 'SET-' + Date.now().toString().slice(-6) + '-' + Math.random().toString(36).slice(2, 5);
+      const dueDate = sup?.nextDueDate || new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0];
+
+      const isDue = dueDate === new Date().toISOString().split('T')[0];
+      const isOverdue = dueDate < new Date().toISOString().split('T')[0];
+      const status: SupplierSettlementCycle['status'] = isOverdue ? 'overdue' : isDue ? 'due' : 'upcoming';
+
+      newCycles.push({
+        id: cycleId,
+        supplierId: supId,
+        supplierName: sup?.name || entries[0]?.supplierName || 'Supplier Konsinyasi',
+        periodStart: entries[entries.length - 1]?.createdAt.split('T')[0] || new Date().toISOString().split('T')[0],
+        periodEnd: new Date().toISOString().split('T')[0],
+        dueDate,
+        grossItemSales: gross,
+        discounts: discs,
+        netItemSales: net,
+        commissionPayable: comm,
+        storeNetAfterCommission: storeNet,
+        status,
+        commissionEntryIds: entries.map((e) => e.id),
+        createdAt: new Date().toISOString(),
+      });
+    });
+
+    if (newCycles.length > 0) {
+      setSettlementCycles((prev) => [...newCycles, ...prev]);
+      // Update commission ledger status to 'included'
+      const includedIds = new Set(newCycles.flatMap((c) => c.commissionEntryIds));
+      setCommissionLedger((prev) =>
+        prev.map((e) => (includedIds.has(e.id) ? { ...e, status: 'included' } : e))
+      );
+    }
+
+    return { count: newCycles.length };
+  };
+
   // Cart Operations (POS-US-008, POS-US-009, POS-US-020)
   const addToCart = (product: Product, quantity = 1) => {
     if (!currentSession || currentSession.status !== 'active') {
@@ -621,6 +1060,13 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         image: product.image,
         isMadeToOrder: product.isMadeToOrder,
         stockAvailable: product.stock,
+        // Consignment snapshot (POS-US-031)
+        ownershipType: product.ownershipType || 'own',
+        supplierId: product.supplierId,
+        supplierName: product.supplierName,
+        commissionMethod: product.commissionMethod,
+        commissionValue: product.commissionValue,
+        commissionBasis: product.commissionBasis,
       };
       return [...prev, newLine];
     });
@@ -927,6 +1373,66 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setOrders((prev) => [newOrder, ...prev]);
     setActiveReceiptOrder(newOrder);
 
+    // Record Consignment Commission Ledger Entries (POS-US-031)
+    if (!isPartial) {
+      const consignmentCartItems = cart.filter(
+        (i) => i.ownershipType === 'consignment' && i.supplierId
+      );
+
+      if (consignmentCartItems.length > 0) {
+        const newCommEntries: CommissionLedgerEntry[] = consignmentCartItems.map((item, idx) => {
+          const gross = item.unitPrice * item.quantity;
+          const lineItemDisc = item.itemDiscountAmount
+            ? item.itemDiscountAmount * item.quantity
+            : item.itemDiscountPercent
+            ? Math.round((gross * item.itemDiscountPercent) / 100)
+            : 0;
+
+          const orderDiscPortion = cartSubtotal > 0
+            ? Math.round((cartDiscountAmount * (gross - lineItemDisc)) / cartSubtotal)
+            : 0;
+
+          const allocatedDiscount = lineItemDisc + orderDiscPortion;
+          const net = Math.max(0, gross - allocatedDiscount);
+
+          let commAmount = 0;
+          if (item.commissionMethod === 'fixed') {
+            commAmount = Math.round((item.commissionValue || 0) * item.quantity);
+          } else if (item.commissionMethod === 'percentage') {
+            const basisAmount = item.commissionBasis === 'gross' ? gross : net;
+            commAmount = Math.round((basisAmount * (item.commissionValue || 0)) / 100);
+          }
+          commAmount = Math.max(0, Math.min(commAmount, net));
+          const storeNet = Math.max(0, net - commAmount);
+
+          return {
+            id: 'comm-' + Date.now().toString().slice(-6) + '-' + idx,
+            orderId: newOrder.id,
+            orderLineId: item.id,
+            receiptNumber: newOrder.receiptNumber,
+            productId: item.productId,
+            productName: item.productName,
+            supplierId: item.supplierId!,
+            supplierName: item.supplierName || 'Supplier Konsinyasi',
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            grossAmount: gross,
+            allocatedDiscount,
+            netAmount: net,
+            commissionMethod: item.commissionMethod || 'fixed',
+            commissionValue: item.commissionValue || 0,
+            commissionBasis: item.commissionBasis,
+            commissionAmount: commAmount,
+            storeNetAmount: storeNet,
+            status: 'accrued',
+            createdAt: new Date().toISOString(),
+          };
+        });
+
+        setCommissionLedger((prev) => [...newCommEntries, ...prev]);
+      }
+    }
+
     addAudit(
       'ORDER_COMPLETE',
       'order',
@@ -1070,6 +1576,20 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       )
     );
 
+    // Reverse Consignment Commission Ledger (POS-US-031 AC-08)
+    setCommissionLedger((prev) =>
+      prev.map((entry) =>
+        entry.orderId === orderId && entry.status !== 'reversed'
+          ? {
+              ...entry,
+              status: 'reversed',
+              reversedAt: new Date().toISOString(),
+              reversalReason: `Void Transaksi: ${reason}`,
+            }
+          : entry
+      )
+    );
+
     addAudit(
       'ORDER_VOID',
       'order',
@@ -1131,6 +1651,22 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           expectedCash: Math.max(0, prev.expectedCash - amount),
         };
       });
+    }
+
+    // Reverse Consignment Commission Ledger (POS-US-031 AC-09)
+    if (isFullRefund) {
+      setCommissionLedger((prev) =>
+        prev.map((entry) =>
+          entry.orderId === orderId && entry.status !== 'reversed'
+            ? {
+                ...entry,
+                status: 'reversed',
+                reversedAt: new Date().toISOString(),
+                reversalReason: `Refund Transaksi: ${reason}`,
+              }
+            : entry
+        )
+      );
     }
 
     addAudit(
@@ -1251,8 +1787,18 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         handOffSession,
         closeSession,
         openSupportSessionCorrection,
+        categories,
+        addCategory,
         products,
+        addProduct,
         manualAdjustStock,
+        suppliers,
+        addSupplier,
+        updateSupplier,
+        commissionLedger,
+        settlementCycles,
+        recordSettlementPayment,
+        generateSettlementCycles,
         customers,
         selectedCustomer,
         setSelectedCustomer,

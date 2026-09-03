@@ -1,4 +1,58 @@
-import { User, Customer, Product } from '../types';
+import {
+  User,
+  Customer,
+  Product,
+  ProductCategoryItem,
+  Supplier,
+  CommissionLedgerEntry,
+  SupplierSettlementCycle,
+} from '../types';
+
+export const INITIAL_CATEGORIES: ProductCategoryItem[] = [
+  { id: 'all', name: 'Semua Menu', icon: '🍞' },
+  { id: 'roti', name: 'Roti Manis', icon: '🥐', description: 'Roti sisir, abon, dan kreasi manis klasik' },
+  { id: 'pastry', name: 'Pastry & Croissant', icon: '🥖', description: 'Pastry renyah berlapis butter premium' },
+  { id: 'cake', name: 'Cakes & Tart', icon: '🍰', description: 'Bolu, roll cake, dan tart lembut' },
+  { id: 'cookies', name: 'Cookies & Hampers', icon: '🍪', description: 'Kue kering toples & parcel artisan' },
+  { id: 'beverage', name: 'Minuman & Kopi', icon: '☕', description: 'Kopi susu gula aren & teh segar' },
+  { id: 'custom_cake', name: 'Custom Cake (PO / DP)', icon: '🎂', description: 'Kue ulang tahun dan pesanan khusus' },
+  { id: 'snack_tradisional', name: 'Kue Basah & Tradisional', icon: '🍙', description: 'Jajanan pasar dan lemper gurih' },
+];
+
+export const INITIAL_SUPPLIERS: Supplier[] = [
+  {
+    id: 'sup-1',
+    name: 'Dapur Ibu Endang (Kue Tradisional)',
+    picName: 'Ibu Endang Rahayu',
+    phone: '0812-3344-5566',
+    scheduleType: 'weekly',
+    weeklyFrequency: 'twice',
+    weeklyDays: ['Senin', 'Kamis'],
+    nextDueDate: '2026-09-03', // Hari ini
+    createdAt: '2026-01-10T08:00:00Z',
+  },
+  {
+    id: 'sup-2',
+    name: 'Artisan Cookies & Hampers Bandung',
+    picName: 'Mas Reza Fahmi',
+    phone: '0817-8899-0011',
+    scheduleType: 'twice_monthly',
+    monthlyDates: [15, 30],
+    nextDueDate: '2026-09-15',
+    createdAt: '2026-02-01T09:00:00Z',
+  },
+  {
+    id: 'sup-3',
+    name: 'Chef Pierre Gourmet Pastry',
+    picName: 'Pierre Tanuwidjaja',
+    phone: '0819-2233-4455',
+    scheduleType: 'weekly',
+    weeklyFrequency: 'once',
+    weeklyDays: ['Jumat'],
+    nextDueDate: '2026-09-04',
+    createdAt: '2026-03-15T10:00:00Z',
+  },
+];
 
 export const STORE_INFO = {
   name: 'Roti Nusantara Bakery & Cafe',
@@ -319,7 +373,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     supplier: 'Cake Studio',
   },
 
-  // COOKIES & HAMPERS
+  // COOKIES & HAMPERS (CONSIGNMENT EXAMPLES)
   {
     id: 'prod-15',
     sku: 'COK-001',
@@ -334,7 +388,12 @@ export const INITIAL_PRODUCTS: Product[] = [
     popular: true,
     image: 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=400&auto=format&fit=crop&q=80',
     description: 'Kue kering keju Belanda Edam renyah dan asin gurih',
-    supplier: 'Cookies Artisan',
+    ownershipType: 'consignment',
+    supplierId: 'sup-2',
+    supplierName: 'Artisan Cookies & Hampers Bandung',
+    commissionMethod: 'percentage',
+    commissionValue: 20, // 20%
+    commissionBasis: 'net',
   },
   {
     id: 'prod-16',
@@ -350,7 +409,12 @@ export const INITIAL_PRODUCTS: Product[] = [
     popular: true,
     image: 'https://images.unsplash.com/photo-1499636136210-6f4ee915583e?w=400&auto=format&fit=crop&q=80',
     description: 'Mentega Wijsman wangi dengan selai nanas madu legit',
-    supplier: 'Cookies Artisan',
+    ownershipType: 'consignment',
+    supplierId: 'sup-2',
+    supplierName: 'Artisan Cookies & Hampers Bandung',
+    commissionMethod: 'percentage',
+    commissionValue: 15, // 15%
+    commissionBasis: 'gross',
   },
 
   // BEVERAGES
@@ -449,5 +513,193 @@ export const INITIAL_PRODUCTS: Product[] = [
     image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&auto=format&fit=crop&q=80',
     description: 'Paket kotak snackbox 3 kue + 1 air mineral untuk rapat/acara kantor',
     supplier: 'In-House Bakery Kitchen',
+    ownershipType: 'own',
+  },
+
+  // CONSIGNMENT TRADITIONAL KUE BASAH (POS-US-029 & POS-US-030)
+  {
+    id: 'prod-23',
+    sku: 'SNK-001',
+    name: 'Lemper Ayam Panggang Spesial (Isi 3)',
+    category: 'snack_tradisional',
+    categoryLabel: 'Kue Basah & Tradisional',
+    price: 18000,
+    isPriceCustomizable: false,
+    stock: 25,
+    lowStockThreshold: 5,
+    isMadeToOrder: false,
+    popular: true,
+    image: 'https://images.unsplash.com/photo-1541544741938-0af808871cc0?w=400&auto=format&fit=crop&q=80',
+    description: 'Ketan pulen wangi daun pandan isi suwiran ayam gurih bumbu rempah',
+    ownershipType: 'consignment',
+    supplierId: 'sup-1',
+    supplierName: 'Dapur Ibu Endang (Kue Tradisional)',
+    commissionMethod: 'fixed',
+    commissionValue: 3000, // Rp 3.000 per unit komisi toko
+  },
+  {
+    id: 'prod-24',
+    sku: 'SNK-002',
+    name: 'Kue Lapis Legit Prunes Potong Premium',
+    category: 'snack_tradisional',
+    categoryLabel: 'Kue Basah & Tradisional',
+    price: 25000,
+    isPriceCustomizable: false,
+    stock: 20,
+    lowStockThreshold: 4,
+    isMadeToOrder: false,
+    popular: true,
+    image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=400&auto=format&fit=crop&q=80',
+    description: 'Lapis legit basah mentega wisman dengan taburan buah prunes legit',
+    ownershipType: 'consignment',
+    supplierId: 'sup-1',
+    supplierName: 'Dapur Ibu Endang (Kue Tradisional)',
+    commissionMethod: 'fixed',
+    commissionValue: 4500, // Rp 4.500 per unit komisi toko
+  },
+].map((p) => ({
+  ...p,
+  ownershipType: (p as any).ownershipType || 'own',
+})) as Product[];
+
+// Pre-seeded Consignment Commission Ledger (POS-US-031)
+export const INITIAL_COMMISSION_LEDGER: CommissionLedgerEntry[] = [
+  {
+    id: 'comm-1',
+    orderId: 'ORD-HIST-01',
+    orderLineId: 'line-h1',
+    receiptNumber: 'RCP-20260901-001',
+    productId: 'prod-23',
+    productName: 'Lemper Ayam Panggang Spesial (Isi 3)',
+    supplierId: 'sup-1',
+    supplierName: 'Dapur Ibu Endang (Kue Tradisional)',
+    quantity: 6,
+    unitPrice: 18000,
+    grossAmount: 108000,
+    allocatedDiscount: 0,
+    netAmount: 108000,
+    commissionMethod: 'fixed',
+    commissionValue: 3000,
+    commissionAmount: 18000, // 6 * 3000
+    storeNetAmount: 90000,
+    status: 'included',
+    settlementId: 'SET-202609-01',
+    createdAt: '2026-09-01T10:15:00Z',
+  },
+  {
+    id: 'comm-2',
+    orderId: 'ORD-HIST-02',
+    orderLineId: 'line-h2',
+    receiptNumber: 'RCP-20260902-004',
+    productId: 'prod-15',
+    productName: 'Kastengel Keju Edam Toples 350g',
+    supplierId: 'sup-2',
+    supplierName: 'Artisan Cookies & Hampers Bandung',
+    quantity: 4,
+    unitPrice: 95000,
+    grossAmount: 380000,
+    allocatedDiscount: 20000,
+    netAmount: 360000,
+    commissionMethod: 'percentage',
+    commissionValue: 20,
+    commissionBasis: 'net',
+    commissionAmount: 72000, // 20% of 360,000
+    storeNetAmount: 288000,
+    status: 'accrued',
+    createdAt: '2026-09-02T14:30:00Z',
+  },
+  {
+    id: 'comm-3',
+    orderId: 'ORD-HIST-03',
+    orderLineId: 'line-h3',
+    receiptNumber: 'RCP-20260902-008',
+    productId: 'prod-24',
+    productName: 'Kue Lapis Legit Prunes Potong Premium',
+    supplierId: 'sup-1',
+    supplierName: 'Dapur Ibu Endang (Kue Tradisional)',
+    quantity: 5,
+    unitPrice: 25000,
+    grossAmount: 125000,
+    allocatedDiscount: 0,
+    netAmount: 125000,
+    commissionMethod: 'fixed',
+    commissionValue: 4500,
+    commissionAmount: 22500, // 5 * 4500
+    storeNetAmount: 102500,
+    status: 'accrued',
+    createdAt: '2026-09-02T16:00:00Z',
+  },
+];
+
+// Pre-seeded Supplier Settlement Cycles (POS-US-032, POS-US-034, POS-US-035)
+export const INITIAL_SETTLEMENT_CYCLES: SupplierSettlementCycle[] = [
+  {
+    id: 'SET-202608-OVERDUE',
+    supplierId: 'sup-3',
+    supplierName: 'Chef Pierre Gourmet Pastry',
+    periodStart: '2026-08-22',
+    periodEnd: '2026-08-28',
+    dueDate: '2026-08-29', // Sudah lewat = Overdue!
+    grossItemSales: 1200000,
+    discounts: 50000,
+    netItemSales: 1150000,
+    commissionPayable: 207000,
+    storeNetAfterCommission: 943000,
+    status: 'overdue',
+    commissionEntryIds: ['comm-pierre-1', 'comm-pierre-2'],
+    createdAt: '2026-08-28T23:59:00Z',
+  },
+  {
+    id: 'SET-202609-DUE-TODAY',
+    supplierId: 'sup-1',
+    supplierName: 'Dapur Ibu Endang (Kue Tradisional)',
+    periodStart: '2026-08-29',
+    periodEnd: '2026-09-02',
+    dueDate: '2026-09-03', // Hari ini = Due!
+    grossItemSales: 860000,
+    discounts: 20000,
+    netItemSales: 840000,
+    commissionPayable: 145000,
+    storeNetAfterCommission: 695000,
+    status: 'due',
+    commissionEntryIds: ['comm-endang-01'],
+    createdAt: '2026-09-02T23:59:00Z',
+  },
+  {
+    id: 'SET-202609-UPCOMING',
+    supplierId: 'sup-2',
+    supplierName: 'Artisan Cookies & Hampers Bandung',
+    periodStart: '2026-09-01',
+    periodEnd: '2026-09-14',
+    dueDate: '2026-09-15', // Masa depan = Upcoming!
+    grossItemSales: 2450000,
+    discounts: 100000,
+    netItemSales: 2350000,
+    commissionPayable: 470000,
+    storeNetAfterCommission: 1880000,
+    status: 'upcoming',
+    commissionEntryIds: ['comm-artisan-01'],
+    createdAt: '2026-09-02T23:59:00Z',
+  },
+  {
+    id: 'SET-202608-SETTLED',
+    supplierId: 'sup-1',
+    supplierName: 'Dapur Ibu Endang (Kue Tradisional)',
+    periodStart: '2026-08-25',
+    periodEnd: '2026-08-28',
+    dueDate: '2026-08-28',
+    grossItemSales: 950000,
+    discounts: 0,
+    netItemSales: 950000,
+    commissionPayable: 165000,
+    storeNetAfterCommission: 785000,
+    status: 'settled',
+    commissionEntryIds: ['comm-past-01'],
+    paymentMethod: 'transfer',
+    paymentReference: 'BCA-TRF-99882211',
+    settlementNotes: 'Transfer via BCA KlikBisnis telah diterima Ibu Endang',
+    settledBy: 'Pak Hendra (Owner / Admin)',
+    settledAt: '2026-08-28T16:30:00Z',
+    createdAt: '2026-08-28T12:00:00Z',
   },
 ];

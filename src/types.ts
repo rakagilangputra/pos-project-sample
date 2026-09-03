@@ -24,7 +24,18 @@ export interface Customer {
   lastTransactionAt?: string;
 }
 
-export type ProductCategory = 'roti' | 'pastry' | 'cake' | 'cookies' | 'beverage' | 'custom_cake';
+export type ProductCategory = string;
+
+export interface ProductCategoryItem {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+}
+
+export type ProductOwnershipType = 'own' | 'consignment';
+export type CommissionMethod = 'fixed' | 'percentage';
+export type CommissionBasis = 'gross' | 'net';
 
 export interface Product {
   id: string;
@@ -39,10 +50,16 @@ export interface Product {
   isMadeToOrder: boolean;
   baseProductId?: string; // Links made-to-order to base ready stock product
   image: string;
-  supplier?: string;
-  commissionPercent?: number;
   description?: string;
   popular?: boolean;
+  
+  // Ownership & Consignment fields (POS-US-029)
+  ownershipType: ProductOwnershipType; // 'own' | 'consignment'
+  supplierId?: string;
+  supplierName?: string;
+  commissionMethod?: CommissionMethod; // 'fixed' | 'percentage'
+  commissionValue?: number; // Fixed amount in IDR or % (0-100)
+  commissionBasis?: CommissionBasis; // 'gross' | 'net' (required if percentage)
 }
 
 export interface CartItem {
@@ -62,6 +79,14 @@ export interface CartItem {
   itemDiscountAmount?: number;
   itemDiscountReason?: string;
   stockAvailable: number;
+  
+  // Consignment line snapshot (POS-US-031)
+  ownershipType?: ProductOwnershipType;
+  supplierId?: string;
+  supplierName?: string;
+  commissionMethod?: CommissionMethod;
+  commissionValue?: number;
+  commissionBasis?: CommissionBasis;
 }
 
 export type PaymentMethod = 'cash' | 'qris' | 'deposit';
@@ -174,7 +199,7 @@ export interface AuditLog {
   actorName: string;
   actorRole: UserRole;
   action: string;
-  entityType: 'order' | 'session' | 'stock' | 'user' | 'price' | 'discount';
+  entityType: 'order' | 'session' | 'stock' | 'user' | 'price' | 'discount' | 'supplier' | 'consignment' | 'category' | 'product';
   entityId: string;
   details: string;
   beforeValue?: string;
@@ -194,4 +219,83 @@ export interface StockAdjustmentRecord {
   adminId: string;
   adminName: string;
   timestamp: string;
+}
+
+// POS-US-030: Supplier Master
+export type SettlementScheduleType = 'weekly' | 'twice_monthly';
+export type WeeklyFrequency = 'once' | 'twice' | 'three_times';
+
+export interface Supplier {
+  id: string;
+  name: string;
+  picName: string;
+  phone: string;
+  address?: string;
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankAccountHolder?: string;
+  scheduleType: SettlementScheduleType;
+  weeklyFrequency?: WeeklyFrequency;
+  weeklyDays?: string[]; // e.g. ['Senin', 'Kamis']
+  scheduleDayOfWeek?: number; // 1-7
+  scheduleDatesOfMonth?: number[]; // e.g. [15, 30]
+  monthlyDates?: number[]; // e.g. [15, 30]
+  nextDueDate?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+// POS-US-031: Consignment Commission Ledger
+export type CommissionLedgerStatus = 'accrued' | 'included' | 'settled' | 'reversed';
+
+export interface CommissionLedgerEntry {
+  id: string;
+  orderId: string;
+  orderLineId: string;
+  receiptNumber: string;
+  productId: string;
+  productName: string;
+  supplierId: string;
+  supplierName: string;
+  quantity: number;
+  unitPrice: number;
+  grossAmount: number; // Transaction Unit Price * Completed Quantity (excluding tax)
+  allocatedDiscount: number; // Item/order allocated discounts
+  netAmount: number; // grossAmount - allocatedDiscount
+  commissionMethod: CommissionMethod;
+  commissionValue: number;
+  commissionBasis?: CommissionBasis;
+  commissionAmount: number;
+  storeNetAmount: number; // netAmount - commissionAmount
+  status: CommissionLedgerStatus;
+  settlementId?: string;
+  createdAt: string;
+  reversedAt?: string;
+  reversalReason?: string;
+}
+
+// POS-US-032 & POS-US-034 & POS-US-035: Supplier Settlement Cycles
+export type SettlementCycleStatus = 'upcoming' | 'due' | 'overdue' | 'settled';
+
+export interface SupplierSettlementCycle {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  periodStart: string;
+  periodEnd: string;
+  dueDate: string; // YYYY-MM-DD
+  grossItemSales: number;
+  discounts: number;
+  netItemSales: number;
+  commissionPayable: number;
+  storeNetAfterCommission: number;
+  status: SettlementCycleStatus;
+  commissionEntryIds: string[];
+  // POS-US-035: Payment evidence
+  paymentMethod?: 'cash' | 'transfer' | 'qris' | 'other';
+  paymentReference?: string;
+  settlementNotes?: string;
+  settledBy?: string;
+  settledAt?: string;
+  createdAt: string;
 }

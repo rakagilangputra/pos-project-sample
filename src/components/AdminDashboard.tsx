@@ -10,12 +10,19 @@ import {
   Users,
   DollarSign,
   PieChart,
+  Building2,
+  Coins,
+  ArrowUpRight,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 import { formatIDR } from '../utils/formatters';
 
-export const AdminDashboard: React.FC = () => {
-  const { orders, products, users } = usePOS();
+interface AdminDashboardProps {
+  onOpenConsignmentModal?: () => void;
+}
+
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenConsignmentModal }) => {
+  const { orders, products, users, commissionLedger, settlementCycles } = usePOS();
 
   // Completed valid sales
   const validOrders = orders.filter(
@@ -23,7 +30,7 @@ export const AdminDashboard: React.FC = () => {
   );
 
   const totalSalesToday = validOrders.reduce((sum, o) => sum + o.paidAmount, 0);
-  // Estimate month by today * 26 or realistic multiplier for demo
+  // Estimate month by today * 18 or realistic multiplier for demo
   const totalSalesMonth = totalSalesToday * 18 + 4500000;
   const totalOrdersCount = validOrders.length;
   const averageBasket = totalOrdersCount > 0 ? Math.round(totalSalesToday / totalOrdersCount) : 0;
@@ -71,6 +78,15 @@ export const AdminDashboard: React.FC = () => {
     cashierStats[o.cashierName] = (cashierStats[o.cashierName] || 0) + 1;
   });
 
+  // Consignment KPIs (POS-US-033)
+  const validLedger = commissionLedger.filter((e) => e.status !== 'reversed');
+  const consignmentSales = validLedger.reduce((sum, e) => sum + e.netAmount, 0);
+  const consignmentCommission = validLedger.reduce((sum, e) => sum + e.commissionAmount, 0);
+  const consignmentUnits = validLedger.reduce((sum, e) => sum + e.quantity, 0);
+  const unsettledCycles = settlementCycles.filter((s) => s.status !== 'settled');
+  const unsettledDebt = unsettledCycles.reduce((sum, s) => sum + s.commissionPayable, 0);
+  const overdueCount = settlementCycles.filter((s) => s.status === 'overdue').length;
+
   return (
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-transparent text-[#2D241E]">
       {/* Top Banner */}
@@ -80,7 +96,7 @@ export const AdminDashboard: React.FC = () => {
             Dashboard Operasional Bakery
           </h2>
           <p className="text-xs text-[#8C7B6C] mt-0.5">
-            Pantauan penjualan real-time, metode pembayaran, performa kasir, dan kesehatan inventori
+            Pantauan penjualan real-time, metode pembayaran, performa kasir, dan konsinyasi mitra
           </p>
         </div>
 
@@ -139,95 +155,159 @@ export const AdminDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Middle Grid: Payment Distribution & Low Stock Alerts */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Payment Breakdown (7 cols) */}
-        <div className="lg:col-span-7 rounded-3xl border-2 border-[#E5DACE] bg-white p-6 shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
+      {/* CONSIGNMENT SUMMARY BENTO BOX (POS-US-033) */}
+      <div className="rounded-3xl border-2 border-[#E5DACE] bg-amber-50/50 p-6 shadow-sm space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#D97706] text-white shadow-xs">
+              <Building2 className="h-6 w-6" />
+            </div>
             <div>
-              <h3 className="text-base font-bold text-[#2D241E]">Distribusi Metode Pembayaran</h3>
-              <p className="text-xs text-[#8C7B6C]">Porsi penerimaan kas vs pembayaran digital</p>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-black text-[#2D241E]">
+                  Kinerja Konsinyasi & Bagi Hasil Mitra (POS-US-033)
+                </h3>
+                {overdueCount > 0 && (
+                  <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-black text-white">
+                    {overdueCount} Jatuh Tempo Terlambat
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-[#8C7B6C]">
+                Rekapitulasi penjualan barang titipan, bagi hasil toko, dan kewajiban hutang settlement
+              </p>
             </div>
-            <PieChart className="h-5 w-5 text-[#8C7B6C]" />
           </div>
 
-          {/* Visual Percentage Bar */}
-          <div className="h-6 w-full overflow-hidden rounded-2xl flex bg-[#FDFBF7] border border-[#E5DACE] p-0.5">
-            <div
-              className="bg-[#059669] h-full rounded-l-xl transition-all"
-              style={{ width: `${cashPercent}%` }}
-              title={`Tunai: ${cashPercent}%`}
-            />
-            <div
-              className="bg-blue-500 h-full transition-all"
-              style={{ width: `${qrisPercent}%` }}
-              title={`QRIS: ${qrisPercent}%`}
-            />
-            <div
-              className="bg-purple-500 h-full rounded-r-xl transition-all"
-              style={{ width: `${depositPercent}%` }}
-              title={`Deposit: ${depositPercent}%`}
-            />
+          {onOpenConsignmentModal && (
+            <button
+              onClick={onOpenConsignmentModal}
+              className="flex items-center gap-1.5 rounded-2xl bg-[#2D241E] px-4 py-2 text-xs font-black text-white hover:bg-black transition shadow-xs"
+            >
+              <span>Buka Manajemen Konsinyasi</span>
+              <ArrowUpRight className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="rounded-2xl border border-[#E5DACE] bg-white p-3.5">
+            <span className="text-[11px] font-bold text-[#8C7B6C] uppercase">Unit Terjual</span>
+            <div className="text-xl font-black text-[#2D241E] mt-1">{consignmentUnits} pcs</div>
+            <span className="text-[10px] text-[#8C7B6C]">Produk titipan laku</span>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 pt-2">
-            <div className="rounded-2xl border-2 border-emerald-100 bg-emerald-50/50 p-3">
-              <div className="flex items-center gap-1.5">
-                <span className="h-3 w-3 rounded-full bg-[#059669] inline-block" />
-                <span className="text-xs font-bold text-[#2D241E]">Tunai ({cashPercent}%)</span>
+          <div className="rounded-2xl border border-[#E5DACE] bg-white p-3.5">
+            <span className="text-[11px] font-bold text-[#8C7B6C] uppercase">Net Penjualan</span>
+            <div className="text-xl font-black text-[#2D241E] mt-1">{formatIDR(consignmentSales)}</div>
+            <span className="text-[10px] text-[#8C7B6C]">Sebelum potong komisi</span>
+          </div>
+
+          <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3.5">
+            <span className="text-[11px] font-black text-[#D97706] uppercase">Komisi Toko</span>
+            <div className="text-xl font-black text-[#D97706] mt-1">{formatIDR(consignmentCommission)}</div>
+            <span className="text-[10px] text-[#8C7B6C]">Pendapatan bersih toko</span>
+          </div>
+
+          <div className="rounded-2xl border border-[#E5DACE] bg-white p-3.5">
+            <span className="text-[11px] font-bold text-rose-600 uppercase">Hutang Belum Lunas</span>
+            <div className="text-xl font-black text-rose-700 mt-1">{formatIDR(unsettledDebt)}</div>
+            <span className="text-[10px] text-[#8C7B6C]">{unsettledCycles.length} siklus berjalan</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Middle Row: Payment Methods & Inventory Health Bento Cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Payment Methods Breakdown */}
+        <div className="lg:col-span-6 rounded-3xl border-2 border-[#E5DACE] bg-white p-6 shadow-sm space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <PieChart className="h-5 w-5 text-[#D97706]" />
+              <h3 className="text-base font-bold text-[#2D241E]">Komposisi Metode Pembayaran</h3>
+            </div>
+            <span className="text-xs text-[#8C7B6C]">Hari Ini</span>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <div className="flex justify-between text-xs font-bold text-[#2D241E] mb-1">
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500"></span> Tunai (Cash)
+                </span>
+                <span>{formatIDR(cashTotal)} ({cashPercent}%)</span>
               </div>
-              <span className="text-base font-black text-[#059669] mt-1 block">{formatIDR(cashTotal)}</span>
+              <div className="h-3 w-full rounded-full bg-gray-100 overflow-hidden">
+                <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${cashPercent}%` }}></div>
+              </div>
             </div>
 
-            <div className="rounded-2xl border-2 border-blue-100 bg-blue-50/50 p-3">
-              <div className="flex items-center gap-1.5">
-                <span className="h-3 w-3 rounded-full bg-blue-500 inline-block" />
-                <span className="text-xs font-bold text-[#2D241E]">QRIS ({qrisPercent}%)</span>
+            <div>
+              <div className="flex justify-between text-xs font-bold text-[#2D241E] mb-1">
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#D97706]"></span> QRIS / E-Wallet
+                </span>
+                <span>{formatIDR(qrisTotal)} ({qrisPercent}%)</span>
               </div>
-              <span className="text-base font-black text-blue-900 mt-1 block">{formatIDR(qrisTotal)}</span>
+              <div className="h-3 w-full rounded-full bg-gray-100 overflow-hidden">
+                <div className="h-full bg-[#D97706] rounded-full" style={{ width: `${qrisPercent}%` }}></div>
+              </div>
             </div>
 
-            <div className="rounded-2xl border-2 border-purple-100 bg-purple-50/50 p-3">
-              <div className="flex items-center gap-1.5">
-                <span className="h-3 w-3 rounded-full bg-purple-500 inline-block" />
-                <span className="text-xs font-bold text-[#2D241E]">Deposit ({depositPercent}%)</span>
+            <div>
+              <div className="flex justify-between text-xs font-bold text-[#2D241E] mb-1">
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-purple-600"></span> DP / Deposit Custom Cake
+                </span>
+                <span>{formatIDR(depositTotal)} ({depositPercent}%)</span>
               </div>
-              <span className="text-base font-black text-purple-900 mt-1 block">{formatIDR(depositTotal)}</span>
+              <div className="h-3 w-full rounded-full bg-gray-100 overflow-hidden">
+                <div className="h-full bg-purple-600 rounded-full" style={{ width: `${depositPercent}%` }}></div>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Low Stock Alerts (5 cols) */}
-        <div className="lg:col-span-5 rounded-3xl border-2 border-[#E5DACE] bg-white p-6 shadow-sm space-y-4">
+        {/* Low Stock Alerts */}
+        <div className="lg:col-span-6 rounded-3xl border-2 border-[#E5DACE] bg-white p-6 shadow-sm space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-[#D97706]" />
+              <AlertTriangle className="h-5 w-5 text-rose-500" />
               <h3 className="text-base font-bold text-[#2D241E]">Peringatan Stok Menipis</h3>
             </div>
-            <span className="rounded-full bg-amber-100 border border-[#D97706]/30 px-2.5 py-0.5 text-xs font-bold text-amber-900">
-              {lowStockItems.length} Produk
+            <span className="rounded-full bg-rose-100 text-rose-800 px-2.5 py-0.5 text-xs font-bold">
+              {lowStockItems.length} Produk Perlu Restock
             </span>
           </div>
 
-          <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+          <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
             {lowStockItems.length === 0 ? (
-              <div className="py-6 text-center text-xs text-[#8C7B6C]">
-                <CheckCircle2 className="h-8 w-8 text-[#059669] mx-auto mb-1" />
-                <span>Semua stok produk bakery dalam jumlah aman.</span>
+              <div className="flex items-center justify-center gap-2 text-xs font-bold text-emerald-700 py-6">
+                <CheckCircle2 className="h-4 w-4" />
+                <span>Semua stok roti aman & tercukupi!</span>
               </div>
             ) : (
               lowStockItems.map((prod) => (
                 <div
                   key={prod.id}
-                  className="flex items-center justify-between rounded-2xl border-2 border-[#E5DACE] bg-[#FDFBF7] p-2.5 text-xs"
+                  className="flex items-center justify-between rounded-2xl border border-[#E5DACE] bg-[#FDFBF7] p-2.5 text-xs"
                 >
-                  <div className="truncate mr-2">
-                    <span className="font-bold text-[#2D241E] block truncate">{prod.name}</span>
-                    <span className="text-[10px] text-[#8C7B6C]">{prod.categoryLabel}</span>
+                  <div className="flex items-center gap-2.5">
+                    <img
+                      src={prod.image}
+                      alt={prod.name}
+                      className="h-9 w-9 rounded-xl object-cover border border-[#E5DACE]"
+                    />
+                    <div>
+                      <span className="font-bold text-[#2D241E] block">{prod.name}</span>
+                      <span className="text-[10px] text-[#8C7B6C]">Kategori: {prod.categoryLabel}</span>
+                    </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <span className={`font-black ${prod.stock <= 0 ? 'text-rose-600' : 'text-[#D97706]'}`}>
-                      {prod.stock <= 0 ? 'Habis (0)' : `Sisa ${prod.stock} pcs`}
+                  <div className="text-right">
+                    <span
+                      className={`font-black ${prod.stock <= 0 ? 'text-rose-600' : 'text-amber-700'}`}
+                    >
+                      Sisa: {prod.stock} pcs
                     </span>
                     <span className="text-[10px] text-[#8C7B6C] block">Min: {prod.lowStockThreshold}</span>
                   </div>
