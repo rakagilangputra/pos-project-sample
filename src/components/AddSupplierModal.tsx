@@ -1,30 +1,22 @@
-import React, { useState } from 'react';
-import { Building2, X, Check, Calendar, Phone, User, CreditCard } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Building2, X, Check, Phone, User, CreditCard } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
-import { SettlementScheduleType } from '../types';
+import { Supplier } from '../types';
 
 interface AddSupplierModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSupplierCreated?: (supplierId: string) => void;
+  supplierToEdit?: Supplier | null;
 }
-
-const DAYS_OF_WEEK = [
-  { id: 1, label: 'Senin' },
-  { id: 2, label: 'Selasa' },
-  { id: 3, label: 'Rabu' },
-  { id: 4, label: 'Kamis' },
-  { id: 5, label: 'Jumat' },
-  { id: 6, label: 'Sabtu' },
-  { id: 7, label: 'Minggu' },
-];
 
 export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
   isOpen,
   onClose,
   onSupplierCreated,
+  supplierToEdit,
 }) => {
-  const { addSupplier } = usePOS();
+  const { addSupplier, updateSupplier } = usePOS();
   const [name, setName] = useState('');
   const [picName, setPicName] = useState('');
   const [phone, setPhone] = useState('');
@@ -32,12 +24,31 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
   const [bankName, setBankName] = useState('BCA');
   const [bankAccountNumber, setBankAccountNumber] = useState('');
   const [bankAccountHolder, setBankAccountHolder] = useState('');
-  const [scheduleType, setScheduleType] = useState<SettlementScheduleType>('weekly');
-  const [scheduleDayOfWeek, setScheduleDayOfWeek] = useState<number>(5); // Jumat
-  const [scheduleDates, setScheduleDates] = useState<[number, number]>([15, 30]);
 
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  useEffect(() => {
+    if (supplierToEdit) {
+      setName(supplierToEdit.name || '');
+      setPicName(supplierToEdit.picName || '');
+      setPhone(supplierToEdit.phone || '');
+      setAddress(supplierToEdit.address || '');
+      setBankName(supplierToEdit.bankName || 'BCA');
+      setBankAccountNumber(supplierToEdit.bankAccountNumber || '');
+      setBankAccountHolder(supplierToEdit.bankAccountHolder || '');
+    } else {
+      setName('');
+      setPicName('');
+      setPhone('');
+      setAddress('');
+      setBankName('BCA');
+      setBankAccountNumber('');
+      setBankAccountHolder('');
+    }
+    setErrorMsg('');
+    setSuccessMsg('');
+  }, [supplierToEdit, isOpen]);
 
   if (!isOpen) return null;
 
@@ -52,39 +63,28 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
       return;
     }
 
-    // Calculate next due date
-    const now = new Date();
-    let nextDueStr = '';
-    if (scheduleType === 'weekly') {
-      const currentDay = now.getDay() === 0 ? 7 : now.getDay();
-      let diff = scheduleDayOfWeek - currentDay;
-      if (diff <= 0) diff += 7;
-      const nextDate = new Date(now.getTime() + diff * 86400000);
-      nextDueStr = nextDate.toISOString().split('T')[0];
+    let res;
+    if (supplierToEdit) {
+      res = updateSupplier(supplierToEdit.id, {
+        name: trimmedName,
+        picName: picName.trim(),
+        phone: phone.trim(),
+        address: address.trim() || undefined,
+        bankName: bankName.trim() || undefined,
+        bankAccountNumber: bankAccountNumber.trim() || undefined,
+        bankAccountHolder: bankAccountHolder.trim() || undefined,
+      });
     } else {
-      const currentMonthDate = now.getDate();
-      const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth();
-      if (currentMonthDate <= scheduleDates[0]) {
-        nextDueStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(scheduleDates[0]).padStart(2, '0')}`;
-      } else {
-        nextDueStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(scheduleDates[1]).padStart(2, '0')}`;
-      }
+      res = addSupplier({
+        name: trimmedName,
+        picName: picName.trim(),
+        phone: phone.trim(),
+        address: address.trim() || undefined,
+        bankName: bankName.trim() || undefined,
+        bankAccountNumber: bankAccountNumber.trim() || undefined,
+        bankAccountHolder: bankAccountHolder.trim() || undefined,
+      });
     }
-
-    const res = addSupplier({
-      name: trimmedName,
-      picName: picName.trim(),
-      phone: phone.trim(),
-      address: address.trim() || undefined,
-      bankName: bankName.trim() || undefined,
-      bankAccountNumber: bankAccountNumber.trim() || undefined,
-      bankAccountHolder: bankAccountHolder.trim() || undefined,
-      scheduleType,
-      scheduleDayOfWeek: scheduleType === 'weekly' ? scheduleDayOfWeek : undefined,
-      scheduleDatesOfMonth: scheduleType === 'twice_monthly' ? scheduleDates : undefined,
-      nextDueDate: nextDueStr,
-    });
 
     if (!res.success) {
       setErrorMsg(res.message);
@@ -92,8 +92,8 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
     }
 
     setSuccessMsg(res.message);
-    if (res.supplier && onSupplierCreated) {
-      onSupplierCreated(res.supplier.id);
+    if (!supplierToEdit && (res as any).supplier && onSupplierCreated) {
+      onSupplierCreated((res as any).supplier.id);
     }
     setTimeout(() => {
       onClose();
@@ -116,8 +116,14 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
               <Building2 className="h-6 w-6" />
             </div>
             <div>
-              <h3 className="text-base font-black text-[#2D241E]">Tambah Mitra Supplier Konsinyasi</h3>
-              <p className="text-xs text-[#8C7B6C] font-semibold">Master Supplier & Jadwal Settlement (POS-US-030)</p>
+              <h3 className="text-base font-black text-[#2D241E]">
+                {supplierToEdit ? 'Edit Informasi Mitra Supplier' : 'Tambah Mitra Supplier Konsinyasi'}
+              </h3>
+              <p className="text-xs text-[#8C7B6C] font-semibold">
+                {supplierToEdit
+                  ? 'Perbarui Data Kontak & Rekening Pembayaran'
+                  : 'Master Data Mitra Supplier & Rekening Pembayaran'}
+              </p>
             </div>
           </div>
           <button
@@ -188,91 +194,6 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
             </div>
           </div>
 
-          {/* Settlement Schedule (POS-US-030 AC-03) */}
-          <div className="rounded-2xl border-2 border-[#E5DACE] bg-white p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-[#D97706]" />
-              <label className="text-xs font-black uppercase tracking-wider text-[#2D241E]">
-                Jadwal Siklus Settlement Komisi <span className="text-rose-500">*</span>
-              </label>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setScheduleType('weekly')}
-                className={`rounded-xl border-2 py-2 px-3 text-xs font-bold transition ${
-                  scheduleType === 'weekly'
-                    ? 'border-[#D97706] bg-amber-50 text-[#2D241E] shadow-xs'
-                    : 'border-[#E5DACE] bg-white text-[#8C7B6C]'
-                }`}
-              >
-                Mingguan (Weekly)
-              </button>
-              <button
-                type="button"
-                onClick={() => setScheduleType('twice_monthly')}
-                className={`rounded-xl border-2 py-2 px-3 text-xs font-bold transition ${
-                  scheduleType === 'twice_monthly'
-                    ? 'border-[#D97706] bg-amber-50 text-[#2D241E] shadow-xs'
-                    : 'border-[#E5DACE] bg-white text-[#8C7B6C]'
-                }`}
-              >
-                2x Sebulan (Bi-Weekly)
-              </button>
-            </div>
-
-            {scheduleType === 'weekly' ? (
-              <div className="space-y-1 pt-1">
-                <span className="text-[11px] font-bold text-[#8C7B6C]">Pilih Hari Settlement:</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {DAYS_OF_WEEK.map((d) => (
-                    <button
-                      key={d.id}
-                      type="button"
-                      onClick={() => setScheduleDayOfWeek(d.id)}
-                      className={`rounded-lg border px-2.5 py-1 text-xs font-bold transition ${
-                        scheduleDayOfWeek === d.id
-                          ? 'border-[#D97706] bg-[#D97706] text-white'
-                          : 'border-[#E5DACE] bg-[#FDFBF7] text-[#2D241E]'
-                      }`}
-                    >
-                      {d.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-1 pt-1">
-                <span className="text-[11px] font-bold text-[#8C7B6C]">Tanggal Tiap Bulan:</span>
-                <div className="flex items-center gap-2 text-xs font-bold text-[#2D241E]">
-                  <span>Tanggal</span>
-                  <input
-                    type="number"
-                    min="1"
-                    max="31"
-                    value={scheduleDates[0]}
-                    onChange={(e) =>
-                      setScheduleDates([parseInt(e.target.value) || 15, scheduleDates[1]])
-                    }
-                    className="w-14 rounded-lg border-2 border-[#E5DACE] px-2 py-1 text-center font-bold"
-                  />
-                  <span>dan Tanggal</span>
-                  <input
-                    type="number"
-                    min="1"
-                    max="31"
-                    value={scheduleDates[1]}
-                    onChange={(e) =>
-                      setScheduleDates([scheduleDates[0], parseInt(e.target.value) || 30])
-                    }
-                    className="w-14 rounded-lg border-2 border-[#E5DACE] px-2 py-1 text-center font-bold"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* Bank & Payment Destination */}
           <div className="rounded-2xl border-2 border-[#E5DACE] bg-white p-4 space-y-3">
             <div className="flex items-center gap-2">
@@ -323,7 +244,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
               className="flex items-center gap-2 rounded-xl bg-[#D97706] px-5 py-2 text-xs font-black text-white shadow-xs hover:bg-amber-700 active:scale-95 transition"
             >
               <Check className="h-4 w-4" />
-              <span>Simpan Supplier</span>
+              <span>{supplierToEdit ? 'Simpan Perubahan' : 'Simpan Supplier'}</span>
             </button>
             <button
               type="button"

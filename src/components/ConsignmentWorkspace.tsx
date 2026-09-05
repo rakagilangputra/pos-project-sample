@@ -11,7 +11,6 @@ import {
   Filter,
   ArrowUpRight,
   ShieldCheck,
-  RefreshCw,
   Plus,
   CreditCard,
   FileText,
@@ -19,9 +18,10 @@ import {
   ChevronRight,
   UserPlus,
   Info,
+  Pencil,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
-import { SupplierSettlementCycle } from '../types';
+import { SupplierSettlementCycle, Supplier } from '../types';
 import { formatIDR, formatDateTime } from '../utils/formatters';
 import { AddSupplierModal } from './AddSupplierModal';
 
@@ -35,7 +35,6 @@ export const ConsignmentWorkspace: React.FC = () => {
     commissionLedger,
     settlementCycles,
     recordSettlementPayment,
-    generateSettlementCycles,
     currentUser,
     verifySupervisorPin,
   } = usePOS();
@@ -43,14 +42,15 @@ export const ConsignmentWorkspace: React.FC = () => {
   // Local View Navigation (Ringkasan default, Buku Besar Komisi, Settlement, Mitra Supplier)
   const [activeView, setActiveView] = useState<ConsignmentLocalView>('summary');
 
-  // Single modal for Add Supplier
+  // Single modal for Add / Edit Supplier
   const [isAddSupplierOpen, setIsAddSupplierOpen] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
 
   // Filters
   const [datePeriod, setDatePeriod] = useState<DateFilterPeriod>('all');
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [settlementFilter, setSettlementFilter] = useState<'all' | 'due' | 'overdue' | 'settled'>('all');
+  const [settlementFilter, setSettlementFilter] = useState<'all' | 'unsettled' | 'settled'>('all');
 
   // Record Settlement Payment Modal (single layer, POS-US-035 & POS-US-049)
   const [paymentCycle, setPaymentCycle] = useState<SupplierSettlementCycle | null>(null);
@@ -91,38 +91,21 @@ export const ConsignmentWorkspace: React.FC = () => {
     });
   }, [commissionLedger, datePeriod, selectedSupplierId, searchQuery]);
 
-  // Primary KPIs (POS-US-051 AC-03: No more than 4 primary summary cards)
+  // Primary KPIs (Accounting Summary for Consignment)
   const kpis = useMemo(() => {
     const valid = filteredLedger.filter((e) => e.status !== 'reversed');
     const netConsignmentSales = valid.reduce((sum, e) => sum + e.netAmount, 0);
     const storeCommission = valid.reduce((sum, e) => sum + e.commissionAmount, 0);
-
-    // Unpaid settlements (due and overdue)
-    const dueOrOverdueCycles = settlementCycles.filter((s) => s.status === 'due' || s.status === 'overdue');
-    const totalDueOrOverduePayable = dueOrOverdueCycles.reduce((sum, s) => sum + s.storeNetAfterCommission, 0);
-
-    // Nearest due date
-    const unpaidWithDueDate = settlementCycles
-      .filter((s) => s.status !== 'settled')
-      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
-    const nearestDue = unpaidWithDueDate[0] || null;
+    const supplierPayable = netConsignmentSales - storeCommission;
 
     return {
-      totalDueOrOverduePayable,
-      dueOrOverdueCount: dueOrOverdueCycles.length,
-      nearestDueDate: nearestDue ? nearestDue.dueDate : '-',
-      nearestDueSupplier: nearestDue ? nearestDue.supplierName : 'Tidak Ada',
       storeCommission,
       netConsignmentSales,
+      supplierPayable,
     };
-  }, [filteredLedger, settlementCycles]);
+  }, [filteredLedger]);
 
-  // Attention Required Items (Overdue and Due Today cycles)
-  const attentionItems = useMemo(() => {
-    return settlementCycles.filter((c) => c.status === 'overdue' || c.status === 'due');
-  }, [settlementCycles]);
-
-  // Supplier Recap Table (POS-US-051 AC-03)
+  // Supplier Recap Table
   const supplierRecap = useMemo(() => {
     return suppliers.map((sup) => {
       const supEntries = filteredLedger.filter((e) => e.supplierId === sup.id && e.status !== 'reversed');
@@ -130,27 +113,20 @@ export const ConsignmentWorkspace: React.FC = () => {
       const commission = supEntries.reduce((s, e) => s + e.commissionAmount, 0);
       const payable = netSales - commission;
 
-      const supCycles = settlementCycles
-        .filter((c) => c.supplierId === sup.id && c.status !== 'settled')
-        .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
-      const nextCycle = supCycles[0];
-
       return {
         supplier: sup,
         netSales,
         commission,
         payable,
-        nextDueDate: nextCycle ? nextCycle.dueDate : sup.nextDueDate || '-',
-        hasOverdue: supCycles.some((c) => c.status === 'overdue'),
-        hasDueToday: supCycles.some((c) => c.status === 'due'),
       };
     });
-  }, [suppliers, filteredLedger, settlementCycles]);
+  }, [suppliers, filteredLedger]);
 
   // Filtered Settlement Cycles
   const filteredCycles = useMemo(() => {
     return settlementCycles.filter((c) => {
-      if (settlementFilter !== 'all' && c.status !== settlementFilter) return false;
+      if (settlementFilter === 'unsettled' && c.status === 'settled') return false;
+      if (settlementFilter === 'settled' && c.status !== 'settled') return false;
       if (selectedSupplierId !== 'all' && c.supplierId !== selectedSupplierId) return false;
       return true;
     });
@@ -255,9 +231,9 @@ export const ConsignmentWorkspace: React.FC = () => {
           >
             <CreditCard className="h-3.5 w-3.5" />
             <span>Settlement</span>
-            {attentionItems.length > 0 && (
-              <span className="rounded-full bg-rose-600 text-white text-[9px] px-1.5 py-0.2 font-black">
-                {attentionItems.length}
+            {settlementCycles.filter((c) => c.status !== 'settled').length > 0 && (
+              <span className="rounded-full bg-amber-600 text-white text-[9px] px-1.5 py-0.2 font-black">
+                {settlementCycles.filter((c) => c.status !== 'settled').length}
               </span>
             )}
           </button>
@@ -276,21 +252,7 @@ export const ConsignmentWorkspace: React.FC = () => {
         </div>
 
         {/* Action Button */}
-        <div className="flex items-center gap-2">
-          {activeView === 'settlement' && (
-            <button
-              onClick={() => {
-                const res = generateSettlementCycles();
-                alert(`Siklus settlement diperbarui! ${res.count} siklus terdeteksi.`);
-              }}
-              className="flex items-center gap-1.5 rounded-xl border border-purple-300 bg-white px-3 py-2 text-xs font-bold text-purple-800 hover:bg-purple-50 active:scale-95 transition shadow-xs"
-              title="Periksa transaksi baru dan sinkronkan siklus settlement"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              <span>Sinkronkan Siklus</span>
-            </button>
-          )}
-        </div>
+        <div className="flex items-center gap-2"></div>
       </div>
 
       {/* -------------------------------------------------------------
@@ -333,39 +295,23 @@ export const ConsignmentWorkspace: React.FC = () => {
             </div>
           </div>
 
-          {/* KPI Cards (No more than 4 primary summary cards) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* KPI 1: Supplier Payable Due/Overdue */}
-            <div className="rounded-2xl border-2 border-rose-200 bg-rose-50/50 p-4 space-y-1 shadow-xs">
-              <div className="flex items-center justify-between text-xs font-bold text-rose-800">
-                <span>Hutang Jatuh Tempo / Overdue</span>
-                <Clock className="h-4 w-4" />
+          {/* KPI Cards (Clean Accounting Summary) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* KPI 1: Net Consignment Sales */}
+            <div className="rounded-2xl border-2 border-purple-200 bg-purple-50/50 p-4 space-y-1 shadow-xs">
+              <div className="flex items-center justify-between text-xs font-bold text-purple-800">
+                <span>Penjualan Bersih Konsinyasi</span>
+                <Building2 className="h-4 w-4" />
               </div>
-              <div className="text-xl font-black text-rose-900">
-                {formatIDR(kpis.totalDueOrOverduePayable)}
+              <div className="text-xl font-black text-purple-950">
+                {formatIDR(kpis.netConsignmentSales)}
               </div>
-              <p className="text-[10px] text-rose-700 font-semibold">
-                {kpis.dueOrOverdueCount > 0
-                  ? `${kpis.dueOrOverdueCount} siklus menunggu pembayaran segera`
-                  : 'Tidak ada hutang terlambat saat ini'}
+              <p className="text-[10px] text-purple-700 font-semibold">
+                Total omzet produk titipan laku terjual
               </p>
             </div>
 
-            {/* KPI 2: Nearest Due Date */}
-            <div className="rounded-2xl border-2 border-amber-200 bg-amber-50/50 p-4 space-y-1 shadow-xs">
-              <div className="flex items-center justify-between text-xs font-bold text-amber-800">
-                <span>Jatuh Tempo Terdekat</span>
-                <Calendar className="h-4 w-4" />
-              </div>
-              <div className="text-xl font-black text-amber-900">
-                {kpis.nearestDueDate}
-              </div>
-              <p className="text-[10px] text-amber-700 font-semibold truncate">
-                Mitra: {kpis.nearestDueSupplier}
-              </p>
-            </div>
-
-            {/* KPI 3: Store Commission for selected period */}
+            {/* KPI 2: Store Commission */}
             <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50/50 p-4 space-y-1 shadow-xs">
               <div className="flex items-center justify-between text-xs font-bold text-emerald-800">
                 <span>Komisi Bersih Toko</span>
@@ -379,77 +325,20 @@ export const ConsignmentWorkspace: React.FC = () => {
               </p>
             </div>
 
-            {/* KPI 4: Net Consignment Sales for selected period */}
-            <div className="rounded-2xl border-2 border-purple-200 bg-purple-50/50 p-4 space-y-1 shadow-xs">
-              <div className="flex items-center justify-between text-xs font-bold text-purple-800">
-                <span>Penjualan Bersih Konsinyasi</span>
-                <Building2 className="h-4 w-4" />
+            {/* KPI 3: Total Supplier Payable */}
+            <div className="rounded-2xl border-2 border-amber-200 bg-amber-50/50 p-4 space-y-1 shadow-xs">
+              <div className="flex items-center justify-between text-xs font-bold text-amber-800">
+                <span>Hutang Bersih Mitra Supplier</span>
+                <DollarSign className="h-4 w-4" />
               </div>
-              <div className="text-xl font-black text-purple-950">
-                {formatIDR(kpis.netConsignmentSales)}
+              <div className="text-xl font-black text-amber-950">
+                {formatIDR(kpis.supplierPayable)}
               </div>
-              <p className="text-[10px] text-purple-700 font-semibold">
-                Total omzet produk titipan laku terjual
+              <p className="text-[10px] text-amber-700 font-semibold">
+                Total hak bersih mitra yang belum lunas
               </p>
             </div>
           </div>
-
-          {/* Attention Required Section for Overdue & Due Obligations */}
-          {attentionItems.length > 0 && (
-            <div className="rounded-2xl border-2 border-rose-300 bg-rose-50/60 p-4 space-y-3 animate-fadeIn">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-rose-900 font-black text-xs">
-                  <AlertTriangle className="h-4 w-4 text-rose-600" />
-                  <span>Perhatian Khusus: Pembayaran Settlement Jatuh Tempo & Terlambat ({attentionItems.length})</span>
-                </div>
-                <button
-                  onClick={() => setActiveView('settlement')}
-                  className="text-xs font-bold text-rose-800 hover:underline"
-                >
-                  Buka Tab Settlement &rarr;
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                {attentionItems.map((cycle) => (
-                  <div
-                    key={cycle.id}
-                    className="flex flex-col justify-between rounded-xl border border-rose-300 bg-white p-3 space-y-2 shadow-xs"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-[#2D241E]">{cycle.supplierName}</span>
-                        <span
-                          className={`rounded-md px-2 py-0.2 text-[9px] font-black text-white ${
-                            cycle.status === 'overdue' ? 'bg-rose-600' : 'bg-amber-600'
-                          }`}
-                        >
-                          {cycle.status === 'overdue' ? 'TERLAMBAT' : 'JATUH TEMPO'}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-[#8C7B6C] mt-1">
-                        Jatuh Tempo: <strong>{cycle.dueDate}</strong>
-                      </div>
-                      <div className="text-sm font-black text-rose-900 mt-1">
-                        {formatIDR(cycle.storeNetAfterCommission)}
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        setPaymentCycle(cycle);
-                        setPayReference('');
-                        setPayNotes('');
-                      }}
-                      className="rounded-lg bg-purple-700 py-1.5 text-center text-xs font-bold text-white hover:bg-purple-800 active:scale-95 transition"
-                    >
-                      Bayar Sekarang
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Supplier Recap Comparable Table */}
           <div className="rounded-2xl border-2 border-[#E5DACE] bg-white p-4 space-y-3 shadow-xs">
@@ -469,9 +358,7 @@ export const ConsignmentWorkspace: React.FC = () => {
                     <th className="py-2.5 px-3">Mitra Supplier</th>
                     <th className="py-2.5 px-3 text-right">Penjualan Bersih</th>
                     <th className="py-2.5 px-3 text-right">Komisi Toko</th>
-                    <th className="py-2.5 px-3 text-right">Hutang Supplier</th>
-                    <th className="py-2.5 px-3 text-center">Jatuh Tempo Terdekat</th>
-                    <th className="py-2.5 px-3 text-center">Status</th>
+                    <th className="py-2.5 px-3 text-right">Hutang Bersih Supplier</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E5DACE]/60">
@@ -491,24 +378,6 @@ export const ConsignmentWorkspace: React.FC = () => {
                       </td>
                       <td className="py-2.5 px-3 text-right font-black text-purple-950">
                         {formatIDR(item.payable)}
-                      </td>
-                      <td className="py-2.5 px-3 text-center font-semibold text-[#8C7B6C]">
-                        {item.nextDueDate}
-                      </td>
-                      <td className="py-2.5 px-3 text-center">
-                        {item.hasOverdue ? (
-                          <span className="rounded-full bg-rose-100 text-rose-800 px-2 py-0.5 text-[10px] font-black">
-                            Overdue
-                          </span>
-                        ) : item.hasDueToday ? (
-                          <span className="rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 text-[10px] font-black">
-                            Due Today
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[10px] font-black">
-                            Lancar
-                          </span>
-                        )}
                       </td>
                     </tr>
                   ))}
@@ -628,7 +497,7 @@ export const ConsignmentWorkspace: React.FC = () => {
       )}
 
       {/* -------------------------------------------------------------
-          LOCAL VIEW 3: SETTLEMENT (Payable Cycles & Payment, POS-US-051 AC-05, AC-06, AC-07)
+          LOCAL VIEW 3: SETTLEMENT (Payable & Payment, POS-US-051 AC-05, AC-06, AC-07)
           ------------------------------------------------------------- */}
       {activeView === 'settlement' && (
         <div className="flex flex-1 flex-col overflow-hidden">
@@ -636,10 +505,9 @@ export const ConsignmentWorkspace: React.FC = () => {
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E5DACE] bg-white px-6 py-3 shrink-0">
             <div className="flex gap-1.5 text-xs font-bold">
               {[
-                { id: 'all', label: 'Semua Siklus' },
-                { id: 'due', label: 'Jatuh Tempo (Due)' },
-                { id: 'overdue', label: 'Terlambat (Overdue)' },
-                { id: 'settled', label: 'Sudah Dibayar (Settled)' },
+                { id: 'all', label: 'Semua Status' },
+                { id: 'unsettled', label: 'Belum Dibayar' },
+                { id: 'settled', label: 'Sudah Dibayar (Lunas)' },
               ].map((f) => (
                 <button
                   key={f.id}
@@ -656,7 +524,7 @@ export const ConsignmentWorkspace: React.FC = () => {
             </div>
 
             <span className="text-xs text-[#8C7B6C] font-semibold">
-              Menampilkan {filteredCycles.length} siklus
+              Menampilkan {filteredCycles.length} data settlement
             </span>
           </div>
 
@@ -665,15 +533,13 @@ export const ConsignmentWorkspace: React.FC = () => {
             {filteredCycles.length === 0 ? (
               <div className="flex h-64 flex-col items-center justify-center text-center p-8 text-[#8C7B6C]">
                 <CreditCard className="h-12 w-12 opacity-30 mb-2" />
-                <p className="font-bold text-sm">Tidak ada siklus settlement pada filter ini.</p>
+                <p className="font-bold text-sm">Tidak ada data settlement pada filter ini.</p>
               </div>
             ) : (
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b-2 border-[#E5DACE] bg-[#FDFBF7] text-[#8C7B6C] font-black uppercase text-[10px]">
                     <th className="py-2.5 px-3">Mitra Supplier</th>
-                    <th className="py-2.5 px-3">Periode Siklus</th>
-                    <th className="py-2.5 px-3 text-center">Jatuh Tempo</th>
                     <th className="py-2.5 px-3 text-right">Penjualan Bersih</th>
                     <th className="py-2.5 px-3 text-right">Komisi Toko</th>
                     <th className="py-2.5 px-3 text-right">Hutang Dibayar (Net)</th>
@@ -686,12 +552,6 @@ export const ConsignmentWorkspace: React.FC = () => {
                     <tr key={cycle.id} className="hover:bg-[#FDFBF7] transition">
                       <td className="py-2.5 px-3">
                         <span className="font-bold text-[#2D241E]">{cycle.supplierName}</span>
-                      </td>
-                      <td className="py-2.5 px-3 text-[#8C7B6C]">
-                        {cycle.periodStart} s/d {cycle.periodEnd}
-                      </td>
-                      <td className="py-2.5 px-3 text-center font-bold text-[#2D241E]">
-                        {cycle.dueDate}
                       </td>
                       <td className="py-2.5 px-3 text-right font-semibold">
                         {formatIDR(cycle.netItemSales)}
@@ -707,20 +567,10 @@ export const ConsignmentWorkspace: React.FC = () => {
                           className={`rounded-full px-2.5 py-0.5 text-[9px] font-black ${
                             cycle.status === 'settled'
                               ? 'bg-emerald-100 text-emerald-800'
-                              : cycle.status === 'overdue'
-                              ? 'bg-rose-100 text-rose-800'
-                              : cycle.status === 'due'
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-blue-100 text-blue-800'
+                              : 'bg-amber-100 text-amber-800'
                           }`}
                         >
-                          {cycle.status === 'settled'
-                            ? 'LUNAS'
-                            : cycle.status === 'overdue'
-                            ? 'OVERDUE'
-                            : cycle.status === 'due'
-                            ? 'JATUH TEMPO'
-                            : 'AKAN DATANG'}
+                          {cycle.status === 'settled' ? 'LUNAS' : 'BELUM DIBAYAR'}
                         </span>
                       </td>
                       <td className="py-2.5 px-3 text-right">
@@ -781,34 +631,49 @@ export const ConsignmentWorkspace: React.FC = () => {
               return (
                 <div
                   key={sup.id}
-                  className="flex flex-col justify-between rounded-2xl border-2 border-[#E5DACE] bg-white p-5 space-y-3 shadow-xs"
+                  className="flex flex-col justify-between rounded-2xl border-2 border-[#E5DACE] bg-white p-5 space-y-3 shadow-xs hover:border-purple-300 transition"
                 >
                   <div className="space-y-2">
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-start justify-between gap-2">
                       <div>
                         <h4 className="font-black text-base text-[#2D241E]">{sup.name}</h4>
                         <p className="text-xs text-[#8C7B6C] font-semibold">
                           PIC: {sup.picName} • {sup.phone}
                         </p>
                       </div>
-                      <span className="rounded-full bg-purple-100 text-purple-900 border border-purple-200 px-2.5 py-0.5 text-[10px] font-black">
-                        {activeProdCount} Produk
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="rounded-full bg-purple-100 text-purple-900 border border-purple-200 px-2.5 py-0.5 text-[10px] font-black">
+                          {activeProdCount} Produk
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setEditingSupplier(sup)}
+                          className="flex items-center gap-1 rounded-xl border border-purple-200 bg-purple-50 px-2.5 py-1 text-xs font-bold text-purple-900 hover:bg-purple-100 hover:border-purple-300 active:scale-95 transition shadow-2xs"
+                          title={`Edit ${sup.name}`}
+                        >
+                          <Pencil className="h-3 w-3" />
+                          <span>Edit</span>
+                        </button>
+                      </div>
                     </div>
 
                     <div className="rounded-xl bg-[#FDFBF7] border border-[#E5DACE] p-3 space-y-1 text-xs">
-                      <div className="text-[#8C7B6C]">
-                        Jadwal Settlement:{' '}
-                        <strong className="text-[#2D241E]">
-                          {sup.scheduleType === 'weekly'
-                            ? `Mingguan (${sup.weeklyDays?.join(', ') || 'Senin'})`
-                            : `2x Sebulan (Tgl ${sup.monthlyDates?.join(' & ') || '15 & 30'})`}
-                        </strong>
-                      </div>
-                      <div className="text-[#8C7B6C]">
-                        Jatuh Tempo Berikutnya:{' '}
-                        <strong className="text-purple-950">{sup.nextDueDate || 'Sesuai Jadwal'}</strong>
-                      </div>
+                      {sup.scheduleType && (
+                        <div className="text-[#8C7B6C]">
+                          Jadwal Settlement:{' '}
+                          <strong className="text-[#2D241E]">
+                            {sup.scheduleType === 'weekly'
+                              ? `Mingguan (${sup.weeklyDays?.join(', ') || 'Senin'})`
+                              : `2x Sebulan (Tgl ${sup.monthlyDates?.join(' & ') || '15 & 30'})`}
+                          </strong>
+                        </div>
+                      )}
+                      {sup.nextDueDate && (
+                        <div className="text-[#8C7B6C]">
+                          Jatuh Tempo Berikutnya:{' '}
+                          <strong className="text-purple-950">{sup.nextDueDate}</strong>
+                        </div>
+                      )}
                       {sup.bankName && (
                         <div className="text-[11px] text-[#8C7B6C]">
                           Rekening: {sup.bankName} - {sup.bankAccountNumber} ({sup.bankAccountHolder})
@@ -818,7 +683,15 @@ export const ConsignmentWorkspace: React.FC = () => {
                   </div>
 
                   <div className="pt-2 border-t border-[#E5DACE] flex justify-between items-center text-[11px] text-[#8C7B6C]">
-                    <span>Alamat: {sup.address || 'Dalam Kota'}</span>
+                    <span className="truncate max-w-[200px]">Alamat: {sup.address || 'Dalam Kota'}</span>
+                    <button
+                      type="button"
+                      onClick={() => setEditingSupplier(sup)}
+                      className="flex items-center gap-1 text-xs font-bold text-purple-700 hover:text-purple-950 hover:underline"
+                    >
+                      <Pencil className="h-3 w-3" />
+                      <span>Edit Info</span>
+                    </button>
                   </div>
                 </div>
               );
@@ -840,11 +713,11 @@ export const ConsignmentWorkspace: React.FC = () => {
               <div>
                 <h3 className="text-base font-black text-purple-950">Catat Pembayaran Settlement</h3>
                 <p className="text-xs text-[#8C7B6C]">
-                  {paymentCycle.supplierName} ({paymentCycle.periodStart} s/d {paymentCycle.periodEnd})
+                  Mitra: {paymentCycle.supplierName}
                 </p>
               </div>
               <span className="rounded-xl bg-purple-100 text-purple-900 border border-purple-200 px-3 py-1 text-xs font-black">
-                Jatuh Tempo: {paymentCycle.dueDate}
+                {paymentCycle.status === 'settled' ? 'Lunas' : 'Belum Dibayar'}
               </span>
             </div>
 
@@ -951,10 +824,14 @@ export const ConsignmentWorkspace: React.FC = () => {
         </div>
       )}
 
-      {/* SINGLE-LAYER MODAL: TAMBAH MITRA SUPPLIER (POS-US-030 & POS-US-049) */}
+      {/* SINGLE-LAYER MODAL: TAMBAH / EDIT MITRA SUPPLIER (POS-US-030 & POS-US-049) */}
       <AddSupplierModal
-        isOpen={isAddSupplierOpen}
-        onClose={() => setIsAddSupplierOpen(false)}
+        isOpen={isAddSupplierOpen || editingSupplier !== null}
+        supplierToEdit={editingSupplier}
+        onClose={() => {
+          setIsAddSupplierOpen(false);
+          setEditingSupplier(null);
+        }}
       />
     </div>
   );

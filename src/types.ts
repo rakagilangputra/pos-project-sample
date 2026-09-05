@@ -234,7 +234,7 @@ export interface Supplier {
   bankName?: string;
   bankAccountNumber?: string;
   bankAccountHolder?: string;
-  scheduleType: SettlementScheduleType;
+  scheduleType?: SettlementScheduleType;
   weeklyFrequency?: WeeklyFrequency;
   weeklyDays?: string[]; // e.g. ['Senin', 'Kamis']
   scheduleDayOfWeek?: number; // 1-7

@@ -717,17 +717,6 @@ export const StockWorkspace: React.FC = () => {
               <span>Tambah Produk</span>
             </button>
           )}
-
-          {activeView === 'categories' && (
-            <button
-              id="stock-add-category-btn"
-              onClick={() => setIsAddCategoryOpen(true)}
-              className="flex items-center gap-1.5 rounded-xl bg-[#D97706] px-4 py-2 text-xs font-black text-white hover:bg-amber-700 shadow-xs active:scale-95 transition"
-            >
-              <FolderPlus className="h-4 w-4" />
-              <span>Tambah Kategori</span>
-            </button>
-          )}
         </div>
       </div>
 
