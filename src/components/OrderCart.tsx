@@ -120,6 +120,14 @@ export const OrderCart: React.FC<OrderCartProps> = ({
     holdCurrentOrder(label || undefined);
   };
 
+  const hasMto = cart.some((i) => i.isMadeToOrder);
+  const isWalkIn =
+    selectedCustomer.id === 'cust-walkin' ||
+    selectedCustomer.id === 'walk-in' ||
+    selectedCustomer.category === 'Walk-in' ||
+    selectedCustomer.name.toLowerCase().includes('walk-in') ||
+    selectedCustomer.name.toLowerCase().includes('umum');
+
   return (
     <div className="flex h-full flex-col bg-white overflow-hidden select-none">
       {/* Customer Header Bar (POS-US-038) */}
@@ -153,6 +161,27 @@ export const OrderCart: React.FC<OrderCartProps> = ({
           </button>
         </div>
       </div>
+
+      {/* MTO Named Customer Required Alert */}
+      {hasMto && isWalkIn && (
+        <div className="mx-3 mt-2 rounded-xl bg-amber-50 border border-amber-300 p-2.5 flex items-start gap-2.5 text-amber-950 shadow-xs">
+          <AlertCircle className="h-4 w-4 shrink-0 text-amber-700 mt-0.5" />
+          <div className="text-xs flex-1">
+            <p className="font-bold text-amber-900 leading-tight">MTO Wajib Pelanggan Bernama</p>
+            <p className="text-[11px] text-amber-800 mt-0.5 leading-normal">
+              Pelanggan Umum (Walk-in) tidak dapat digunakan untuk pesanan Made-to-Order.
+            </p>
+            <button
+              type="button"
+              onClick={onOpenCustomerModal}
+              className="mt-2 inline-flex items-center gap-1 rounded-lg bg-[#D97706] px-2.5 py-1 text-xs font-bold text-white shadow-xs hover:bg-amber-700 active:scale-95 transition"
+            >
+              <User className="h-3 w-3" />
+              <span>Pilih / Tambah Pelanggan</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Cart Items List (POS-US-038) */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
@@ -356,12 +385,32 @@ export const OrderCart: React.FC<OrderCartProps> = ({
         {/* ONE DOMINANT PRIMARY ACTION: BAYAR */}
         <button
           id="cart-pay-grand-btn"
-          onClick={onOpenPaymentModal}
+          onClick={() => {
+            if (hasMto && isWalkIn) {
+              posSound.error();
+              onOpenCustomerModal();
+              return;
+            }
+            onOpenPaymentModal();
+          }}
           disabled={cart.length === 0}
-          className="bg-[#D97706] text-white w-full py-3.5 sm:py-4 rounded-xl font-bold text-base sm:text-lg shadow-sm hover:bg-amber-700 active:scale-[0.99] transition disabled:opacity-40 disabled:cursor-not-allowed uppercase flex items-center justify-center gap-2"
+          className={`w-full py-3.5 sm:py-4 rounded-xl font-bold text-sm sm:text-base shadow-sm active:scale-[0.99] transition disabled:opacity-40 disabled:cursor-not-allowed uppercase flex items-center justify-center gap-2 ${
+            hasMto && isWalkIn
+              ? 'bg-amber-600 hover:bg-amber-700 text-white'
+              : 'bg-[#D97706] hover:bg-amber-700 text-white'
+          }`}
         >
-          <CreditCard className="h-5 w-5" />
-          <span>Bayar {formatIDR(cartTotal)}</span>
+          {hasMto && isWalkIn ? (
+            <>
+              <User className="h-5 w-5" />
+              <span>Wajib Pilih Pelanggan (MTO)</span>
+            </>
+          ) : (
+            <>
+              <CreditCard className="h-5 w-5" />
+              <span>{hasMto ? `Buat PO MTO (${formatIDR(cartTotal)})` : `Bayar ${formatIDR(cartTotal)}`}</span>
+            </>
+          )}
         </button>
       </div>
 

@@ -72,8 +72,9 @@ export interface CartItem {
   isPriceOverridden: boolean;
   overrideReason?: string;
   quantity: number;
-  image: string;
+  image?: string;
   isMadeToOrder: boolean;
+  baseProductId?: string;
   customizationNotes?: string;
   itemDiscountPercent?: number;
   itemDiscountAmount?: number;
@@ -100,12 +101,31 @@ export interface PaymentComponent {
   timestamp: string;
 }
 
-export type OrderStatus = 'completed' | 'awaiting_settlement' | 'voided' | 'refunded' | 'partially_refunded' | 'cancelled';
+export type OrderStatus =
+  | 'completed'
+  | 'awaiting_settlement'
+  | 'voided'
+  | 'refunded'
+  | 'partially_refunded'
+  | 'cancelled'
+  | 'active'
+  | 'ready_for_pickup'
+  | 'overdue'
+  | 'picked_up';
+
 export type PaymentStatus = 'paid' | 'partial' | 'unpaid' | 'refunded';
+
+export interface PickupTimeEditLog {
+  previousTime: string;
+  newTime: string;
+  updatedBy: string;
+  timestamp: string;
+}
 
 export interface Order {
   id: string;
   receiptNumber: string;
+  poNumber?: string; // MTO Purchase Order identifier (e.g. PO-20260906-001)
   sessionId: string;
   cashierId: string;
   cashierName: string;
@@ -129,6 +149,19 @@ export interface Order {
   orderStatus: OrderStatus;
   isMadeToOrder: boolean;
   customizationNotes?: string;
+  pickupDate?: string; // YYYY-MM-DD
+  pickupTime?: string; // HH:mm
+  pickupTimeHistory?: PickupTimeEditLog[];
+  collectorName?: string;
+  pickedUpAt?: string;
+  pickedUpBy?: string;
+  readyAt?: string;
+  readyBy?: string;
+  stockDeducted?: boolean;
+  cancellationReason?: string;
+  cancellationApprovedBy?: string;
+  cancellationCreditRef?: string;
+  cancelledAt?: string;
   createdAt: string;
   reprintCount: number;
   voidReason?: string;

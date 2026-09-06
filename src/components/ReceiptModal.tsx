@@ -135,9 +135,29 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, onClose }) =
                 <span>Pelanggan:</span>
                 <span className="font-semibold">{order.customer.name} ({order.customer.category})</span>
               </div>
-              {order.isMadeToOrder && (
-                <div className="rounded bg-rose-50 p-1.5 text-rose-900 text-[10px] font-bold">
-                  *** PESANAN KHUSUS / MADE TO ORDER ***
+              {(order.isMadeToOrder || order.poNumber) && (
+                <div className="rounded bg-amber-50 border border-amber-300 p-2 text-amber-950 text-[10px] space-y-0.5">
+                  <div className="font-black text-amber-900 tracking-wider">
+                    *** SURAT PESANAN (PURCHASE ORDER) ***
+                  </div>
+                  {order.poNumber && (
+                    <div className="flex justify-between font-mono font-bold">
+                      <span>NO. PO:</span>
+                      <span>{order.poNumber}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span>JADWAL AMBIL:</span>
+                    <span className="font-bold">
+                      {order.pickupDate || 'Hari Ini'}, {order.pickupTime || '14:00'} WIB
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>STATUS PO:</span>
+                    <span className="font-bold uppercase">
+                      {order.paymentStatus === 'paid' ? 'LUNAS (100%)' : 'UANG MUKA (DP)'}
+                    </span>
+                  </div>
                 </div>
               )}
             </div>

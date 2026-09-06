@@ -13,6 +13,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { AuditLogView } from './components/AuditLogView';
 import { StockWorkspace } from './components/StockWorkspace';
 import { ConsignmentWorkspace } from './components/ConsignmentWorkspace';
+import { PesananWorkspace } from './components/PesananWorkspace';
 import { TransactionHistorySubView } from './components/TransactionHistorySubView';
 import { ShoppingCart } from 'lucide-react';
 import { formatIDR } from './utils/formatters';
@@ -37,9 +38,9 @@ const POSMainContent: React.FC = () => {
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
 
   // Enforce role-based access control (POS-US-047 AC-02):
-  // Cashier role CANNOT access management tabs (dashboard, audit, konsinyasi, stok)
+  // Cashiers can access 'pos' and 'pesanan', but not management tabs (dashboard, audit, konsinyasi, stok)
   useEffect(() => {
-    if (currentUser.role === 'cashier' && currentTab !== 'pos') {
+    if (currentUser.role === 'cashier' && currentTab !== 'pos' && currentTab !== 'pesanan') {
       setCurrentTab('pos');
     }
   }, [currentUser.role, currentTab]);
@@ -57,11 +58,11 @@ const POSMainContent: React.FC = () => {
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-[#FDFBF7] text-[#2D241E] font-sans antialiased">
-      {/* Top Header Navigation (Role-aware 5 primary workspace tabs) */}
+      {/* Top Header Navigation (Role-aware primary workspace tabs) */}
       <Header
         currentTab={currentTab}
         onSelectTab={(tab) => {
-          if (currentUser.role === 'cashier' && tab !== 'pos') {
+          if (currentUser.role === 'cashier' && tab !== 'pos' && tab !== 'pesanan') {
             return;
           }
           setCurrentTab(tab);
@@ -147,7 +148,14 @@ const POSMainContent: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 2: DASHBOARD (Supervisors / Admin) */}
+        {/* TAB 2: PESANAN (Cashiers, Supervisors & Admin - Operational PO Management) */}
+        {currentTab === 'pesanan' && (
+          <PesananWorkspace
+            onNavigateToPOS={() => setCurrentTab('pos')}
+          />
+        )}
+
+        {/* TAB 3: DASHBOARD (Supervisors / Admin) */}
         {currentTab === 'dashboard' && currentUser.role !== 'cashier' && (
           <AdminDashboard
             onOpenConsignmentModal={() => setCurrentTab('konsinyasi')}

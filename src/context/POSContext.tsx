@@ -24,6 +24,7 @@ import {
   INITIAL_SUPPLIERS,
   INITIAL_COMMISSION_LEDGER,
   INITIAL_SETTLEMENT_CYCLES,
+  INITIAL_ORDERS,
   STORE_INFO,
 } from '../data/mockData';
 import { generateReceiptNumber, posSound } from '../utils/formatters';
@@ -133,16 +134,25 @@ interface POSContextType {
   resumeOrder: (id: string) => void;
   cancelHoldOrder: (id: string) => void;
 
-  // Checkout & Transactions
+  // Checkout & Transactions & MTO POs
   completeOrder: (
     payments: PaymentComponent[],
     options?: {
       isDeposit?: boolean;
       customizationNotes?: string;
+      pickupDate?: string;
+      pickupTime?: string;
+      poNumber?: string;
     }
   ) => { success: boolean; order?: Order; message: string };
   orders: Order[];
   settleMadeToOrder: (orderId: string, payment: PaymentComponent) => { success: boolean; message: string };
+  updatePoPickupTime: (orderId: string, newTime: string) => { success: boolean; message: string };
+  settlePoPayment: (orderId: string, payments: PaymentComponent[]) => { success: boolean; message: string };
+  markPoReadyForPickup: (orderId: string) => { success: boolean; message: string };
+  confirmPoPickup: (orderId: string, collectorName: string) => { success: boolean; message: string };
+  cancelPoWithSupervisor: (orderId: string, reason: string, supervisorPin: string) => { success: boolean; message: string };
+  duplicatePoToCart: (orderId: string, selectedItemIds: string[]) => { success: boolean; message: string };
   voidOrder: (orderId: string, reason: string, supervisorPin: string) => { success: boolean; message: string };
   refundOrder: (
     orderId: string,
@@ -449,9 +459,28 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [orders, setOrders] = useState<Order[]>(() => {
     const saved = localStorage.getItem('pos_orders');
     if (saved) {
-      try { return JSON.parse(saved); } catch {}
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const seen = new Set<string>();
+          const list: Order[] = [];
+          for (const o of parsed) {
+            if (o && o.id) {
+              seen.add(o.id);
+              list.push(o);
+            }
+          }
+          for (const init of INITIAL_ORDERS) {
+            if (!seen.has(init.id)) {
+              seen.add(init.id);
+              list.push(init);
+            }
+          }
+          return list;
+        }
+      } catch {}
     }
-    return [];
+    return INITIAL_ORDERS;
   });
 
   useEffect(() => {
@@ -1307,7 +1336,13 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Complete Order / Process Payment (POS-US-013, POS-US-014, POS-US-015)
   const completeOrder = (
     payments: PaymentComponent[],
-    options?: { isDeposit?: boolean; customizationNotes?: string }
+    options?: {
+      isDeposit?: boolean;
+      customizationNotes?: string;
+      pickupDate?: string;
+      pickupTime?: string;
+      poNumber?: string;
+    }
   ) => {
     if (cart.length === 0) {
       posSound.error();
@@ -1319,27 +1354,46 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
-    const isDeposit = Boolean(options?.isDeposit);
     const hasMadeToOrder = cart.some((i) => i.isMadeToOrder);
+    const isDeposit = Boolean(options?.isDeposit);
 
-    // Validation
-    if (!isDeposit && totalPaid < cartTotal) {
+    // Validation: Normal checkout requires full payment
+    if (!isDeposit && !hasMadeToOrder && totalPaid < cartTotal) {
       posSound.error();
       return { success: false, message: 'Jumlah pembayaran belum mencukupi total belanja!' };
     }
 
-    const isPartial = isDeposit && totalPaid < cartTotal;
+    // MTO requires at least DP amount
+    if (hasMadeToOrder && totalPaid <= 0) {
+      posSound.error();
+      return { success: false, message: 'Harap masukkan pembayaran DP atau Pelunasan!' };
+    }
+
+    const isPartial = totalPaid < cartTotal;
     const paymentStatus: Order['paymentStatus'] = isPartial ? 'partial' : 'paid';
-    const orderStatus: Order['orderStatus'] = isPartial ? 'awaiting_settlement' : 'completed';
+
+    // Initial status for MTO: active (partially paid or paid)
+    // Non-MTO: awaiting_settlement if partial, else completed
+    const orderStatus: Order['orderStatus'] = hasMadeToOrder
+      ? 'active'
+      : isPartial
+      ? 'awaiting_settlement'
+      : 'completed';
 
     // Calculate cash change
     const cashComponent = payments.find((p) => p.method === 'cash');
     const change = cashComponent?.change || 0;
 
     const receiptNo = generateReceiptNumber();
+    const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const poNo = hasMadeToOrder
+      ? options?.poNumber || `PO-${datePrefix}-${Math.floor(100 + Math.random() * 900)}`
+      : undefined;
+
     const newOrder: Order = {
       id: 'ORD-' + Date.now().toString().slice(-7),
       receiptNumber: receiptNo,
+      poNumber: poNo,
       sessionId: currentSession.id,
       cashierId: currentUser.id,
       cashierName: currentUser.name,
@@ -1363,24 +1417,23 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       orderStatus,
       isMadeToOrder: hasMadeToOrder,
       customizationNotes: options?.customizationNotes,
+      pickupDate: options?.pickupDate,
+      pickupTime: options?.pickupTime,
+      pickupTimeHistory: [],
       createdAt: new Date().toISOString(),
       reprintCount: 0,
     };
 
     // Deduct stock:
     // Ready Stock is deducted immediately upon completion.
-    // Made-to-Order with deposit is NOT deducted until settlement!
-    if (!isPartial) {
+    // Made-to-Order items are NEVER deducted at PO creation; stock deduction happens strictly at Konfirmasi Diambil!
+    const nonMtoItems = cart.filter((item) => !item.isMadeToOrder);
+    if (!isPartial && nonMtoItems.length > 0) {
       setProducts((prev) =>
         prev.map((prod) => {
-          const cartItem = cart.find((item) => item.productId === prod.id);
+          const cartItem = nonMtoItems.find((item) => item.productId === prod.id);
           if (cartItem) {
             return { ...prod, stock: Math.max(0, prod.stock - cartItem.quantity) };
-          }
-          // Also handle Made-to-Order base product link deduction
-          const mtoItem = cart.find((item) => item.isMadeToOrder && prod.id === 'prod-11'); // Black Forest base
-          if (mtoItem && prod.id === 'prod-11') {
-            return { ...prod, stock: Math.max(0, prod.stock - mtoItem.quantity) };
           }
           return prod;
         })
@@ -1563,6 +1616,423 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     posSound.cashRegister();
     return { success: true, message: 'Pelunasan pesanan berhasil dicatat!' };
+  };
+
+  // MTO Purchase Order (PO) Management
+  const updatePoPickupTime = (orderId: string, newTime: string) => {
+    const target = orders.find((o) => o.id === orderId);
+    if (!target) {
+      posSound.error();
+      return { success: false, message: 'Pesanan tidak ditemukan' };
+    }
+    if (target.orderStatus === 'picked_up' || target.orderStatus === 'cancelled') {
+      posSound.error();
+      return { success: false, message: 'Jam ambil pesanan yang sudah selesai atau batal tidak dapat diubah!' };
+    }
+    if (!newTime.trim()) {
+      posSound.error();
+      return { success: false, message: 'Jam pengambilan baru wajib diisi!' };
+    }
+
+    const prevTime = target.pickupTime || '00:00';
+    const now = new Date().toISOString();
+
+    const historyEntry = {
+      previousTime: prevTime,
+      newTime: newTime.trim(),
+      updatedBy: currentUser.name,
+      timestamp: now,
+    };
+
+    // If new time makes scheduled time future and order was overdue, reactivate
+    let newStatus = target.orderStatus;
+    if (target.pickupDate) {
+      const scheduledDateTime = new Date(`${target.pickupDate}T${newTime.trim()}:00`);
+      if (scheduledDateTime.getTime() > Date.now() && target.orderStatus === 'overdue') {
+        newStatus = 'active';
+      }
+    }
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              pickupTime: newTime.trim(),
+              orderStatus: newStatus,
+              pickupTimeHistory: [...(o.pickupTimeHistory || []), historyEntry],
+            }
+          : o
+      )
+    );
+
+    addAudit(
+      'PO_RESCHEDULE_TIME',
+      'order',
+      orderId,
+      `Perubahan jam ambil PO ${target.poNumber || target.receiptNumber} dari ${prevTime} ke ${newTime.trim()} oleh ${currentUser.name}`
+    );
+
+    posSound.beep();
+    return {
+      success: true,
+      message: `Jam pengambilan berhasil diubah menjadi ${newTime.trim()}!`,
+    };
+  };
+
+  const settlePoPayment = (orderId: string, newPayments: PaymentComponent[]) => {
+    const target = orders.find((o) => o.id === orderId);
+    if (!target) {
+      posSound.error();
+      return { success: false, message: 'Pesanan tidak ditemukan' };
+    }
+    if (target.orderStatus === 'picked_up' || target.orderStatus === 'cancelled') {
+      posSound.error();
+      return { success: false, message: 'Pesanan yang selesai atau batal tidak dapat dilakukan pelunasan!' };
+    }
+
+    const additionalPaid = newPayments.reduce((s, p) => s + p.amount, 0);
+    if (additionalPaid <= 0) {
+      posSound.error();
+      return { success: false, message: 'Nominal pelunasan harus lebih dari 0!' };
+    }
+
+    const newTotalPaid = target.paidAmount + additionalPaid;
+    const newRemaining = Math.max(0, target.total - newTotalPaid);
+    const isFullyPaid = newRemaining === 0;
+
+    // Deduct deposit if deposit method used
+    const depositComp = newPayments.find((p) => p.method === 'deposit');
+    if (depositComp && depositComp.amount > 0) {
+      setCustomers((prev) =>
+        prev.map((c) =>
+          c.id === target.customer.id
+            ? {
+                ...c,
+                depositBalance: Math.max(0, c.depositBalance - depositComp.amount),
+                lastTransactionAt: new Date().toISOString(),
+              }
+            : c
+        )
+      );
+    }
+
+    // Update active cashier session
+    const cashPortion = newPayments.filter((p) => p.method === 'cash').reduce((s, p) => s + p.amount, 0);
+    const qrisPortion = newPayments.filter((p) => p.method === 'qris').reduce((s, p) => s + p.amount, 0);
+    const depositPortion = newPayments.filter((p) => p.method === 'deposit').reduce((s, p) => s + p.amount, 0);
+
+    if (currentSession) {
+      setCurrentSession((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          totalSales: prev.totalSales + additionalPaid,
+          cashSales: prev.cashSales + cashPortion,
+          qrisSales: prev.qrisSales + qrisPortion,
+          depositSales: prev.depositSales + depositPortion,
+          expectedCash: prev.expectedCash + cashPortion,
+        };
+      });
+    }
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              paidAmount: newTotalPaid,
+              remainingBalance: newRemaining,
+              paymentStatus: isFullyPaid ? 'paid' : 'partial',
+              payments: [...o.payments, ...newPayments],
+            }
+          : o
+      )
+    );
+
+    addAudit(
+      'PO_PAYMENT_SETTLEMENT',
+      'order',
+      orderId,
+      `Pelunasan PO ${target.poNumber || target.receiptNumber} (${target.customer.name}) sebesar Rp ${additionalPaid.toLocaleString('id-ID')} via ${newPayments.map((p) => p.method.toUpperCase()).join('+')}. Sisa Tagihan: Rp ${newRemaining.toLocaleString('id-ID')}`
+    );
+
+    posSound.cashRegister();
+    return {
+      success: true,
+      message: `Pelunasan sebesar Rp ${additionalPaid.toLocaleString('id-ID')} berhasil dicatat! Status: ${isFullyPaid ? 'Lunas' : 'Sisa Rp ' + newRemaining.toLocaleString('id-ID')}`,
+    };
+  };
+
+  const markPoReadyForPickup = (orderId: string) => {
+    const target = orders.find((o) => o.id === orderId);
+    if (!target) {
+      posSound.error();
+      return { success: false, message: 'Pesanan tidak ditemukan' };
+    }
+    if (target.orderStatus === 'picked_up' || target.orderStatus === 'cancelled') {
+      posSound.error();
+      return { success: false, message: 'Status pesanan tidak dapat diubah!' };
+    }
+
+    const now = new Date().toISOString();
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              orderStatus: 'ready_for_pickup',
+              readyAt: now,
+              readyBy: currentUser.name,
+            }
+          : o
+      )
+    );
+
+    addAudit(
+      'PO_READY_FOR_PICKUP',
+      'order',
+      orderId,
+      `PO ${target.poNumber || target.receiptNumber} (${target.customer.name}) ditandai Siap Diambil oleh ${currentUser.name}`
+    );
+
+    posSound.beep();
+    return {
+      success: true,
+      message: `Pesanan ${target.poNumber || target.receiptNumber} berhasil ditandai Siap Diambil!`,
+    };
+  };
+
+  const confirmPoPickup = (orderId: string, collectorName: string) => {
+    const target = orders.find((o) => o.id === orderId);
+    if (!target) {
+      posSound.error();
+      return { success: false, message: 'Pesanan tidak ditemukan' };
+    }
+    if (target.orderStatus === 'picked_up') {
+      posSound.error();
+      return { success: false, message: 'Pesanan ini sudah pernah diambil!' };
+    }
+    if (target.orderStatus === 'cancelled') {
+      posSound.error();
+      return { success: false, message: 'Pesanan ini sudah dibatalkan!' };
+    }
+    if (!collectorName.trim()) {
+      posSound.error();
+      return { success: false, message: 'Nama pengambil pesanan wajib diisi!' };
+    }
+
+    const now = new Date().toISOString();
+
+    // Deduct stock exactly once if not yet deducted
+    if (!target.stockDeducted) {
+      setProducts((prev) =>
+        prev.map((prod) => {
+          let qtyToDeduct = 0;
+          for (const item of target.items) {
+            if (item.productId === prod.id) {
+              qtyToDeduct += item.quantity;
+            }
+            if (item.baseProductId === prod.id || (item.isMadeToOrder && prod.id === 'prod-11')) {
+              qtyToDeduct += item.quantity;
+            }
+          }
+          if (qtyToDeduct > 0) {
+            return { ...prod, stock: Math.max(0, prod.stock - qtyToDeduct) };
+          }
+          return prod;
+        })
+      );
+
+      // Record stock adjustment
+      target.items.forEach((item) => {
+        const adj: StockAdjustmentRecord = {
+          id: 'ADJ-' + Date.now().toString().slice(-6) + '-' + Math.random().toString(36).slice(2, 5),
+          productId: item.productId,
+          productName: item.productName,
+          type: 'decrease',
+          quantity: item.quantity,
+          previousStock: item.stockAvailable,
+          resultingStock: Math.max(0, item.stockAvailable - item.quantity),
+          reason: `Pengambilan Pesanan PO ${target.poNumber || target.receiptNumber} oleh ${collectorName.trim()}`,
+          adminId: currentUser.id,
+          adminName: currentUser.name,
+          timestamp: now,
+        };
+        setStockAdjustments((prev) => [adj, ...prev]);
+      });
+    }
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              orderStatus: 'picked_up',
+              collectorName: collectorName.trim(),
+              pickedUpAt: now,
+              pickedUpBy: currentUser.name,
+              stockDeducted: true,
+            }
+          : o
+      )
+    );
+
+    addAudit(
+      'PO_PICKUP_CONFIRMED',
+      'order',
+      orderId,
+      `Konfirmasi Pengambilan PO ${target.poNumber || target.receiptNumber} (${target.customer.name}). Pengambil: ${collectorName.trim()}. Petugas: ${currentUser.name}. Sisa Tagihan: Rp ${target.remainingBalance.toLocaleString('id-ID')}`
+    );
+
+    posSound.cashRegister();
+    return {
+      success: true,
+      message: `Pesanan ${target.poNumber || target.receiptNumber} berhasil diambil oleh ${collectorName.trim()}!`,
+    };
+  };
+
+  const cancelPoWithSupervisor = (orderId: string, reason: string, supervisorPin: string) => {
+    const target = orders.find((o) => o.id === orderId);
+    if (!target) {
+      posSound.error();
+      return { success: false, message: 'Pesanan tidak ditemukan' };
+    }
+    if (target.orderStatus === 'picked_up') {
+      posSound.error();
+      return { success: false, message: 'Pesanan yang sudah diambil tidak dapat dibatalkan!' };
+    }
+    if (target.orderStatus === 'cancelled') {
+      posSound.error();
+      return { success: false, message: 'Pesanan ini sudah dibatalkan sebelumnya!' };
+    }
+    if (!reason.trim()) {
+      posSound.error();
+      return { success: false, message: 'Alasan pembatalan pesanan wajib diisi!' };
+    }
+
+    const auth = verifySupervisorPin(supervisorPin);
+    if (!auth.success || !auth.supervisor) {
+      posSound.error();
+      return { success: false, message: 'Otorisasi Supervisor diperlukan untuk membatalkan pesanan!' };
+    }
+
+    const now = new Date().toISOString();
+    const creditRef = `REF-BATAL-${target.poNumber || target.receiptNumber}`;
+
+    // Credit all received payments to customer deposit account
+    if (target.paidAmount > 0) {
+      setCustomers((prev) =>
+        prev.map((c) =>
+          c.id === target.customer.id
+            ? {
+                ...c,
+                depositBalance: c.depositBalance + target.paidAmount,
+                lastTransactionAt: now,
+              }
+            : c
+        )
+      );
+    }
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              orderStatus: 'cancelled',
+              paymentStatus: 'refunded',
+              cancellationReason: reason.trim(),
+              cancellationApprovedBy: auth.supervisor!.name,
+              cancellationCreditRef: creditRef,
+              cancelledAt: now,
+            }
+          : o
+      )
+    );
+
+    addAudit(
+      'PO_CANCELLED',
+      'order',
+      orderId,
+      `Pembatalan PO ${target.poNumber || target.receiptNumber} (${target.customer.name}) disetujui oleh SPV ${auth.supervisor.name}. Alasan: ${reason.trim()}. Dana Rp ${target.paidAmount.toLocaleString('id-ID')} dikreditkan ke Akun Deposit Pelanggan (Ref: ${creditRef}).`
+    );
+
+    posSound.beep();
+    return {
+      success: true,
+      message: `Pesanan ${target.poNumber || target.receiptNumber} berhasil dibatalkan. Dana Rp ${target.paidAmount.toLocaleString('id-ID')} telah dikreditkan ke Akun Deposit ${target.customer.name}.`,
+    };
+  };
+
+  const duplicatePoToCart = (orderId: string, selectedItemIds: string[]) => {
+    const target = orders.find((o) => o.id === orderId);
+    if (!target) {
+      posSound.error();
+      return { success: false, message: 'Pesanan tidak ditemukan' };
+    }
+    if (target.orderStatus !== 'picked_up') {
+      posSound.error();
+      return {
+        success: false,
+        message: 'Duplikat pesanan hanya diizinkan untuk pesanan yang sudah Selesai (Picked Up)!',
+      };
+    }
+    if (selectedItemIds.length === 0) {
+      posSound.error();
+      return { success: false, message: 'Pilih minimal satu item untuk diduplikasi!' };
+    }
+
+    const itemsToDuplicate = target.items.filter((i) => selectedItemIds.includes(i.id));
+    if (itemsToDuplicate.length === 0) {
+      posSound.error();
+      return { success: false, message: 'Tidak ada item yang cocok untuk diduplikasi!' };
+    }
+
+    // Reset payment, customization notes, schedule, fulfillment status
+    const freshCartItems: CartItem[] = itemsToDuplicate.map((item, idx) => {
+      const prodMaster = products.find((p) => p.id === item.productId);
+      return {
+        id: 'dup-' + Date.now().toString().slice(-6) + '-' + idx,
+        productId: item.productId,
+        productName: item.productName,
+        unitPrice: item.unitPrice,
+        originalPrice: item.originalPrice || item.unitPrice,
+        quantity: item.quantity,
+        isPriceOverridden: item.isPriceOverridden,
+        overrideReason: item.overrideReason,
+        isMadeToOrder: item.isMadeToOrder,
+        baseProductId: item.baseProductId,
+        category: item.category,
+        stockAvailable: prodMaster?.stock ?? item.stockAvailable,
+        ownershipType: item.ownershipType,
+        supplierId: item.supplierId,
+        supplierName: item.supplierName,
+        commissionMethod: item.commissionMethod,
+        commissionValue: item.commissionValue,
+        commissionBasis: item.commissionBasis,
+      };
+    });
+
+    setCart(freshCartItems);
+    setSelectedCustomer(target.customer);
+    setOrderDiscountType(null);
+    setOrderDiscountValue(0);
+    setOrderDiscountReason('');
+
+    addAudit(
+      'PO_DUPLICATE_DRAFT',
+      'order',
+      orderId,
+      `Duplikasi pesanan selesai ${target.poNumber || target.receiptNumber} ke keranjang kasir untuk ${target.customer.name}. Jumlah item: ${freshCartItems.length}`
+    );
+
+    posSound.cashRegister();
+    return {
+      success: true,
+      message: `Berhasil menduplikasi ${freshCartItems.length} item ke Kasir untuk pelanggan ${target.customer.name}!`,
+    };
   };
 
   // Void Order within Grace Period (POS-US-016)
@@ -1887,6 +2357,12 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         completeOrder,
         orders,
         settleMadeToOrder,
+        updatePoPickupTime,
+        settlePoPayment,
+        markPoReadyForPickup,
+        confirmPoPickup,
+        cancelPoWithSupervisor,
+        duplicatePoToCart,
         voidOrder,
         refundOrder,
         reprintReceipt,

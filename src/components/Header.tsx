@@ -10,11 +10,12 @@ import {
   ChevronDown,
   Building2,
   MoreHorizontal,
+  ClipboardList,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 import { formatIDR } from '../utils/formatters';
 
-export type MainWorkspaceTab = 'pos' | 'dashboard' | 'audit' | 'konsinyasi' | 'stok';
+export type MainWorkspaceTab = 'pos' | 'pesanan' | 'dashboard' | 'audit' | 'konsinyasi' | 'stok';
 
 interface HeaderProps {
   currentTab: MainWorkspaceTab;
@@ -31,12 +32,18 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenHandoffModal,
   onOpenHeldOrdersModal,
 }) => {
-  const { currentSession, currentUser, setAsideOrders, settlementCycles } = usePOS();
+  const { currentSession, currentUser, setAsideOrders, settlementCycles, orders } = usePOS();
   const [isOverflowMenuOpen, setIsOverflowMenuOpen] = useState(false);
 
   // Check overdue or due cycles (POS-US-034 & POS-US-047)
   const overdueCount = settlementCycles.filter((c) => c.status === 'overdue').length;
   const dueTodayCount = settlementCycles.filter((c) => c.status === 'due').length;
+
+  const activePoCount = orders.filter(
+    (o) =>
+      (o.isMadeToOrder || o.poNumber) &&
+      (o.orderStatus === 'active' || o.orderStatus === 'ready_for_pickup' || o.orderStatus === 'overdue')
+  ).length;
 
   const isCashier = currentUser.role === 'cashier';
 
@@ -52,6 +59,18 @@ export const Header: React.FC<HeaderProps> = ({
       id: 'pos',
       label: 'Kasir (POS)',
       icon: <ShoppingBag className="h-3.5 w-3.5" />,
+    },
+    {
+      id: 'pesanan',
+      label: 'Pesanan',
+      icon: <ClipboardList className="h-3.5 w-3.5" />,
+      restrictedToManagement: false,
+      badge:
+        activePoCount > 0 ? (
+          <span className="rounded-full bg-amber-500 px-1.5 py-0.2 text-[9px] font-bold text-white">
+            {activePoCount}
+          </span>
+        ) : null,
     },
     {
       id: 'dashboard',
