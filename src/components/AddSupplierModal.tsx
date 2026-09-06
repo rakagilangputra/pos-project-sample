@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Building2, X, Check, Phone, User, CreditCard } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
-import { Supplier } from '../types';
+import { Supplier, SupplierCategory } from '../types';
 
 interface AddSupplierModalProps {
   isOpen: boolean;
@@ -18,6 +18,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
 }) => {
   const { addSupplier, updateSupplier } = usePOS();
   const [name, setName] = useState('');
+  const [category, setCategory] = useState<SupplierCategory>('KYD');
   const [picName, setPicName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
@@ -31,6 +32,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
   useEffect(() => {
     if (supplierToEdit) {
       setName(supplierToEdit.name || '');
+      setCategory(supplierToEdit.category || 'KYD');
       setPicName(supplierToEdit.picName || '');
       setPhone(supplierToEdit.phone || '');
       setAddress(supplierToEdit.address || '');
@@ -39,6 +41,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
       setBankAccountHolder(supplierToEdit.bankAccountHolder || '');
     } else {
       setName('');
+      setCategory('KYD');
       setPicName('');
       setPhone('');
       setAddress('');
@@ -67,6 +70,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
     if (supplierToEdit) {
       res = updateSupplier(supplierToEdit.id, {
         name: trimmedName,
+        category,
         picName: picName.trim(),
         phone: phone.trim(),
         address: address.trim() || undefined,
@@ -77,6 +81,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
     } else {
       res = addSupplier({
         name: trimmedName,
+        category,
         picName: picName.trim(),
         phone: phone.trim(),
         address: address.trim() || undefined,
@@ -164,6 +169,27 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
             />
           </div>
 
+          {/* Kategori Supplier (Predefined: KYD, RMS, TCC) */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label htmlFor="supplier-category-select" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
+                Kategori Supplier <span className="text-rose-500">*</span>
+              </label>
+              <span className="text-[10px] text-[#8C7B6C] font-semibold">Predefined Backoffice</span>
+            </div>
+            <select
+              id="supplier-category-select"
+              value={category}
+              onChange={(e) => setCategory(e.target.value as SupplierCategory)}
+              className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white px-4 py-2.5 text-sm font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none cursor-pointer"
+              required
+            >
+              <option value="KYD">KYD</option>
+              <option value="RMS">RMS</option>
+              <option value="TCC">TCC</option>
+            </select>
+          </div>
+
           {/* PIC & Phone */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -236,22 +262,15 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
             </div>
           </div>
 
-          {/* Actions (POS-US-040: primary before Close) */}
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#E5DACE]">
+          {/* Actions */}
+          <div className="flex items-center justify-end pt-3 border-t border-[#E5DACE]">
             <button
               id="submit-create-supplier-btn"
               type="submit"
-              className="flex items-center gap-2 rounded-xl bg-[#D97706] px-5 py-2 text-xs font-black text-white shadow-xs hover:bg-amber-700 active:scale-95 transition"
+              className="flex items-center justify-center gap-2 rounded-xl bg-[#D97706] px-5 py-2.5 text-xs font-black text-white shadow-xs hover:bg-amber-700 active:scale-95 transition"
             >
               <Check className="h-4 w-4" />
               <span>{supplierToEdit ? 'Simpan Perubahan' : 'Simpan Supplier'}</span>
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-xl border border-[#E5DACE] bg-white px-4 py-2 text-xs font-bold text-[#8C7B6C] hover:bg-[#E5DACE] active:scale-95 transition"
-            >
-              Tutup
             </button>
           </div>
         </form>

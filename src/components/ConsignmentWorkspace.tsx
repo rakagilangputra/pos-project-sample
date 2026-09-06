@@ -19,6 +19,8 @@ import {
   UserPlus,
   Info,
   Pencil,
+  X,
+  Check,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 import { SupplierSettlementCycle, Supplier } from '../types';
@@ -55,6 +57,7 @@ export const ConsignmentWorkspace: React.FC = () => {
   // Record Settlement Payment Modal (single layer, POS-US-035 & POS-US-049)
   const [paymentCycle, setPaymentCycle] = useState<SupplierSettlementCycle | null>(null);
   const [payMethod, setPayMethod] = useState<'cash' | 'transfer' | 'qris' | 'other'>('transfer');
+  const [payAmount, setPayAmount] = useState('');
   const [payReference, setPayReference] = useState('');
   const [payNotes, setPayNotes] = useState('');
   const [payPin, setPayPin] = useState('');
@@ -140,6 +143,23 @@ export const ConsignmentWorkspace: React.FC = () => {
 
     if (!paymentCycle) return;
 
+    const numericPayAmount = Number(payAmount);
+    if (isNaN(numericPayAmount) || numericPayAmount < 0) {
+      setPayError('Nominal pembayaran wajib diisi dengan angka yang valid (minimal 0)!');
+      return;
+    }
+
+    const currentCycleSupplier = suppliers.find((s) => s.id === paymentCycle.supplierId);
+    const currentSupplierPiutang = currentCycleSupplier?.balance || 0;
+    const totalCoverage = numericPayAmount + currentSupplierPiutang;
+
+    if (totalCoverage < paymentCycle.storeNetAfterCommission) {
+      setPayError(
+        `Nominal pembayaran (${formatIDR(numericPayAmount)}) + Piutang Supplier (${formatIDR(currentSupplierPiutang)}) = ${formatIDR(totalCoverage)}, belum mencukupi total tagihan (${formatIDR(paymentCycle.storeNetAfterCommission)})!`
+      );
+      return;
+    }
+
     if (currentUser.role !== 'admin') {
       if (!payPin) {
         setPayError('PIN Supervisor diperlukan untuk mencatat pembayaran settlement!');
@@ -158,7 +178,8 @@ export const ConsignmentWorkspace: React.FC = () => {
       payMethod,
       payReference,
       payNotes,
-      payPin
+      payPin,
+      numericPayAmount
     );
     setIsSubmittingPay(false);
 
@@ -170,6 +191,7 @@ export const ConsignmentWorkspace: React.FC = () => {
     setPaySuccess(res.message);
     setTimeout(() => {
       setPaymentCycle(null);
+      setPayAmount('');
       setPayReference('');
       setPayNotes('');
       setPayPin('');
@@ -578,9 +600,16 @@ export const ConsignmentWorkspace: React.FC = () => {
                           <button
                             onClick={() => {
                               setPaymentCycle(cycle);
+                              setPayMethod('transfer');
+                              const sup = suppliers.find((s) => s.id === cycle.supplierId);
+                              const piutang = sup?.balance || 0;
+                              const defaultPay = Math.max(0, cycle.storeNetAfterCommission - piutang);
+                              setPayAmount(defaultPay.toString());
                               setPayReference('');
                               setPayNotes('');
+                              setPayPin('');
                               setPayError('');
+                              setPaySuccess('');
                             }}
                             className="rounded-xl bg-purple-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-purple-800 shadow-xs active:scale-95 transition"
                           >
@@ -636,7 +665,14 @@ export const ConsignmentWorkspace: React.FC = () => {
                   <div className="space-y-2">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <h4 className="font-black text-base text-[#2D241E]">{sup.name}</h4>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-black text-base text-[#2D241E]">{sup.name}</h4>
+                          {sup.category && (
+                            <span className="rounded-lg bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 text-[10px] font-black tracking-wide">
+                              {sup.category}
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-[#8C7B6C] font-semibold">
                           PIC: {sup.picName} • {sup.phone}
                         </p>
@@ -657,41 +693,47 @@ export const ConsignmentWorkspace: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="rounded-xl bg-[#FDFBF7] border border-[#E5DACE] p-3 space-y-1 text-xs">
-                      {sup.scheduleType && (
-                        <div className="text-[#8C7B6C]">
-                          Jadwal Settlement:{' '}
-                          <strong className="text-[#2D241E]">
-                            {sup.scheduleType === 'weekly'
-                              ? `Mingguan (${sup.weeklyDays?.join(', ') || 'Senin'})`
-                              : `2x Sebulan (Tgl ${sup.monthlyDates?.join(' & ') || '15 & 30'})`}
-                          </strong>
+                    {/* Piutang Supplier (Kelebihan Bayar Toko ke Supplier) */}
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3 flex items-center justify-between text-xs">
+                      <div>
+                        <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wide block">
+                          Piutang Supplier
+                        </span>
+                        <span className="text-sm font-black text-amber-950">
+                          {formatIDR(sup.balance || 0)}
+                        </span>
+                        <span className="text-[10px] text-amber-700/80 block font-medium">
+                          (Kelebihan bayar toko ke supplier)
+                        </span>
+                      </div>
+                      {sup.balanceUpdatedAt ? (
+                        <div className="text-right text-[10px] text-amber-700">
+                          <span className="block font-medium">Diperbarui:</span>
+                          <span className="font-bold">
+                            {new Date(sup.balanceUpdatedAt).toLocaleDateString('id-ID', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
                         </div>
-                      )}
-                      {sup.nextDueDate && (
-                        <div className="text-[#8C7B6C]">
-                          Jatuh Tempo Berikutnya:{' '}
-                          <strong className="text-purple-950">{sup.nextDueDate}</strong>
-                        </div>
-                      )}
-                      {sup.bankName && (
-                        <div className="text-[11px] text-[#8C7B6C]">
-                          Rekening: {sup.bankName} - {sup.bankAccountNumber} ({sup.bankAccountHolder})
-                        </div>
+                      ) : (
+                        <span className="text-[10px] text-[#8C7B6C] font-semibold">
+                          Piutang: Rp 0
+                        </span>
                       )}
                     </div>
                   </div>
 
-                  <div className="pt-2 border-t border-[#E5DACE] flex justify-between items-center text-[11px] text-[#8C7B6C]">
-                    <span className="truncate max-w-[200px]">Alamat: {sup.address || 'Dalam Kota'}</span>
-                    <button
-                      type="button"
-                      onClick={() => setEditingSupplier(sup)}
-                      className="flex items-center gap-1 text-xs font-bold text-purple-700 hover:text-purple-950 hover:underline"
-                    >
-                      <Pencil className="h-3 w-3" />
-                      <span>Edit Info</span>
-                    </button>
+                  <div className="pt-2 border-t border-[#E5DACE] text-[11px] text-[#8C7B6C] space-y-0.5">
+                    {sup.bankName && (
+                      <span className="truncate block">
+                        Rekening: {sup.bankName} - {sup.bankAccountNumber} ({sup.bankAccountHolder})
+                      </span>
+                    )}
+                    <span className="truncate block">Alamat: {sup.address || 'Dalam Kota'}</span>
                   </div>
                 </div>
               );
@@ -707,117 +749,245 @@ export const ConsignmentWorkspace: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
           <form
             onSubmit={handleConfirmPayment}
-            className="w-full max-w-lg rounded-3xl bg-[#FDFBF7] border-2 border-[#E5DACE] p-6 shadow-2xl space-y-4 animate-fadeIn"
+            className="w-full max-w-sm max-h-[85vh] flex flex-col rounded-3xl bg-[#FDFBF7] border-2 border-[#E5DACE] shadow-2xl animate-fadeIn overflow-hidden"
           >
-            <div className="flex items-center justify-between border-b border-[#E5DACE] pb-3">
-              <div>
-                <h3 className="text-base font-black text-purple-950">Catat Pembayaran Settlement</h3>
-                <p className="text-xs text-[#8C7B6C]">
+            {/* Header (Pinned at Top / Does Not Move with Upper-Right Close Button) */}
+            <div className="flex items-center justify-between border-b border-[#E5DACE] px-4 py-3 bg-[#FDFBF7] shrink-0">
+              <div className="pr-2 min-w-0">
+                <h3 className="text-sm font-black text-purple-950">Catat Pembayaran Settlement</h3>
+                <p className="text-[11px] text-[#8C7B6C] truncate">
                   Mitra: {paymentCycle.supplierName}
                 </p>
               </div>
-              <span className="rounded-xl bg-purple-100 text-purple-900 border border-purple-200 px-3 py-1 text-xs font-black">
-                {paymentCycle.status === 'settled' ? 'Lunas' : 'Belum Dibayar'}
-              </span>
-            </div>
-
-            {payError && (
-              <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-xs font-bold text-rose-800">
-                {payError}
-              </div>
-            )}
-            {paySuccess && (
-              <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-xs font-bold text-emerald-800">
-                {paySuccess}
-              </div>
-            )}
-
-            {/* Total Payable Display */}
-            <div className="rounded-2xl border-2 border-purple-200 bg-purple-50/70 p-4 text-center">
-              <span className="text-xs font-bold text-purple-800 block">Total Tagihan Yang Dibayarkan:</span>
-              <span className="text-2xl font-black text-purple-950">
-                {formatIDR(paymentCycle.storeNetAfterCommission)}
-              </span>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-[#2D241E]">Metode Pembayaran</label>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { id: 'transfer', label: 'Bank Transfer' },
-                  { id: 'cash', label: 'Tunai Kas Toko' },
-                  { id: 'qris', label: 'QRIS / Giro' },
-                ].map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setPayMethod(m.id as any)}
-                    className={`rounded-xl border py-2 text-xs font-bold transition ${
-                      payMethod === m.id
-                        ? 'border-purple-600 bg-purple-100 text-purple-900'
-                        : 'border-[#E5DACE] bg-white text-[#8C7B6C]'
-                    }`}
-                  >
-                    {m.label}
-                  </button>
-                ))}
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="rounded-xl bg-purple-100 text-purple-900 border border-purple-200 px-2 py-0.5 text-[10px] font-black">
+                  {paymentCycle.status === 'settled' ? 'Lunas' : 'Belum Dibayar'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPaymentCycle(null)}
+                  className="flex h-7 w-7 items-center justify-center rounded-xl border border-[#E5DACE] bg-white text-[#8C7B6C] hover:bg-[#E5DACE] hover:text-[#2D241E] active:scale-95 transition shadow-2xs"
+                  aria-label="Tutup modal"
+                  title="Tutup"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-[#2D241E] mb-2">Nomor Bukti Transfer / Referensi</label>
-              <input
-                type="text"
-                value={payReference}
-                onChange={(e) => setPayReference(e.target.value)}
-                placeholder="Contoh: TRF-BCA-883920"
-                className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3 py-2 text-xs font-bold text-[#2D241E] focus:border-purple-600 focus:outline-none"
-              />
-            </div>
+            {/* Scrollable Form Body */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {payError && (
+                <div className="rounded-xl bg-rose-50 border border-rose-200 p-2.5 text-xs font-bold text-rose-800">
+                  {payError}
+                </div>
+              )}
+              {paySuccess && (
+                <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-2.5 text-xs font-bold text-emerald-800">
+                  {paySuccess}
+                </div>
+              )}
 
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-[#2D241E] mb-2">Catatan Pembayaran (Opsional)</label>
-              <input
-                type="text"
-                value={payNotes}
-                onChange={(e) => setPayNotes(e.target.value)}
-                placeholder="Keterangan tambahan settlement..."
-                className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3 py-2 text-xs font-semibold text-[#2D241E] focus:border-purple-600 focus:outline-none"
-              />
-            </div>
+              {/* Total Payable Display */}
+              <div className="rounded-xl border-2 border-purple-200 bg-purple-50/70 p-3 text-center">
+                <span className="text-[11px] font-bold text-purple-800 block">Total Tagihan Yang Dibayarkan:</span>
+                <span className="text-xl font-black text-purple-950">
+                  {formatIDR(paymentCycle.storeNetAfterCommission)}
+                </span>
+              </div>
 
-            {/* Supervisor PIN for non-admin */}
-            {currentUser.role !== 'admin' && (
-              <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3.5 space-y-2">
-                <label className="block text-xs font-bold text-amber-950 mb-2">
-                  PIN Supervisor Otorisasi Pembayaran:
-                </label>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-[#2D241E]">Metode Pembayaran</label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { id: 'transfer', label: 'Bank Transfer' },
+                    { id: 'cash', label: 'Tunai Kas' },
+                    { id: 'qris', label: 'QRIS / Giro' },
+                  ].map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setPayMethod(m.id as any)}
+                      className={`rounded-xl border py-1.5 text-xs font-bold transition ${
+                        payMethod === m.id
+                          ? 'border-purple-600 bg-purple-100 text-purple-900'
+                          : 'border-[#E5DACE] bg-white text-[#8C7B6C]'
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Field under Metode Pembayaran: Nominal Pembayaran */}
+              {(() => {
+                const currentCycleSupplier = suppliers.find((s) => s.id === paymentCycle.supplierId);
+                const currentSupplierPiutang = currentCycleSupplier?.balance || 0;
+                const numericPay = Number(payAmount) || 0;
+                const totalCoverage = numericPay + currentSupplierPiutang;
+                const totalTagihan = paymentCycle.storeNetAfterCommission;
+                const isExactLunas = totalCoverage === totalTagihan;
+                const isLebihLunas = totalCoverage > totalTagihan;
+                const isKurang = totalCoverage < totalTagihan;
+                const excess = totalCoverage - totalTagihan;
+                const deficit = totalTagihan - totalCoverage;
+
+                return (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between flex-wrap gap-1">
+                      <label className="block text-xs font-bold text-[#2D241E]">
+                        Nominal Pembayaran
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPayAmount(Math.max(0, totalTagihan - currentSupplierPiutang).toString())
+                          }
+                          className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 underline"
+                          title="Nominal Pembayaran + Piutang Supplier = Total Tagihan (LUNAS)"
+                        >
+                          Set Lunas Pas ({formatIDR(Math.max(0, totalTagihan - currentSupplierPiutang))})
+                        </button>
+                        {currentSupplierPiutang > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setPayAmount(totalTagihan.toString())}
+                            className="text-[10px] font-bold text-purple-700 hover:text-purple-900 underline"
+                          >
+                            Set Full ({formatIDR(totalTagihan)})
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="relative">
+                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-xs font-black text-[#8C7B6C]">
+                        Rp
+                      </div>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1000"
+                        value={payAmount}
+                        onChange={(e) => setPayAmount(e.target.value)}
+                        placeholder={Math.max(0, totalTagihan - currentSupplierPiutang).toString()}
+                        className="w-full rounded-xl border-2 border-[#E5DACE] bg-white pl-9 pr-3 py-1.5 text-xs font-black text-[#2D241E] focus:border-purple-600 focus:outline-none"
+                        required
+                      />
+                    </div>
+
+                    {/* Status Penilaian Lunas / Paid */}
+                    {isExactLunas && (
+                      <div className="rounded-xl border-2 border-emerald-500 bg-emerald-50 p-2.5 text-xs text-emerald-950 space-y-1">
+                        <div className="flex items-center justify-between font-black text-emerald-800">
+                          <span className="flex items-center gap-1.5 text-xs">
+                            <Check className="h-4 w-4 text-emerald-600" />
+                            STATUS: LUNAS / PAID
+                          </span>
+                          <span className="rounded-md bg-emerald-600 px-2 py-0.5 text-[9px] font-black text-white uppercase tracking-wider">
+                            PAS
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-emerald-900 font-semibold leading-snug">
+                          Nominal Pembayaran ({formatIDR(numericPay)}) + PIUTANG SUPPLIER ({formatIDR(currentSupplierPiutang)}) = Total Tagihan Yang Dibayarkan ({formatIDR(totalTagihan)})
+                        </p>
+                        {currentSupplierPiutang > 0 && (
+                          <p className="text-[10px] text-emerald-700 leading-tight">
+                            Piutang supplier sebesar {formatIDR(currentSupplierPiutang)} dikompensasikan penuh sehingga tagihan settlement lunas dan piutang supplier menjadi Rp 0.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {isLebihLunas && (
+                      <div className="rounded-xl border border-emerald-300 bg-emerald-50/80 p-2.5 text-xs text-emerald-950 space-y-1">
+                        <div className="flex items-center justify-between font-bold text-emerald-800">
+                          <span className="flex items-center gap-1.5 text-xs">
+                            <Check className="h-4 w-4 text-emerald-600" />
+                            STATUS: LUNAS / PAID (LEBIH BAYAR)
+                          </span>
+                          <span className="font-black text-emerald-950">
+                            +{formatIDR(excess)}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-emerald-900 font-semibold leading-snug">
+                          Nominal Pembayaran ({formatIDR(numericPay)}) + PIUTANG SUPPLIER ({formatIDR(currentSupplierPiutang)}) = {formatIDR(totalCoverage)}.
+                        </p>
+                        <p className="text-[10px] text-emerald-700 leading-tight">
+                          Kelebihan bayar sebesar <strong>{formatIDR(excess)}</strong> (karena tidak ada uang kembalian) otomatis dicatat sebagai Piutang Supplier berikutnya.
+                        </p>
+                      </div>
+                    )}
+
+                    {isKurang && (
+                      <div className="rounded-xl border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-950 space-y-1">
+                        <div className="flex items-center justify-between font-bold text-amber-900">
+                          <span className="text-xs">STATUS: BELUM LUNAS</span>
+                          <span className="font-black text-rose-700">
+                            Kurang {formatIDR(deficit)}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-amber-900 font-semibold leading-snug">
+                          Nominal Pembayaran ({formatIDR(numericPay)}) + PIUTANG SUPPLIER ({formatIDR(currentSupplierPiutang)}) = {formatIDR(totalCoverage)} (Total Tagihan: {formatIDR(totalTagihan)}).
+                        </p>
+                        <p className="text-[10px] text-amber-800 leading-tight">
+                          Settlement berstatus LUNAS / PAID saat Nominal Pembayaran + PIUTANG SUPPLIER sama dengan Total Tagihan Yang Dibayarkan.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-[#2D241E]">Nomor Bukti Transfer / Referensi</label>
                 <input
-                  type="password"
-                  maxLength={4}
-                  value={payPin}
-                  onChange={(e) => setPayPin(e.target.value)}
-                  placeholder="PIN SPV..."
-                  className="mt-2.5 block w-44 rounded-xl border-2 border-[#E5DACE] bg-white px-3.5 py-2 text-xs font-bold tracking-widest text-[#2D241E] focus:border-purple-600 focus:outline-none shadow-xs"
+                  type="text"
+                  value={payReference}
+                  onChange={(e) => setPayReference(e.target.value)}
+                  placeholder="Contoh: TRF-BCA-883920"
+                  className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3 py-1.5 text-xs font-bold text-[#2D241E] focus:border-purple-600 focus:outline-none"
                 />
               </div>
-            )}
 
-            {/* Modal Actions with Bottom-Right Tutup button (POS-US-049) */}
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#E5DACE]">
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-[#2D241E]">Catatan Pembayaran (Opsional)</label>
+                <input
+                  type="text"
+                  value={payNotes}
+                  onChange={(e) => setPayNotes(e.target.value)}
+                  placeholder="Keterangan tambahan settlement..."
+                  className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3 py-1.5 text-xs font-semibold text-[#2D241E] focus:border-purple-600 focus:outline-none"
+                />
+              </div>
+
+              {/* Supervisor PIN for non-admin */}
+              {currentUser.role !== 'admin' && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 p-2.5 space-y-1.5">
+                  <label className="block text-xs font-bold text-amber-950">
+                    PIN Supervisor Otorisasi Pembayaran:
+                  </label>
+                  <input
+                    type="password"
+                    maxLength={4}
+                    value={payPin}
+                    onChange={(e) => setPayPin(e.target.value)}
+                    placeholder="PIN SPV..."
+                    className="block w-40 rounded-xl border-2 border-[#E5DACE] bg-white px-3 py-1.5 text-xs font-bold tracking-widest text-[#2D241E] focus:border-purple-600 focus:outline-none shadow-xs"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions (Tutup button removed, only one close button on upper right corner) */}
+            <div className="p-3 border-t border-[#E5DACE] bg-[#FDFBF7] shrink-0">
               <button
                 type="submit"
                 disabled={isSubmittingPay}
-                className="rounded-xl bg-purple-700 px-5 py-2 text-xs font-black text-white hover:bg-purple-800 shadow-xs active:scale-95 transition disabled:opacity-50"
+                className="w-full rounded-xl bg-purple-700 py-2 text-xs font-black text-white hover:bg-purple-800 shadow-xs active:scale-95 transition disabled:opacity-50"
               >
                 Konfirmasi Pembayaran
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaymentCycle(null)}
-                className="rounded-xl border border-[#E5DACE] bg-white px-4 py-2 text-xs font-bold text-[#8C7B6C] hover:bg-[#E5DACE] active:scale-95 transition"
-              >
-                Tutup
               </button>
             </div>
           </form>

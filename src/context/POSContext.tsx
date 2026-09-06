@@ -86,7 +86,8 @@ interface POSContextType {
     paymentMethod: 'cash' | 'transfer' | 'qris' | 'other',
     reference: string,
     notes: string,
-    supervisorPin?: string
+    supervisorPin?: string,
+    paymentAmount?: number
   ) => { success: boolean; message: string };
   generateSettlementCycles: () => { count: number };
 
@@ -916,7 +917,8 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     paymentMethod: 'cash' | 'transfer' | 'qris' | 'other',
     reference: string,
     notes: string,
-    supervisorPin?: string
+    supervisorPin?: string,
+    paymentAmount?: number
   ) => {
     const target = settlementCycles.find((c) => c.id === cycleId);
     if (!target) return { success: false, message: 'Siklus settlement tidak ditemukan' };
@@ -927,7 +929,56 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, message: 'Nomor referensi / bukti transfer wajib diisi!' };
     }
 
+    const actualAmount = paymentAmount !== undefined ? paymentAmount : target.storeNetAfterCommission;
+    const targetSup = suppliers.find((s) => s.id === target.supplierId);
+    const prevPiutang = targetSup?.balance || 0;
+    const totalCoverage = actualAmount + prevPiutang;
+
+    if (totalCoverage < target.storeNetAfterCommission) {
+      return {
+        success: false,
+        message: `Nominal pembayaran (${actualAmount.toLocaleString('id-ID')}) + Piutang Supplier (${prevPiutang.toLocaleString('id-ID')}) belum mencukupi Total Tagihan (${target.storeNetAfterCommission.toLocaleString('id-ID')})!`,
+      };
+    }
+
     const now = new Date().toISOString();
+    // New piutang supplier: (Nominal + Piutang Sebelumnya) - Total Tagihan
+    const newPiutang = Math.max(0, totalCoverage - target.storeNetAfterCommission);
+    const piutangUsed = Math.min(prevPiutang, target.storeNetAfterCommission - actualAmount);
+
+    // Update supplier piutang balance
+    setSuppliers((prev) =>
+      prev.map((s) => {
+        if (s.id === target.supplierId) {
+          return {
+            ...s,
+            balance: newPiutang,
+            balanceUpdatedAt: now,
+            updatedAt: now,
+          };
+        }
+        return s;
+      })
+    );
+
+    if (newPiutang > prevPiutang) {
+      const added = newPiutang - prevPiutang;
+      addAudit(
+        'SUPPLIER_BALANCE_ADD',
+        'supplier',
+        target.supplierId,
+        `Kelebihan pembayaran settlement ${cycleId} sebesar Rp ${added.toLocaleString('id-ID')} dicatat sebagai Piutang Supplier ${target.supplierName}. Total Piutang: Rp ${newPiutang.toLocaleString('id-ID')}`
+      );
+    } else if (newPiutang < prevPiutang) {
+      const deducted = prevPiutang - newPiutang;
+      addAudit(
+        'SUPPLIER_BALANCE_DEDUCT',
+        'supplier',
+        target.supplierId,
+        `Piutang Supplier ${target.supplierName} sebesar Rp ${deducted.toLocaleString('id-ID')} diperhitungkan untuk pelunasan settlement ${cycleId}. Sisa Piutang: Rp ${newPiutang.toLocaleString('id-ID')}`
+      );
+    }
+
     setSettlementCycles((prev) =>
       prev.map((c) =>
         c.id === cycleId
@@ -935,6 +986,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               ...c,
               status: 'settled',
               paymentMethod,
+              paymentAmount: actualAmount,
               paymentReference: reference.trim() || undefined,
               settlementNotes: notes.trim() || undefined,
               settledBy: currentUser.name,
@@ -957,11 +1009,17 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       'SETTLEMENT_PAYMENT',
       'consignment',
       cycleId,
-      `Pembayaran Settlement Hak Supplier: ${target.supplierName} sebesar Rp ${target.storeNetAfterCommission.toLocaleString('id-ID')} via ${paymentMethod.toUpperCase()}${reference ? ' (Ref: ' + reference + ')' : ''}. Dicatat oleh ${currentUser.name}`
+      `Pembayaran Settlement Hak Supplier: ${target.supplierName} sebesar Rp ${actualAmount.toLocaleString('id-ID')} (Tagihan: Rp ${target.storeNetAfterCommission.toLocaleString('id-ID')}${prevPiutang > 0 ? `, Piutang Digunakan: Rp ${Math.max(0, piutangUsed).toLocaleString('id-ID')}` : ''}${newPiutang > prevPiutang ? `, Piutang Baru: Rp ${(newPiutang - prevPiutang).toLocaleString('id-ID')}` : ''}) via ${paymentMethod.toUpperCase()}${reference ? ' (Ref: ' + reference + ')' : ''}. Dicatat oleh ${currentUser.name}`
     );
 
     posSound.cashRegister();
-    return { success: true, message: `Settlement untuk ${target.supplierName} berhasil dicatat LUNAS.` };
+    const successMsg =
+      newPiutang > prevPiutang
+        ? `Settlement untuk ${target.supplierName} LUNAS. Kelebihan Rp ${(newPiutang - prevPiutang).toLocaleString('id-ID')} dicatat sebagai Piutang Supplier.`
+        : prevPiutang > 0
+        ? `Settlement untuk ${target.supplierName} berhasil dicatat LUNAS (Nominal Rp ${actualAmount.toLocaleString('id-ID')} + Piutang Supplier Rp ${Math.max(0, piutangUsed).toLocaleString('id-ID')}).`
+        : `Settlement untuk ${target.supplierName} berhasil dicatat LUNAS.`;
+    return { success: true, message: successMsg };
   };
 
   // Generate / Recalculate Settlement Cycles (POS-US-032)

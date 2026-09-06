@@ -222,12 +222,14 @@ export interface StockAdjustmentRecord {
 }
 
 // POS-US-030: Supplier Master
+export type SupplierCategory = 'KYD' | 'RMS' | 'TCC';
 export type SettlementScheduleType = 'weekly' | 'twice_monthly';
 export type WeeklyFrequency = 'once' | 'twice' | 'three_times';
 
 export interface Supplier {
   id: string;
   name: string;
+  category?: SupplierCategory; // Predefined backoffice categories: KYD, RMS, TCC
   picName: string;
   phone: string;
   address?: string;
@@ -241,6 +243,8 @@ export interface Supplier {
   scheduleDatesOfMonth?: number[]; // e.g. [15, 30]
   monthlyDates?: number[]; // e.g. [15, 30]
   nextDueDate?: string;
+  balance?: number; // Supplier balance / overpayment credit account
+  balanceUpdatedAt?: string; // Timestamp when balance was added/updated
   createdAt: string;
   updatedAt?: string;
 }
@@ -293,6 +297,7 @@ export interface SupplierSettlementCycle {
   commissionEntryIds: string[];
   // POS-US-035: Payment evidence
   paymentMethod?: 'cash' | 'transfer' | 'qris' | 'other';
+  paymentAmount?: number;
   paymentReference?: string;
   settlementNotes?: string;
   settledBy?: string;
