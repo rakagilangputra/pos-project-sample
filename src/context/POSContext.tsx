@@ -14,6 +14,8 @@ import {
   Supplier,
   CommissionLedgerEntry,
   SupplierSettlementCycle,
+  GoodsReceiptRecord,
+  ReceivingDraft,
 } from '../types';
 import {
   INITIAL_USERS,
@@ -26,6 +28,7 @@ import {
   INITIAL_SETTLEMENT_CYCLES,
   INITIAL_ORDERS,
   STORE_INFO,
+  INITIAL_GOODS_RECEIPTS,
 } from '../data/mockData';
 import { generateReceiptNumber, posSound } from '../utils/formatters';
 
@@ -170,6 +173,14 @@ interface POSContextType {
   // Auditing
   auditLogs: AuditLog[];
   stockAdjustments: StockAdjustmentRecord[];
+
+  // Purchase & Receiving (POS-US-059, POS-US-060, POS-US-061, POS-US-062)
+  goodsReceipts: GoodsReceiptRecord[];
+  receivingDraft: ReceivingDraft | null;
+  setReceivingDraft: React.Dispatch<React.SetStateAction<ReceivingDraft | null>>;
+  submitGoodsReceipt: (
+    receiptData: Omit<GoodsReceiptRecord, 'id' | 'receiptNumber' | 'stockMovementRef' | 'createdAt' | 'status'>
+  ) => { success: boolean; receipt?: GoodsReceiptRecord; message: string };
 }
 
 const POSContext = createContext<POSContextType | undefined>(undefined);
@@ -433,6 +444,38 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     localStorage.setItem('pos_customers', JSON.stringify(customers));
   }, [customers]);
+
+  // Purchase & Receiving (POS-US-059, POS-US-060, POS-US-061, POS-US-062)
+  const [goodsReceipts, setGoodsReceipts] = useState<GoodsReceiptRecord[]>(() => {
+    const saved = localStorage.getItem('pos_goods_receipts');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return INITIAL_GOODS_RECEIPTS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('pos_goods_receipts', JSON.stringify(goodsReceipts));
+  }, [goodsReceipts]);
+
+  const [receivingDraft, setReceivingDraft] = useState<ReceivingDraft | null>(() => {
+    const saved = localStorage.getItem('pos_receiving_draft');
+    if (saved) {
+      try { return JSON.parse(saved); } catch {}
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    if (receivingDraft) {
+      localStorage.setItem('pos_receiving_draft', JSON.stringify(receivingDraft));
+    } else {
+      localStorage.removeItem('pos_receiving_draft');
+    }
+  }, [receivingDraft]);
 
   // Cart State
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -854,39 +897,21 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       id,
       name: trimmedName,
       sku: trimmedSku,
-      stock: Math.max(0, productData.stock || 0),
+      stock: 0, // POS-US-062: Product master is created with zero stock; first stock comes only from submitted receipt
       lowStockThreshold: Math.max(0, productData.lowStockThreshold || 3),
       price: Math.max(0, productData.price || 0),
     };
 
     setProducts((prev) => [newProd, ...prev]);
 
-    // If opening stock > 0, log stock adjustment history record
-    if (newProd.stock > 0) {
-      const stockRec: StockAdjustmentRecord = {
-        id: 'adj-' + Date.now().toString().slice(-5),
-        productId: id,
-        productName: newProd.name,
-        type: 'increase',
-        quantity: newProd.stock,
-        previousStock: 0,
-        resultingStock: newProd.stock,
-        reason: 'Stok Awal Pembuatan Master Produk Baru',
-        adminId: currentUser.id,
-        adminName: currentUser.name,
-        timestamp: new Date().toISOString(),
-      };
-      setStockAdjustments((prev) => [stockRec, ...prev]);
-    }
-
     addAudit(
       'PRODUCT_CREATE',
       'product',
       id,
-      `Master Produk baru: ${newProd.name} (SKU: ${newProd.sku}), Kepemilikan: ${newProd.ownershipType === 'consignment' ? 'Konsinyasi (' + newProd.supplierName + ')' : 'Milik Sendiri'}, Stok Awal: ${newProd.stock}, Harga: Rp ${newProd.price.toLocaleString('id-ID')}`
+      `Master Produk baru: ${newProd.name} (SKU: ${newProd.sku}), Kepemilikan: ${newProd.ownershipType === 'consignment' ? 'Konsinyasi (' + newProd.supplierName + ')' : 'Milik Sendiri'}, Stok: 0 (Menunggu Penerimaan), Harga: Rp ${newProd.price.toLocaleString('id-ID')}`
     );
     posSound.beep();
-    return { success: true, product: newProd, message: `Produk "${newProd.name}" berhasil ditambahkan!` };
+    return { success: true, product: newProd, message: `Produk "${newProd.name}" berhasil ditambahkan dengan stok 0!` };
   };
 
   // Supplier Master (POS-US-030)
@@ -2297,6 +2322,122 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: true, message: `Stok ${target.name} berhasil diperbarui: ${newStock}` };
   };
 
+  // Submit Goods Receipt (POS-US-059, POS-US-060, POS-US-061)
+  const submitGoodsReceipt = (
+    receiptData: Omit<GoodsReceiptRecord, 'id' | 'receiptNumber' | 'stockMovementRef' | 'createdAt' | 'status'>
+  ) => {
+    // 1. Validation
+    if (!receiptData.supplierId) {
+      posSound.error();
+      return { success: false, message: 'Supplier mitra pengirim wajib dipilih!' };
+    }
+    if (!receiptData.items || receiptData.items.length === 0) {
+      posSound.error();
+      return { success: false, message: 'Minimal harus ada 1 baris item produk yang diterima!' };
+    }
+    for (const item of receiptData.items) {
+      if (!item.productId) {
+        posSound.error();
+        return { success: false, message: 'Ada baris item yang belum memilih SKU produk!' };
+      }
+      if (!item.quantityReceived || item.quantityReceived <= 0) {
+        posSound.error();
+        return {
+          success: false,
+          message: `Jumlah stok jual diterima untuk "${item.productName || 'produk'}" harus lebih dari 0!`,
+        };
+      }
+    }
+
+    if (receiptData.receiptType === 'Dibeli Sendiri') {
+      if (
+        receiptData.totalPurchaseCost === undefined ||
+        receiptData.totalPurchaseCost === null ||
+        isNaN(receiptData.totalPurchaseCost) ||
+        receiptData.totalPurchaseCost < 0
+      ) {
+        posSound.error();
+        return { success: false, message: 'Total biaya pembelian wajib diisi untuk penerimaan Dibeli Sendiri!' };
+      }
+      if (!receiptData.paymentMethod) {
+        posSound.error();
+        return { success: false, message: 'Metode pembayaran wajib dipilih untuk penerimaan Dibeli Sendiri!' };
+      }
+    }
+
+    // 2. Generate Receipt Number and Movement Reference
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+    const seq = String(goodsReceipts.length + 1).padStart(3, '0');
+    const receiptNumber = `RCV-${dateStr}-${seq}`;
+    const stockMovementRef = `MOV-IN-${receiptNumber}`;
+    const id = `rec-${Date.now()}`;
+    const totalQuantity = receiptData.items.reduce((sum, it) => sum + it.quantityReceived, 0);
+
+    const newRecord: GoodsReceiptRecord = {
+      ...receiptData,
+      id,
+      receiptNumber,
+      totalQuantity,
+      status: 'submitted',
+      stockMovementRef,
+      submittedAt: now.toISOString(),
+      createdAt: now.toISOString(),
+    };
+
+    // 3. Update stock for each product (added exactly once) and log stock movements
+    const updatedProducts = [...products];
+    const newStockAdjustments: StockAdjustmentRecord[] = [];
+
+    receiptData.items.forEach((item) => {
+      const pIdx = updatedProducts.findIndex((p) => p.id === item.productId);
+      if (pIdx >= 0) {
+        const prevStock = updatedProducts[pIdx].stock;
+        const newStock = prevStock + item.quantityReceived;
+        updatedProducts[pIdx] = {
+          ...updatedProducts[pIdx],
+          stock: newStock,
+        };
+
+        newStockAdjustments.push({
+          id: `adj-rcv-${Date.now()}-${item.productId}`,
+          productId: item.productId,
+          productName: item.productName || updatedProducts[pIdx].name,
+          type: 'increase',
+          quantity: item.quantityReceived,
+          previousStock: prevStock,
+          resultingStock: newStock,
+          reason: `Penerimaan Barang (${receiptData.receiptType}): ${receiptNumber} [Ref: ${stockMovementRef}]`,
+          adminId: currentUser.id,
+          adminName: currentUser.name,
+          timestamp: now.toISOString(),
+        });
+      }
+    });
+
+    setProducts(updatedProducts);
+    setStockAdjustments((prev) => [...newStockAdjustments, ...prev]);
+    setGoodsReceipts((prev) => [newRecord, ...prev]);
+
+    // 4. Log audit trail
+    addAudit(
+      'SUBMIT_GOODS_RECEIPT',
+      'receipt',
+      receiptNumber,
+      `Penerimaan Barang ${receiptNumber} (${receiptData.receiptType}) dari ${receiptData.supplierName}: ${totalQuantity} pcs masuk stok jual. Ref: ${stockMovementRef}`
+    );
+
+    // 5. Sound & Clear Draft
+    posSound.cashRegister();
+    setReceivingDraft(null);
+
+    return {
+      success: true,
+      receipt: newRecord,
+      message: `Penerimaan barang ${receiptNumber} berhasil disimpan! ${totalQuantity} pcs telah ditambahkan ke stok jual.`,
+    };
+  };
+
   return (
     <POSContext.Provider
       value={{
@@ -2370,6 +2511,10 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setActiveReceiptOrder,
         auditLogs,
         stockAdjustments,
+        goodsReceipts,
+        receivingDraft,
+        setReceivingDraft,
+        submitGoodsReceipt,
       }}
     >
       {children}

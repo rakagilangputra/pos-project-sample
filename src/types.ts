@@ -232,7 +232,7 @@ export interface AuditLog {
   actorName: string;
   actorRole: UserRole;
   action: string;
-  entityType: 'order' | 'session' | 'stock' | 'user' | 'price' | 'discount' | 'supplier' | 'consignment' | 'category' | 'product';
+  entityType: 'order' | 'session' | 'stock' | 'user' | 'price' | 'discount' | 'supplier' | 'consignment' | 'category' | 'product' | 'receipt';
   entityId: string;
   details: string;
   beforeValue?: string;
@@ -336,4 +336,57 @@ export interface SupplierSettlementCycle {
   settledBy?: string;
   settledAt?: string;
   createdAt: string;
+}
+
+// POS-US-059 & POS-US-060 & POS-US-061 & POS-US-062: Purchase & Goods Receiving
+export type ReceiptType = 'Dibeli Sendiri' | 'Konsinyasi';
+export type GoodsReceiptStatus = 'draft' | 'submitted';
+
+export interface GoodsReceiptItem {
+  id: string;
+  productId: string;
+  productSku: string;
+  productName: string;
+  sellingPrice: number;
+  quantityReceived: number; // Sellable quantity added to inventory
+}
+
+export interface GoodsReceiptRecord {
+  id: string;
+  receiptNumber: string; // e.g. RCV-20260906-001
+  receiptType: ReceiptType;
+  arrivalDate: string; // YYYY-MM-DD
+  supplierId: string;
+  supplierName: string;
+  receivedBy: string;
+  items: GoodsReceiptItem[];
+  totalQuantity: number;
+  remarks?: string;
+  status: GoodsReceiptStatus;
+  
+  // For 'Dibeli Sendiri' (POS-US-060)
+  totalPurchaseCost?: number;
+  paymentMethod?: 'cash' | 'transfer' | 'qris' | 'deposit';
+
+  // Traceable Stock Movement Reference
+  stockMovementRef: string; // e.g. MOV-IN-RCV-20260906-001
+  submittedAt?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface ReceivingDraft {
+  receiptType: ReceiptType;
+  arrivalDate: string;
+  supplierId: string;
+  receivedBy: string;
+  items: {
+    tempId: string;
+    productId: string;
+    quantityReceived: number;
+  }[];
+  remarks: string;
+  totalPurchaseCost?: number;
+  paymentMethod?: 'cash' | 'transfer' | 'qris' | 'deposit';
+  activeLineIndexForNewSku?: number;
 }

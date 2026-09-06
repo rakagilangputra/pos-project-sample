@@ -7,6 +7,7 @@ import {
   CommissionLedgerEntry,
   SupplierSettlementCycle,
   Order,
+  GoodsReceiptRecord,
 } from '../types';
 
 export const INITIAL_CATEGORIES: ProductCategoryItem[] = [
@@ -995,4 +996,76 @@ export const INITIAL_ORDERS: Order[] = [
     reprintCount: 0,
   },
 ];
+
+export const INITIAL_GOODS_RECEIPTS: GoodsReceiptRecord[] = [
+  {
+    id: 'rec-001',
+    receiptNumber: 'RCV-20260905-001',
+    receiptType: 'Dibeli Sendiri',
+    arrivalDate: yesterdayDateStr,
+    supplierId: 'sup-2',
+    supplierName: 'Artisan Cookies & Hampers Bandung',
+    receivedBy: 'Budi Santoso (Admin)',
+    items: [
+      {
+        id: 'rec-item-1',
+        productId: 'prod-15',
+        productSku: 'KRG-001',
+        productName: 'Nastar Nanas Wisman Butter Premium',
+        sellingPrice: 95000,
+        quantityReceived: 24,
+      },
+      {
+        id: 'rec-item-2',
+        productId: 'prod-16',
+        productSku: 'KRG-002',
+        productName: 'Kastengel Keju Edam Asli Belanda',
+        sellingPrice: 110000,
+        quantityReceived: 18,
+      },
+    ],
+    totalQuantity: 42,
+    remarks: 'Pengiriman via kargo pendingin. Kemasan toples aman tanpa retak, semua 42 toples siap jual.',
+    status: 'submitted',
+    totalPurchaseCost: 2850000,
+    paymentMethod: 'transfer',
+    stockMovementRef: 'MOV-IN-RCV-20260905-001',
+    submittedAt: `${yesterdayDateStr}T09:30:00Z`,
+    createdAt: `${yesterdayDateStr}T09:30:00Z`,
+  },
+  {
+    id: 'rec-002',
+    receiptNumber: 'RCV-20260906-002',
+    receiptType: 'Konsinyasi',
+    arrivalDate: todayDateStr,
+    supplierId: 'sup-1',
+    supplierName: 'Dapur Ibu Endang (Kue Tradisional)',
+    receivedBy: 'Siti Rahma (Supervisor)',
+    items: [
+      {
+        id: 'rec-item-3',
+        productId: 'prod-13',
+        productSku: 'TRD-001',
+        productName: 'Lemper Bakar Ayam Gurih',
+        sellingPrice: 9000,
+        quantityReceived: 35,
+      },
+      {
+        id: 'rec-item-4',
+        productId: 'prod-14',
+        productSku: 'TRD-002',
+        productName: 'Pastel Goreng Renyah Telur Sayur',
+        sellingPrice: 8500,
+        quantityReceived: 25,
+      },
+    ],
+    totalQuantity: 60,
+    remarks: 'Kiriman titipan kue basah subuh. Ditemukan 2 pastel agak remuk di wadah bawah dicatat di remarks; hanya 25 pastel mulus yang dimasukkan ke stok jual.',
+    status: 'submitted',
+    stockMovementRef: 'MOV-IN-RCV-20260906-002',
+    submittedAt: `${todayDateStr}T06:45:00Z`,
+    createdAt: `${todayDateStr}T06:45:00Z`,
+  },
+];
+
 
