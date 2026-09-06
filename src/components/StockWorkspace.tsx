@@ -20,13 +20,15 @@ import {
   Sparkles,
   ChevronDown,
   Layers,
+  Truck,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 import { Product, ProductOwnershipType, CommissionMethod, CommissionBasis } from '../types';
 import { formatIDR, formatDateTime } from '../utils/formatters';
 import { AddCategoryModal } from './AddCategoryModal';
+import { GoodsReceivingWorkspace } from './GoodsReceivingWorkspace';
 
-type StockLocalView = 'products' | 'adjustments' | 'categories';
+type StockLocalView = 'products' | 'adjustments' | 'categories' | 'receiving';
 
 const BAKERY_SAMPLE_IMAGES = [
   { label: 'Roti Manis', url: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&auto=format&fit=crop&q=80' },
@@ -47,6 +49,7 @@ export const StockWorkspace: React.FC = () => {
     addProduct,
     currentUser,
     verifySupervisorPin,
+    goodsReceipts,
   } = usePOS();
 
   // Local View Tab: 'products' (default), 'adjustments', 'categories'
@@ -703,6 +706,18 @@ export const StockWorkspace: React.FC = () => {
             <Tag className="h-3.5 w-3.5" />
             <span>Kategori ({categories.filter((c) => c.id !== 'all').length})</span>
           </button>
+
+          <button
+            onClick={() => setActiveView('receiving')}
+            className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-bold transition ${
+              activeView === 'receiving'
+                ? 'bg-white text-[#2D241E] shadow-xs'
+                : 'text-[#8C7B6C] hover:text-[#2D241E]'
+            }`}
+          >
+            <Truck className="h-3.5 w-3.5" />
+            <span>Penerimaan ({goodsReceipts.length})</span>
+          </button>
         </div>
 
         {/* Primary Action Button based on local view (one primary action per view) */}
@@ -731,6 +746,12 @@ export const StockWorkspace: React.FC = () => {
       {/* -------------------------------------------------------------
           LOCAL VIEW 1: PRODUK (Compact Searchable Table)
           ------------------------------------------------------------- */}
+      {activeView === 'receiving' && (
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <GoodsReceivingWorkspace />
+        </div>
+      )}
+
       {activeView === 'products' && (
         <div className="flex flex-1 flex-col overflow-hidden">
           {/* Search & Stock Filters */}

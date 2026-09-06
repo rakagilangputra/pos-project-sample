@@ -561,7 +561,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Helper to log an audit event
   const addAudit = (
     action: string,
-    entityType: 'order' | 'session' | 'stock' | 'user' | 'price' | 'discount' | 'supplier' | 'consignment' | 'category' | 'product',
+    entityType: 'order' | 'session' | 'stock' | 'user' | 'price' | 'discount' | 'supplier' | 'consignment' | 'category' | 'product' | 'receipt',
     entityId: string,
     details: string,
     beforeValue?: string,
