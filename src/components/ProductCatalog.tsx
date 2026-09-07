@@ -32,7 +32,7 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [stockWarningToast, setStockWarningToast] = useState<string | null>(null);
 
-  // Dynamic category tabs merged with 'all' and 'Made-to-Order' (POS-US-037)
+  // Dynamic category tabs
   const categoryList = [
     { id: 'all', name: 'Semua Menu', icon: '🍞' },
     ...contextCategories
@@ -42,16 +42,15 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
         name: c.name,
         icon: c.icon || '🥐',
       })),
-    // Made-to-Order category
-    { id: 'mto', name: 'Made-to-Order', icon: '🎂' },
   ];
 
   // Filter logic
   const filteredProducts = products.filter((prod) => {
+    // MTO products are exclusively created in Pesanan workspace
+    if (prod.isMadeToOrder) return false;
+
     // Category match
-    if (selectedCategory === 'mto') {
-      if (!prod.isMadeToOrder && prod.category !== 'custom_cake') return false;
-    } else if (selectedCategory !== 'all' && prod.category !== selectedCategory) {
+    if (selectedCategory !== 'all' && prod.category !== selectedCategory) {
       return false;
     }
 

@@ -148,6 +148,16 @@ interface POSContextType {
       poNumber?: string;
     }
   ) => { success: boolean; order?: Order; message: string };
+  createMtoOrder: (input: {
+    productId: string;
+    quantity: number;
+    customPrice?: number;
+    customer: Customer;
+    pickupDate: string;
+    pickupTime: string;
+    customizationNotes: string;
+    payments: PaymentComponent[];
+  }) => { success: boolean; order?: Order; message: string };
   orders: Order[];
   settleMadeToOrder: (orderId: string, payment: PaymentComponent) => { success: boolean; message: string };
   updatePoPickupTime: (orderId: string, newTime: string) => { success: boolean; message: string };
@@ -1582,6 +1592,141 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: true, order: newOrder, message: 'Transaksi berhasil diselesaikan!' };
   };
 
+  const createMtoOrder = (input: {
+    productId: string;
+    quantity: number;
+    customPrice?: number;
+    customer: Customer;
+    pickupDate: string;
+    pickupTime: string;
+    customizationNotes: string;
+    payments: PaymentComponent[];
+  }) => {
+    if (!currentSession || currentSession.status !== 'active') {
+      posSound.error();
+      return { success: false, message: 'Tidak ada sesi kasir yang aktif' };
+    }
+    const product = products.find((p) => p.id === input.productId);
+    if (!product || !product.isMadeToOrder) {
+      posSound.error();
+      return { success: false, message: 'Produk Made-to-Order tidak valid' };
+    }
+    if (input.quantity <= 0) {
+      posSound.error();
+      return { success: false, message: 'Jumlah pesanan harus lebih dari 0' };
+    }
+    const unitPrice = input.customPrice !== undefined && input.customPrice >= 0 ? input.customPrice : product.price;
+    const subtotal = unitPrice * input.quantity;
+    const taxRate = taxApplied ? STORE_INFO.taxRate : 0;
+    const taxAmount = Math.round(subtotal * taxRate);
+    const total = subtotal + taxAmount;
+
+    const totalPaid = input.payments.reduce((sum, p) => sum + p.amount, 0);
+    if (totalPaid <= 0) {
+      posSound.error();
+      return { success: false, message: 'Harap masukkan pembayaran DP atau Pelunasan!' };
+    }
+
+    const isPartial = totalPaid < total;
+    const paymentStatus: Order['paymentStatus'] = isPartial ? 'partial' : 'paid';
+    const orderStatus: Order['orderStatus'] = 'active';
+
+    const cashComponent = input.payments.find((p) => p.method === 'cash');
+    const change = cashComponent?.change || 0;
+
+    const receiptNo = generateReceiptNumber();
+    const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const poNo = `PO-${datePrefix}-${Math.floor(100 + Math.random() * 900)}`;
+
+    const cartItem: CartItem = {
+      id: 'line-' + Math.random().toString(36).slice(2, 9),
+      productId: product.id,
+      productName: product.name,
+      category: product.category,
+      unitPrice,
+      originalPrice: product.price,
+      isPriceOverridden: input.customPrice !== undefined && input.customPrice !== product.price,
+      quantity: input.quantity,
+      image: product.image,
+      isMadeToOrder: true,
+      stockAvailable: product.stock,
+      ownershipType: product.ownershipType || 'own',
+      supplierId: product.supplierId,
+      supplierName: product.supplierName,
+      commissionMethod: product.commissionMethod,
+      commissionValue: product.commissionValue,
+      commissionBasis: product.commissionBasis,
+      customizationNotes: input.customizationNotes,
+    };
+
+    const newOrder: Order = {
+      id: 'ORD-' + Date.now().toString().slice(-7),
+      receiptNumber: receiptNo,
+      poNumber: poNo,
+      sessionId: currentSession.id,
+      cashierId: currentUser.id,
+      cashierName: currentUser.name,
+      customer: input.customer,
+      items: [cartItem],
+      subtotal,
+      taxApplied,
+      taxRate: STORE_INFO.taxRate,
+      taxAmount,
+      discountAmount: 0,
+      total,
+      paidAmount: totalPaid,
+      remainingBalance: Math.max(0, total - totalPaid),
+      change,
+      payments: input.payments,
+      paymentStatus,
+      orderStatus,
+      isMadeToOrder: true,
+      customizationNotes: input.customizationNotes,
+      pickupDate: input.pickupDate,
+      pickupTime: input.pickupTime,
+      pickupTimeHistory: [],
+      createdAt: new Date().toISOString(),
+      reprintCount: 0,
+    };
+
+    setOrders((prev) => [newOrder, ...prev]);
+
+    const cashPortion = input.payments
+      .filter((p) => p.method === 'cash')
+      .reduce((sum, p) => sum + p.amount, 0);
+    const qrisPortion = input.payments
+      .filter((p) => p.method === 'qris')
+      .reduce((sum, p) => sum + p.amount, 0);
+    const depositPortion = input.payments
+      .filter((p) => p.method === 'deposit')
+      .reduce((sum, p) => sum + p.amount, 0);
+
+    setCurrentSession((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        totalTransactions: prev.totalTransactions + 1,
+        totalSales: prev.totalSales + totalPaid,
+        cashSales: prev.cashSales + cashPortion,
+        qrisSales: prev.qrisSales + qrisPortion,
+        depositSales: prev.depositSales + depositPortion,
+        expectedCash: prev.expectedCash + cashPortion,
+      };
+    });
+
+    addAudit(
+      'ORDER_CREATE_PO',
+      'order',
+      newOrder.id,
+      `Membuat PO Made-to-Order baru ${poNo} untuk ${input.customer.name} (Total: Rp ${total.toLocaleString('id-ID')}, DP: Rp ${totalPaid.toLocaleString('id-ID')})`
+    );
+
+    setActiveReceiptOrder(newOrder);
+    posSound.cashRegister();
+
+    return { success: true, order: newOrder, message: `PO Made-to-Order ${poNo} berhasil dibuat!` };
+  };
+
   // Settle Made-to-Order Remaining Balance (POS-US-014)
   const settleMadeToOrder = (orderId: string, payment: PaymentComponent) => {
     const target = orders.find((o) => o.id === orderId);
@@ -2496,6 +2641,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         resumeOrder,
         cancelHoldOrder,
         completeOrder,
+        createMtoOrder,
         orders,
         settleMadeToOrder,
         updatePoPickupTime,
