@@ -26,6 +26,10 @@ import {
   X,
   Package,
   Plus,
+  LayoutGrid,
+  List,
+  DollarSign,
+  Layers,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 import { Order, CartItem, PaymentComponent } from '../types';
@@ -52,8 +56,9 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
     setActiveReceiptOrder,
   } = usePOS();
 
-  // Primary workspace tabs
+  // Primary workspace tabs & view mode
   const [activeTab, setActiveTab] = useState<'active' | 'schedule' | 'history'>('active');
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [isCreateMtoOpen, setIsCreateMtoOpen] = useState(false);
 
   // Search & Filter
@@ -157,7 +162,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
     });
   }, [mtoOrders, activeTab, searchQuery, filterChip, todayStr]);
 
-  // Counts for Badges
+  // Counts for Badges & Summary KPIs
   const activeCount = useMemo(() => {
     return mtoOrders.filter(
       (o) => o.orderStatus === 'active' || o.orderStatus === 'ready_for_pickup' || isOrderOverdue(o)
@@ -166,6 +171,10 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
 
   const overdueCount = useMemo(() => {
     return mtoOrders.filter((o) => isOrderOverdue(o)).length;
+  }, [mtoOrders]);
+
+  const readyCount = useMemo(() => {
+    return mtoOrders.filter((o) => o.orderStatus === 'ready_for_pickup').length;
   }, [mtoOrders]);
 
   const todayCount = useMemo(() => {
@@ -177,6 +186,18 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
         o.orderStatus !== 'voided'
     ).length;
   }, [mtoOrders, todayStr]);
+
+  const activeTotalValue = useMemo(() => {
+    return mtoOrders
+      .filter((o) => o.orderStatus !== 'picked_up' && o.orderStatus !== 'cancelled' && o.orderStatus !== 'voided')
+      .reduce((sum, o) => sum + o.total, 0);
+  }, [mtoOrders]);
+
+  const activeRemainingBalance = useMemo(() => {
+    return mtoOrders
+      .filter((o) => o.orderStatus !== 'picked_up' && o.orderStatus !== 'cancelled' && o.orderStatus !== 'voided')
+      .reduce((sum, o) => sum + o.remainingBalance, 0);
+  }, [mtoOrders]);
 
   // Current selected order for drawer
   const selectedOrder = useMemo(() => {
@@ -431,7 +452,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
   };
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-[#F7F7F5] select-none text-[#1F2937]">
+    <div className="flex h-full w-full min-h-0 flex-col overflow-hidden bg-[#F7F7F5] select-none text-[#1F2937]">
       {/* Toast Feedback */}
       {feedbackMessage && (
         <div
@@ -451,9 +472,9 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
       )}
 
       {/* Top Workspace Header */}
-      <div className="shrink-0 border-b border-[#E5E7EB] bg-white px-4 sm:px-6 py-3.5">
-        {/* Top Row: Title & Upper Right Action */}
-        <div className="flex items-center justify-between gap-4">
+      <div className="shrink-0 border-b border-[#E5E7EB] bg-white px-4 sm:px-6 py-3.5 space-y-3">
+        {/* Top Row: Title, KPI Quick Metrics ribbon, & Primary Action */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#D97706] text-white shadow-xs">
               <ClipboardList className="h-5 w-5" />
@@ -468,22 +489,43 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
             </div>
           </div>
 
-          {/* Upper Right Action Button */}
-          <button
-            onClick={() => { setIsCreateMtoOpen(true); posSound.beep(); }}
-            className="flex items-center gap-1.5 shrink-0 rounded-xl bg-[#D97706] px-4 py-2 text-xs font-bold text-white hover:bg-amber-700 shadow-xs active:scale-95 transition"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Create MTO</span>
-          </button>
+          {/* KPI Metrics Chips on the right side of header */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="hidden xl:flex items-center gap-2 rounded-xl bg-[#FDFBF7] border border-[#E5DACE] px-3 py-1.5 text-xs font-semibold text-[#2D241E]">
+              <span className="text-[#8C7B6C]">Nilai Aktif:</span>
+              <strong className="text-[#D97706]">{formatIDR(activeTotalValue)}</strong>
+            </div>
+
+            {activeRemainingBalance > 0 && (
+              <div className="hidden lg:flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs font-semibold text-amber-900">
+                <span className="text-amber-700">Sisa DP/Tagihan:</span>
+                <strong>{formatIDR(activeRemainingBalance)}</strong>
+              </div>
+            )}
+
+            {/* Upper Right Action Button */}
+            <button
+              onClick={() => {
+                setIsCreateMtoOpen(true);
+                posSound.beep();
+              }}
+              className="flex items-center gap-1.5 shrink-0 rounded-xl bg-[#D97706] px-4 py-2 text-xs font-bold text-white hover:bg-amber-700 shadow-xs active:scale-95 transition"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Create MTO</span>
+            </button>
+          </div>
         </div>
 
-        {/* Bottom Row: Tab Switcher & Search/Filters */}
-        <div className="mt-3.5 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pt-3 border-t border-[#F3F4F6]">
+        {/* Bottom Row: Tab Switcher & Full-Width Search/Filters & View Mode */}
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pt-2.5 border-t border-[#F3F4F6]">
           {/* Quick Tab Switcher */}
-          <div className="flex items-center gap-1 rounded-xl bg-[#F7F7F5] border border-[#E5E7EB] p-1 self-start">
+          <div className="flex items-center gap-1 rounded-xl bg-[#F7F7F5] border border-[#E5E7EB] p-1 shrink-0 self-start">
             <button
-              onClick={() => { setActiveTab('active'); posSound.beep(); }}
+              onClick={() => {
+                setActiveTab('active');
+                posSound.beep();
+              }}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
                 activeTab === 'active'
                   ? 'bg-white text-[#1F2937] shadow-xs font-bold'
@@ -500,7 +542,10 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
             </button>
 
             <button
-              onClick={() => { setActiveTab('schedule'); posSound.beep(); }}
+              onClick={() => {
+                setActiveTab('schedule');
+                posSound.beep();
+              }}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
                 activeTab === 'schedule'
                   ? 'bg-white text-[#1F2937] shadow-xs font-bold'
@@ -517,7 +562,10 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
             </button>
 
             <button
-              onClick={() => { setActiveTab('history'); posSound.beep(); }}
+              onClick={() => {
+                setActiveTab('history');
+                posSound.beep();
+              }}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
                 activeTab === 'history'
                   ? 'bg-white text-[#1F2937] shadow-xs font-bold'
@@ -529,16 +577,16 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
             </button>
           </div>
 
-          {/* Search & Filter Bar */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-            {/* Search Input */}
-            <div className="relative w-full sm:w-64">
+          {/* Search, Filter Chips & View Mode (Fills the right side evenly) */}
+          <div className="flex flex-1 flex-wrap items-center justify-end gap-2.5">
+            {/* Responsive Search Input */}
+            <div className="relative flex-1 min-w-[200px] max-w-md">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-[#9CA3AF]" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Cari PO, nama, telp..."
+                placeholder="Cari no. PO, nota, pelanggan, telp, atau nama roti..."
                 className="w-full rounded-xl border border-[#E5E7EB] bg-[#F7F7F5] pl-9 pr-7 py-1.5 text-xs text-[#1F2937] placeholder-[#9CA3AF] focus:border-[#D97706] focus:bg-white focus:outline-none transition"
               />
               {searchQuery && (
@@ -552,7 +600,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
             </div>
 
             {/* Quick Filter Chips */}
-            <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
+            <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
               {[
                 { id: 'all', label: 'Semua' },
                 { id: 'today', label: 'Hari Ini' },
@@ -562,7 +610,10 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
               ].map((chip) => (
                 <button
                   key={chip.id}
-                  onClick={() => { setFilterChip(chip.id as any); posSound.beep(); }}
+                  onClick={() => {
+                    setFilterChip(chip.id as any);
+                    posSound.beep();
+                  }}
                   className={`rounded-lg px-2.5 py-1 text-xs font-semibold whitespace-nowrap transition ${
                     filterChip === chip.id
                       ? 'bg-[#1F2937] text-white shadow-xs'
@@ -573,12 +624,38 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                 </button>
               ))}
             </div>
+
+            {/* View Mode Toggle */}
+            <div className="flex items-center rounded-xl border border-[#E5E7EB] bg-white p-0.5 shadow-2xs">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-1.5 rounded-lg transition ${
+                  viewMode === 'grid'
+                    ? 'bg-[#D97706] text-white shadow-xs'
+                    : 'text-[#6B7280] hover:text-[#1F2937]'
+                }`}
+                title="Tampilan Grid Kartu"
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => setViewMode('table')}
+                className={`p-1.5 rounded-lg transition ${
+                  viewMode === 'table'
+                    ? 'bg-[#D97706] text-white shadow-xs'
+                    : 'text-[#6B7280] hover:text-[#1F2937]'
+                }`}
+                title="Tampilan Tabel Lengkap"
+              >
+                <List className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 pb-28 scrollbar-thin">
         {displayedOrders.length === 0 ? (
           <div className="flex h-72 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#E5E7EB] bg-white p-6 text-center text-[#6B7280]">
             <ClipboardList className="h-12 w-12 text-[#9CA3AF] mb-2 stroke-[1.5]" />
@@ -600,8 +677,8 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
               </button>
             )}
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        ) : viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
             {displayedOrders.map((order) => {
               const isOverdue = isOrderOverdue(order);
               return (
@@ -704,6 +781,103 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                 </div>
               );
             })}
+          </div>
+        ) : (
+          /* Table View: Full width presentation without dead empty space */
+          <div className="rounded-2xl border border-[#E5E7EB] bg-white overflow-hidden shadow-xs">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-[#E5E7EB] bg-[#F7F7F5] text-[#6B7280] font-black uppercase tracking-wider text-[10px]">
+                  <th className="py-3 px-4">No. PO & Nota</th>
+                  <th className="py-3 px-4">Pelanggan</th>
+                  <th className="py-3 px-4">Jadwal Pengambilan</th>
+                  <th className="py-3 px-4">Ringkasan Item</th>
+                  <th className="py-3 px-4 text-center">Status Produksi</th>
+                  <th className="py-3 px-4 text-center">Status Bayar</th>
+                  <th className="py-3 px-4 text-right">Total Nilai</th>
+                  <th className="py-3 px-4 text-right">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E5E7EB]/70">
+                {displayedOrders.map((order) => {
+                  return (
+                    <tr
+                      key={order.id}
+                      onClick={() => handleOpenDetail(order)}
+                      className="hover:bg-[#FDFBF7] cursor-pointer transition"
+                    >
+                      {/* PO & Receipt */}
+                      <td className="py-3 px-4">
+                        <div className="font-mono font-bold text-[#D97706] text-xs">
+                          {order.poNumber || order.receiptNumber}
+                        </div>
+                        <div className="text-[10px] text-[#9CA3AF]">{order.receiptNumber}</div>
+                      </td>
+
+                      {/* Customer */}
+                      <td className="py-3 px-4">
+                        <div className="font-bold text-[#1F2937]">{order.customer.name}</div>
+                        <div className="text-[10px] text-[#6B7280]">
+                          {order.customer.phone || 'Tanpa no. telp'}
+                        </div>
+                      </td>
+
+                      {/* Schedule */}
+                      <td className="py-3 px-4">
+                        <div className="font-semibold text-[#1F2937]">
+                          {order.pickupDate || 'Hari Ini'}
+                        </div>
+                        <div className="text-[10px] text-[#6B7280]">
+                          Pukul {order.pickupTime || '14:00'} WIB
+                        </div>
+                      </td>
+
+                      {/* Items summary */}
+                      <td className="py-3 px-4 max-w-xs">
+                        <div className="line-clamp-1 text-xs text-[#374151] font-medium">
+                          {order.items.map((i) => `${i.quantity}x ${i.productName}`).join(', ')}
+                        </div>
+                        {order.customizationNotes && (
+                          <div className="text-[10px] text-amber-800 line-clamp-1 italic">
+                            "{order.customizationNotes}"
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Status */}
+                      <td className="py-3 px-4 text-center">
+                        {renderStatusBadge(order)}
+                      </td>
+
+                      {/* Payment */}
+                      <td className="py-3 px-4 text-center">
+                        {renderPaymentBadge(order)}
+                      </td>
+
+                      {/* Total */}
+                      <td className="py-3 px-4 text-right font-bold text-[#1F2937]">
+                        {formatIDR(order.total)}
+                      </td>
+
+                      {/* Action */}
+                      <td className="py-3 px-4 text-right">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenDetail(order);
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1 text-xs font-bold text-[#D97706] hover:bg-amber-50 hover:border-amber-300 transition"
+                        >
+                          <span>Kelola</span>
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

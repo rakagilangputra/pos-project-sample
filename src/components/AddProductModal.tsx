@@ -45,7 +45,6 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
   const [category, setCategory] = useState(categories.find((c) => c.id !== 'all')?.id || 'roti');
   const [price, setPrice] = useState<string>('15000');
   const [isPriceCustomizable, setIsPriceCustomizable] = useState(false);
-  const [openingStock, setOpeningStock] = useState<string>('20');
   const [lowStockThreshold, setLowStockThreshold] = useState<string>('5');
   const [isMadeToOrder, setIsMadeToOrder] = useState(false);
   const [image, setImage] = useState(BAKERY_SAMPLE_IMAGES[0].url);
@@ -94,7 +93,6 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
     const trimmedName = name.trim();
     const trimmedSku = sku.trim().toUpperCase();
     const numPrice = parseInt(price || '0', 10);
-    const numStock = parseInt(openingStock || '0', 10);
     const numLowStock = parseInt(lowStockThreshold || '5', 10);
     const numCommValue = parseFloat(commissionValue || '0');
 
@@ -131,7 +129,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
       categoryLabel: catLabel,
       price: numPrice,
       isPriceCustomizable,
-      stock: numStock,
+      stock: 0, // Stock is strictly added via Pembelian & Penerimaan
       lowStockThreshold: numLowStock,
       isMadeToOrder,
       image: image || BAKERY_SAMPLE_IMAGES[0].url,
@@ -457,22 +455,6 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
               </div>
             </div>
 
-            {/* Opening Stock */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-                Stok Awal Fisik (Pcs) <span className="text-rose-500">*</span>
-              </label>
-              <input
-                id="product-stock-input"
-                type="number"
-                min="0"
-                required
-                value={openingStock}
-                onChange={(e) => setOpeningStock(e.target.value)}
-                className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white px-4 py-2.5 text-sm font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none"
-              />
-            </div>
-
             {/* Low stock threshold */}
             <div className="space-y-1.5">
               <label className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
@@ -486,6 +468,14 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
                 onChange={(e) => setLowStockThreshold(e.target.value)}
                 className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white px-4 py-2.5 text-sm font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none"
               />
+            </div>
+
+            {/* Notice on Stock Management */}
+            <div className="sm:col-span-2 rounded-2xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-[#8C7B6C] flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+              <span>
+                <strong className="text-[#2D241E]">Stok Awal Produk: 0 Pcs.</strong> Stok baru wajib ditambahkan secara tertib dan terlacak melalui menu <strong>Pembelian & Penerimaan Barang</strong>.
+              </span>
             </div>
 
             {/* Toggles: Custom Price & Made-to-order */}

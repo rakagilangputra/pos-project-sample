@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Store,
   Clock,
@@ -9,13 +9,21 @@ import {
   ShoppingBag,
   ChevronDown,
   Building2,
-  MoreHorizontal,
+  Lock,
   ClipboardList,
+  Check,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 import { formatIDR } from '../utils/formatters';
 
-export type MainWorkspaceTab = 'pos' | 'pesanan' | 'dashboard' | 'audit' | 'konsinyasi' | 'stok';
+export type MainWorkspaceTab =
+  | 'pos'
+  | 'pesanan'
+  | 'dashboard'
+  | 'audit'
+  | 'konsinyasi'
+  | 'stok'
+  | 'backoffice';
 
 interface HeaderProps {
   currentTab: MainWorkspaceTab;
@@ -32,10 +40,33 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenHandoffModal,
   onOpenHeldOrdersModal,
 }) => {
-  const { currentSession, currentUser, setAsideOrders, settlementCycles, orders } = usePOS();
-  const [isOverflowMenuOpen, setIsOverflowMenuOpen] = useState(false);
+  const {
+    currentSession,
+    currentUser,
+    setAsideOrders,
+    settlementCycles,
+    orders,
+    selectedBranch,
+    branches,
+    requestSwitchBranch,
+    setIsStoreSelectionModalOpen,
+    isBranchReadOnly,
+  } = usePOS();
 
-  // Check overdue or due cycles (POS-US-034 & POS-US-047)
+  const [isStoreDropdownOpen, setIsStoreDropdownOpen] = useState(false);
+  const storeDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (storeDropdownRef.current && !storeDropdownRef.current.contains(e.target as Node)) {
+        setIsStoreDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const overdueCount = settlementCycles.filter((c) => c.status === 'overdue').length;
   const dueTodayCount = settlementCycles.filter((c) => c.status === 'due').length;
 
@@ -46,14 +77,16 @@ export const Header: React.FC<HeaderProps> = ({
   ).length;
 
   const isCashier = currentUser.role === 'cashier';
+  const isSuperadmin = currentUser.role === 'admin';
 
-  // Navigation tabs configuration (POS-US-047 AC-01, AC-02)
+  // Navigation tabs configuration
   const allTabs: {
     id: MainWorkspaceTab;
     label: string;
     icon: React.ReactNode;
     badge?: React.ReactNode;
     restrictedToManagement?: boolean;
+    restrictedToSuperadmin?: boolean;
   }[] = [
     {
       id: 'pos',
@@ -106,36 +139,146 @@ export const Header: React.FC<HeaderProps> = ({
       icon: <Package className="h-3.5 w-3.5" />,
       restrictedToManagement: true,
     },
+    {
+      id: 'backoffice',
+      label: 'Backoffice HQ',
+      icon: <Store className="h-3.5 w-3.5" />,
+      restrictedToSuperadmin: true,
+    },
   ];
 
-  // Filter tabs by role: Cashiers only see 'pos' (POS-US-047 AC-02)
+  // Filter tabs by role
   const visibleTabs = allTabs.filter((tab) => {
-    if (isCashier && tab.restrictedToManagement) return false;
+    if (tab.restrictedToSuperadmin && !isSuperadmin) return false;
+    if (tab.restrictedToManagement && isCashier) return false;
     return true;
   });
 
+  // Eligible branches for quick switch dropdown
+  const selectableBranches = isSuperadmin
+    ? branches
+    : branches.filter(
+        (b) =>
+          Array.isArray(currentUser.assignedBranchIds) &&
+          currentUser.assignedBranchIds.includes(b.id) &&
+          b.status === 'active'
+      );
+
+  const handleBranchClick = (branchId: string) => {
+    setIsStoreDropdownOpen(false);
+    requestSwitchBranch(branchId);
+  };
+
   return (
-    <header className="h-14 shrink-0 bg-white border-b border-[#E5E7EB] px-3 sm:px-5 flex items-center justify-between select-none">
-      {/* Brand & Store Name */}
+    <header className="h-14 shrink-0 bg-white border-b border-[#E5E7EB] px-3 sm:px-5 flex items-center justify-between select-none relative z-40">
+      {/* Left: Brand & Persistent Store Selector */}
       <div className="flex items-center gap-3">
         <div className="w-8 h-8 bg-[#D97706] rounded-lg flex items-center justify-center text-white font-bold text-base shadow-xs">
           S
         </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-sm sm:text-base font-bold tracking-tight text-[#1F2937]">
-              SweetCrust Bakery
-            </h1>
-            <span className="hidden sm:inline-block rounded bg-[#F7F7F5] border border-[#E5E7EB] px-1.5 py-0.2 text-[10px] font-medium text-[#6B7280]">
-              Reg 01
-            </span>
-          </div>
+        
+        {/* Persistent Top-Bar Store Selector */}
+        <div className="relative" ref={storeDropdownRef}>
+          {isCashier ? (
+            /* Cashier: Branch locked by session */
+            <div
+              id="current-store-display-locked"
+              className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs text-gray-700"
+              title="Cabang kasir ditentukan oleh sesi aktif"
+            >
+              <Store className="h-3.5 w-3.5 text-amber-600" />
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-gray-500 font-medium hidden sm:inline">Current Store:</span>
+                <span className="font-bold text-gray-900">{selectedBranch?.name || 'Senopati'}</span>
+              </div>
+            </div>
+          ) : (
+            /* Supervisor / Superadmin: Interactive Selector */
+            <div className="relative">
+              <button
+                id="current-store-selector-btn"
+                type="button"
+                onClick={() => setIsStoreDropdownOpen((prev) => !prev)}
+                className={`flex items-center gap-2 rounded-xl border px-2.5 py-1.5 text-xs font-semibold transition active:scale-95 ${
+                  isBranchReadOnly
+                    ? 'border-rose-300 bg-rose-50 text-rose-900 hover:bg-rose-100'
+                    : 'border-amber-300 bg-amber-50/70 text-amber-950 hover:bg-amber-100'
+                }`}
+                title="Klik untuk beralih cabang toko"
+              >
+                <Store className="h-3.5 w-3.5 text-amber-700 shrink-0" />
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-amber-800 font-medium hidden md:inline">Current Store:</span>
+                  <span className="font-black text-gray-900">{selectedBranch?.name || 'Pilih Toko'}</span>
+                  {isBranchReadOnly && (
+                    <span className="flex items-center gap-0.5 rounded-full bg-rose-200 px-1.5 py-0.2 text-[9px] font-bold text-rose-800">
+                      <Lock className="h-2.5 w-2.5" /> Read-only
+                    </span>
+                  )}
+                </div>
+                <ChevronDown className="h-3 w-3 text-amber-700 shrink-0" />
+              </button>
+
+              {/* Dropdown Menu */}
+              {isStoreDropdownOpen && (
+                <div className="absolute left-0 top-full mt-1.5 w-64 rounded-2xl border border-gray-200 bg-white p-2 shadow-xl animate-in fade-in zoom-in-95 duration-150 z-50">
+                  <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-gray-400">
+                    Pilih Cabang Aktif
+                  </div>
+                  <div className="space-y-1 mt-1">
+                    {selectableBranches.map((b) => {
+                      const isSelected = selectedBranch?.id === b.id;
+                      const isInactive = b.status === 'inactive';
+
+                      return (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => handleBranchClick(b.id)}
+                          className={`flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-xs transition ${
+                            isSelected
+                              ? 'bg-amber-50 font-bold text-amber-950'
+                              : 'text-gray-700 hover:bg-gray-100'
+                          }`}
+                        >
+                          <div className="flex flex-col">
+                            <span className="font-bold text-gray-900">{b.name}</span>
+                            <span className="text-[10px] text-gray-400">{b.code} • {b.city}</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {isInactive && (
+                              <span className="rounded bg-rose-100 px-1 py-0.2 text-[9px] font-bold text-rose-700">
+                                Read-only
+                              </span>
+                            )}
+                            {isSelected && <Check className="h-4 w-4 text-amber-600" />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  
+                  <div className="mt-2 border-t border-gray-100 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsStoreDropdownOpen(false);
+                        setIsStoreSelectionModalOpen(true);
+                      }}
+                      className="w-full rounded-xl py-1.5 text-center text-xs font-bold text-amber-700 hover:bg-amber-50 transition"
+                    >
+                      Buka Layar Pilih Cabang...
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Center Navigation Tabs (POS-US-047 AC-01, AC-02, AC-03, AC-04) */}
-      <nav className="flex items-center gap-1 rounded-lg bg-[#F7F7F5] border border-[#E5E7EB] p-0.5 max-w-full">
-        {/* Desktop Visible Tabs */}
+      {/* Center: Navigation Tabs */}
+      <nav className="flex items-center gap-1 rounded-lg bg-[#F7F7F5] border border-[#E5E7EB] p-0.5 max-w-full overflow-x-auto">
         <div className="flex items-center gap-1">
           {visibleTabs.map((tab) => {
             const isActive = currentTab === tab.id;
@@ -159,9 +302,9 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </nav>
 
-      {/* Right Actions & Operator Status */}
+      {/* Right: Actions & Operator Status */}
       <div className="flex items-center gap-1.5 sm:gap-2">
-        {/* Parkir Nota Shortcut Badge (POS-US-012) */}
+        {/* Parkir Nota Shortcut Badge */}
         {setAsideOrders.length > 0 && (
           <button
             onClick={onOpenHeldOrdersModal}
@@ -173,7 +316,7 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
-        {/* Status Shift & Kas (POS-US-003, POS-US-005) */}
+        {/* Status Shift & Kas */}
         <button
           onClick={onOpenSessionModal}
           className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition active:scale-95 ${
@@ -188,7 +331,7 @@ export const Header: React.FC<HeaderProps> = ({
           </span>
         </button>
 
-        {/* Active Cashier Switcher Profile (POS-US-004) */}
+        {/* Active Cashier Switcher Profile */}
         <button
           onClick={onOpenHandoffModal}
           className="flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white p-1 pr-2 hover:border-[#D97706] active:scale-95 transition"
@@ -198,7 +341,9 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
           <div className="text-left leading-tight hidden lg:block">
             <span className="block text-xs font-bold text-[#1F2937]">{currentUser.name}</span>
-            <span className="block text-[9px] font-medium text-[#6B7280] uppercase">{currentUser.role}</span>
+            <span className="block text-[9px] font-medium text-[#6B7280] uppercase">
+              {currentUser.role === 'admin' ? 'Superadmin' : currentUser.role}
+            </span>
           </div>
           <ChevronDown className="h-3 w-3 text-[#6B7280]" />
         </button>

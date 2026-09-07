@@ -1,4 +1,6 @@
 import {
+  StoreBranch,
+  RoleMatrixItem,
   User,
   Customer,
   Product,
@@ -10,20 +12,111 @@ import {
   GoodsReceiptRecord,
 } from '../types';
 
+export const INITIAL_BRANCHES: StoreBranch[] = [
+  {
+    id: "branch-senopati",
+    code: "CAB-01",
+    name: "Cabang Senopati Utama",
+    address: "Jl. Senopati No. 42, Kebayoran Baru",
+    city: "Jakarta Selatan",
+    phone: "021-555-8822",
+    operatingHours: "07:00 - 22:00",
+    assignedSupervisorIds: ["usr-3"],
+    receiptHeader: "SweetCrust Bakery — Senopati Flagship Store",
+    status: "active",
+    createdAt: "2026-01-01T08:00:00Z",
+  },
+  {
+    id: "branch-kemang",
+    code: "CAB-02",
+    name: "Cabang Kemang Artisan",
+    address: "Jl. Kemang Raya No. 18, Mampang Prapatan",
+    city: "Jakarta Selatan",
+    phone: "021-719-3344",
+    operatingHours: "08:00 - 21:00",
+    assignedSupervisorIds: ["usr-3"],
+    receiptHeader: "SweetCrust Bakery — Kemang Artisan Boutique",
+    status: "active",
+    createdAt: "2026-02-15T08:00:00Z",
+  },
+  {
+    id: "branch-bintaro",
+    code: "CAB-03",
+    name: "Cabang Bintaro Sektor 7 (Tutup)",
+    address: "CBD Bintaro Jaya Blok B7/A1, Pondok Aren",
+    city: "Tangerang Selatan",
+    phone: "021-745-9900",
+    operatingHours: "08:00 - 20:00",
+    assignedSupervisorIds: [],
+    receiptHeader: "SweetCrust Bakery — Bintaro Outlet (Nonaktif)",
+    status: "inactive",
+    createdAt: "2026-03-01T08:00:00Z",
+  },
+];
+
+export const FIXED_ROLE_MATRIX: RoleMatrixItem[] = [
+  {
+    role: "cashier",
+    roleLabel: "Kasir",
+    description: "Operator transaksi penjualan kasir & PO Made-to-Order pada sesi kasir aktif.",
+    branchScope: "Tepat 1 cabang aktif (sesuai sesi kasir, tanpa selector)",
+    workspaces: ["Kasir (POS)", "Pesanan (MTO PO)", "Shift & Kas"],
+    canManageBranches: false,
+    canManageUsers: false,
+    canEditMasterData: false,
+  },
+  {
+    role: "supervisor",
+    roleLabel: "Supervisor",
+    description: "Pengawas operasional toko, pembatalan/void, retur, penerimaan barang, & stok.",
+    branchScope: "Cabang aktif yang ditugaskan (wajib pilih 1 cabang setelah login)",
+    workspaces: ["Kasir (POS)", "Pesanan (PO MTO)", "Dashboard Operasional", "Stok & Penerimaan", "Konsinyasi"],
+    canManageBranches: false,
+    canManageUsers: false,
+    canEditMasterData: false,
+  },
+  {
+    role: "admin",
+    roleLabel: "Superadmin",
+    description: "Akses penuh manajemen multi-cabang, konfigurasi akses user, master data, dan audit.",
+    branchScope: "Semua cabang aktif & cabang nonaktif (Mode Baca Saja / Read-only)",
+    workspaces: ["Semua Workspace Operasional", "Backoffice (Dashboard, Cabang, RBAC, Master Data, Audit)"],
+    canManageBranches: true,
+    canManageUsers: true,
+    canEditMasterData: true,
+  },
+];
+
 export const INITIAL_CATEGORIES: ProductCategoryItem[] = [
-  { id: 'all', name: 'Semua Menu', icon: '🍞' },
-  { id: 'roti', name: 'Roti Manis', icon: '🥐', description: 'Roti sisir, abon, dan kreasi manis klasik' },
-  { id: 'pastry', name: 'Pastry & Croissant', icon: '🥖', description: 'Pastry renyah berlapis butter premium' },
-  { id: 'cake', name: 'Cakes & Tart', icon: '🍰', description: 'Bolu, roll cake, dan tart lembut' },
-  { id: 'cookies', name: 'Cookies & Hampers', icon: '🍪', description: 'Kue kering toples & parcel artisan' },
-  { id: 'beverage', name: 'Minuman & Kopi', icon: '☕', description: 'Kopi susu gula aren & teh segar' },
-  { id: 'custom_cake', name: 'Custom Cake (PO / DP)', icon: '🎂', description: 'Kue ulang tahun dan pesanan khusus' },
-  { id: 'snack_tradisional', name: 'Kue Basah & Tradisional', icon: '🍙', description: 'Jajanan pasar dan lemper gurih' },
+  { id: 'all', branchId: "branch-senopati", name: 'Semua Menu', icon: '🍞' },
+  { id: 'roti', branchId: "branch-senopati", name: 'Roti Manis', icon: '🥐', description: 'Roti sisir, abon, dan kreasi manis klasik' },
+  { id: 'pastry', branchId: "branch-senopati", name: 'Pastry & Croissant', icon: '🥖', description: 'Pastry renyah berlapis butter premium' },
+  { id: 'cake', branchId: "branch-senopati", name: 'Cakes & Tart', icon: '🍰', description: 'Bolu, roll cake, dan tart lembut' },
+  { id: 'cookies', branchId: "branch-senopati", name: 'Cookies & Hampers', icon: '🍪', description: 'Kue kering toples & parcel artisan' },
+  { id: 'beverage', branchId: "branch-senopati", name: 'Minuman & Kopi', icon: '☕', description: 'Kopi susu gula aren & teh segar' },
+  { id: 'custom_cake', branchId: "branch-senopati", name: 'Custom Cake (PO / DP)', icon: '🎂', description: 'Kue ulang tahun dan pesanan khusus' },
+  { id: 'snack_tradisional', branchId: "branch-senopati", name: 'Kue Basah & Tradisional', icon: '🍙', description: 'Jajanan pasar dan lemper gurih' },
 ];
 
 export const INITIAL_SUPPLIERS: Supplier[] = [
   {
+    id: "sup-kmg-1",
+    branchId: "branch-kemang",
+    name: "Artisan Dairy & Butter Jakarta Selatan",
+    category: "TCC",
+    picName: "Bapak Gunawan",
+    phone: "0812-9900-1122",
+    scheduleType: "weekly",
+    weeklyFrequency: "once",
+    weeklyDays: ["Senin"],
+    nextDueDate: "2026-09-07",
+    balance: 0,
+    createdAt: "2026-02-15T08:00:00Z",
+  },
+
+  {
     id: 'sup-1',
+    branchId: "branch-senopati",
     name: 'Dapur Ibu Endang (Kue Tradisional)',
     category: 'KYD',
     picName: 'Ibu Endang Rahayu',
@@ -37,6 +130,7 @@ export const INITIAL_SUPPLIERS: Supplier[] = [
   },
   {
     id: 'sup-2',
+    branchId: "branch-senopati",
     name: 'Artisan Cookies & Hampers Bandung',
     category: 'RMS',
     picName: 'Mas Reza Fahmi',
@@ -50,6 +144,7 @@ export const INITIAL_SUPPLIERS: Supplier[] = [
   },
   {
     id: 'sup-3',
+    branchId: "branch-senopati",
     name: 'Chef Pierre Gourmet Pastry',
     category: 'TCC',
     picName: 'Pierre Tanuwidjaja',
@@ -75,41 +170,50 @@ export const STORE_INFO = {
 
 export const INITIAL_USERS: User[] = [
   {
-    id: 'usr-1',
-    name: 'Rina Kartika',
-    role: 'cashier',
-    pin: '1234',
-    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
-    email: 'rina.kasir@rotinusantara.com',
+    id: "usr-1",
+    name: "Rina Kartika",
+    role: "cashier",
+    pin: "1234",
+    avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80",
+    email: "rina.kasir@rotinusantara.com",
+    assignedBranchIds: ["branch-senopati"],
+    status: "active",
   },
   {
-    id: 'usr-2',
-    name: 'Budi Santoso',
-    role: 'cashier',
-    pin: '2345',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-    email: 'budi.kasir@rotinusantara.com',
+    id: "usr-2",
+    name: "Budi Santoso",
+    role: "cashier",
+    pin: "2345",
+    avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+    email: "budi.kasir@rotinusantara.com",
+    assignedBranchIds: ["branch-kemang"],
+    status: "active",
   },
   {
-    id: 'usr-3',
-    name: 'Siti Rahma (Supervisor)',
-    role: 'supervisor',
-    pin: '8888',
-    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
-    email: 'siti.spv@rotinusantara.com',
+    id: "usr-3",
+    name: "Siti Rahma (Supervisor)",
+    role: "supervisor",
+    pin: "8888",
+    avatar: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80",
+    email: "siti.spv@rotinusantara.com",
+    assignedBranchIds: ["branch-senopati", "branch-kemang"],
+    status: "active",
   },
   {
-    id: 'usr-4',
-    name: 'Pak Hendra (Owner / Admin)',
-    role: 'admin',
-    pin: '9999',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
-    email: 'hendra.owner@rotinusantara.com',
+    id: "usr-4",
+    name: "Pak Hendra (Owner / Superadmin)",
+    role: "admin",
+    pin: "9999",
+    avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80",
+    email: "hendra.owner@rotinusantara.com",
+    assignedBranchIds: ["branch-senopati", "branch-kemang", "branch-bintaro"],
+    status: "active",
   },
 ];
 
 export const DEFAULT_WALKIN_CUSTOMER: Customer = {
-  id: 'cust-walkin',
+  id: "cust-walkin",
+  branchId: "branch-senopati",
   name: 'Pelanggan Umum (Walk-in)',
   category: 'Walk-in',
   depositBalance: 0,
@@ -118,9 +222,37 @@ export const DEFAULT_WALKIN_CUSTOMER: Customer = {
 };
 
 export const INITIAL_CUSTOMERS: Customer[] = [
+  {
+    id: "cust-k-1",
+    branchId: "branch-kemang",
+    name: "Dr. Adrian Kusuma",
+    phone: "081122334455",
+    email: "adrian.k@kemangmedika.com",
+    category: "Individual",
+    address: "Kemang Selatan No. 12",
+    notes: "Langganan sourdough dan croissant",
+    depositBalance: 250000,
+    createdAt: "2026-02-20T10:00:00Z",
+    lastTransactionAt: "2026-09-05T09:00:00Z",
+  },
+  {
+    id: "cust-k-2",
+    branchId: "branch-kemang",
+    name: "Studio Seni Kemang 18",
+    phone: "0217188990",
+    email: "contact@kemangart.org",
+    category: "Corporate",
+    address: "Jl. Kemang Raya No. 18B",
+    notes: "Pemesanan snack box workshop mingguan",
+    depositBalance: 600000,
+    createdAt: "2026-03-01T11:00:00Z",
+    lastTransactionAt: "2026-09-04T16:00:00Z",
+  },
+
   DEFAULT_WALKIN_CUSTOMER,
   {
     id: 'cust-2',
+    branchId: "branch-senopati",
     name: 'Ibu Maya Dewi',
     phone: '081234567890',
     email: 'maya.dewi@gmail.com',
@@ -133,6 +265,7 @@ export const INITIAL_CUSTOMERS: Customer[] = [
   },
   {
     id: 'cust-3',
+    branchId: "branch-senopati",
     name: 'PT Sinar Surya Abadi',
     phone: '02157998811',
     email: 'procurement@sinarsurya.co.id',
@@ -145,6 +278,7 @@ export const INITIAL_CUSTOMERS: Customer[] = [
   },
   {
     id: 'cust-4',
+    branchId: "branch-senopati",
     name: 'Pak Doni Prasetyo',
     phone: '081877665544',
     email: 'doni.prasetyo@yahoo.com',
@@ -158,9 +292,80 @@ export const INITIAL_CUSTOMERS: Customer[] = [
 ];
 
 export const INITIAL_PRODUCTS: Product[] = [
+  {
+    id: "prod-bin-1",
+    branchId: "branch-bintaro",
+    sku: "BIN-OLD-01",
+    name: "Classic Choco Bun Bintaro (Arsip)",
+    category: "roti",
+    categoryLabel: "Roti Manis",
+    price: 12000,
+    isPriceCustomizable: false,
+    stock: 0,
+    lowStockThreshold: 5,
+    isMadeToOrder: false,
+    popular: false,
+    image: "https://images.unsplash.com/photo-1549931319-a545dcf3bc73?w=400&auto=format&fit=crop&q=80",
+    description: "Produk arsip cabang nonaktif Bintaro",
+    ownershipType: "own",
+  },
+
+  {
+    id: "prod-kmg-1",
+    branchId: "branch-kemang",
+    sku: "KMG-RTI-01",
+    name: "Artisan Sourdough Country Loaf",
+    category: "pastry",
+    categoryLabel: "Pastry & Croissant",
+    price: 45000,
+    isPriceCustomizable: false,
+    stock: 12,
+    lowStockThreshold: 4,
+    isMadeToOrder: false,
+    popular: true,
+    image: "https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&auto=format&fit=crop&q=80",
+    description: "Roti sourdough fermentasi 24 jam dengan kerak renyah aromatik",
+    ownershipType: "own",
+  },
+  {
+    id: "prod-kmg-2",
+    branchId: "branch-kemang",
+    sku: "KMG-PST-02",
+    name: "Almond Croissant Cream Fraiche",
+    category: "pastry",
+    categoryLabel: "Pastry & Croissant",
+    price: 32000,
+    isPriceCustomizable: false,
+    stock: 16,
+    lowStockThreshold: 5,
+    isMadeToOrder: false,
+    popular: true,
+    image: "https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=400&auto=format&fit=crop&q=80",
+    description: "Croissant berlapis butter dengan isian frangipane almond",
+    ownershipType: "own",
+  },
+  {
+    id: "prod-kmg-3",
+    branchId: "branch-kemang",
+    sku: "KMG-BEV-03",
+    name: "Iced Spanish Latte Kemang",
+    category: "beverage",
+    categoryLabel: "Minuman & Kopi",
+    price: 28000,
+    isPriceCustomizable: false,
+    stock: 30,
+    lowStockThreshold: 6,
+    isMadeToOrder: false,
+    popular: true,
+    image: "https://images.unsplash.com/photo-1517256064527-09c73fc73e38?w=400&auto=format&fit=crop&q=80",
+    description: "Espresso double shot dengan susu kental manis dan fresh milk",
+    ownershipType: "own",
+  },
+
   // ROTI MANIS
   {
     id: 'prod-1',
+    branchId: "branch-senopati",
     sku: 'RTI-001',
     name: 'Roti Sisir Mentega Spesial',
     category: 'roti',
@@ -177,6 +382,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-2',
+    branchId: "branch-senopati",
     sku: 'RTI-002',
     name: 'Roti Abon Sapi Pedas (Floss Bun)',
     category: 'roti',
@@ -193,6 +399,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-3',
+    branchId: "branch-senopati",
     sku: 'RTI-003',
     name: 'Roti Cokelat Belgia Keju Lumer',
     category: 'roti',
@@ -209,6 +416,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-4',
+    branchId: "branch-senopati",
     sku: 'RTI-004',
     name: 'Roti Coffee Bun / Mexican Bun',
     category: 'roti',
@@ -225,6 +433,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-5',
+    branchId: "branch-senopati",
     sku: 'RTI-005',
     name: 'Roti Pisang Cokelat Keju',
     category: 'roti',
@@ -240,6 +449,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-6',
+    branchId: "branch-senopati",
     sku: 'RTI-006',
     name: 'Sosis Roll Bratwurst Panggang',
     category: 'roti',
@@ -257,6 +467,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   // PASTRY & CROISSANT
   {
     id: 'prod-7',
+    branchId: "branch-senopati",
     sku: 'PST-001',
     name: 'French Butter Croissant',
     category: 'pastry',
@@ -273,6 +484,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-8',
+    branchId: "branch-senopati",
     sku: 'PST-002',
     name: 'Pain au Chocolat (Chocolate Croissant)',
     category: 'pastry',
@@ -289,6 +501,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-9',
+    branchId: "branch-senopati",
     sku: 'PST-003',
     name: 'Almond Croissant Panggang',
     category: 'pastry',
@@ -304,6 +517,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-10',
+    branchId: "branch-senopati",
     sku: 'PST-004',
     name: 'Smoked Beef & Cheese Quiche Slice',
     category: 'pastry',
@@ -321,6 +535,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   // CAKES & TART
   {
     id: 'prod-11',
+    branchId: "branch-senopati",
     sku: 'CAK-001',
     name: 'Classic Black Forest Cake Slice',
     category: 'cake',
@@ -337,6 +552,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-12',
+    branchId: "branch-senopati",
     sku: 'CAK-002',
     name: 'Basque Burnt Cheesecake Slice',
     category: 'cake',
@@ -353,6 +569,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-13',
+    branchId: "branch-senopati",
     sku: 'CAK-003',
     name: 'Lapis Surabaya Heritage Slice',
     category: 'cake',
@@ -368,6 +585,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-14',
+    branchId: "branch-senopati",
     sku: 'CAK-004',
     name: 'Pandan Chiffon Cake Mini Whole',
     category: 'cake',
@@ -385,6 +603,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   // COOKIES & HAMPERS (CONSIGNMENT EXAMPLES)
   {
     id: 'prod-15',
+    branchId: "branch-senopati",
     sku: 'COK-001',
     name: 'Kastengel Keju Edam Toples 350g',
     category: 'cookies',
@@ -406,6 +625,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-16',
+    branchId: "branch-senopati",
     sku: 'COK-002',
     name: 'Nastar Wisman Nanas Asli Toples 350g',
     category: 'cookies',
@@ -429,6 +649,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   // BEVERAGES
   {
     id: 'prod-17',
+    branchId: "branch-senopati",
     sku: 'BEV-001',
     name: 'Es Kopi Susu Gula Aren Nusantara',
     category: 'beverage',
@@ -445,6 +666,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-18',
+    branchId: "branch-senopati",
     sku: 'BEV-002',
     name: 'Caffe Latte Panas / Iced Latte',
     category: 'beverage',
@@ -460,6 +682,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-19',
+    branchId: "branch-senopati",
     sku: 'BEV-003',
     name: 'Iced Artisan Matcha Latte',
     category: 'beverage',
@@ -475,6 +698,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-20',
+    branchId: "branch-senopati",
     sku: 'BEV-004',
     name: 'Air Mineral Prima 600ml',
     category: 'beverage',
@@ -492,6 +716,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   // MADE-TO-ORDER CUSTOM CAKES (POS-US-014, POS-US-020)
   {
     id: 'prod-21',
+    branchId: "branch-senopati",
     sku: 'MTO-001',
     name: 'Kue Tart Ulang Tahun Custom (Made to Order)',
     category: 'custom_cake',
@@ -509,6 +734,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-22',
+    branchId: "branch-senopati",
     sku: 'MTO-002',
     name: 'Snack Box Acara / Kantor (Custom Isi)',
     category: 'custom_cake',
@@ -528,6 +754,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   // CONSIGNMENT TRADITIONAL KUE BASAH (POS-US-029 & POS-US-030)
   {
     id: 'prod-23',
+    branchId: "branch-senopati",
     sku: 'SNK-001',
     name: 'Lemper Ayam Panggang Spesial (Isi 3)',
     category: 'snack_tradisional',
@@ -548,6 +775,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-24',
+    branchId: "branch-senopati",
     sku: 'SNK-002',
     name: 'Kue Lapis Legit Prunes Potong Premium',
     category: 'snack_tradisional',
@@ -1000,6 +1228,7 @@ export const INITIAL_ORDERS: Order[] = [
 export const INITIAL_GOODS_RECEIPTS: GoodsReceiptRecord[] = [
   {
     id: 'rec-001',
+    branchId: "branch-senopati",
     receiptNumber: 'RCV-20260905-001',
     receiptType: 'Dibeli Sendiri',
     arrivalDate: yesterdayDateStr,
@@ -1035,6 +1264,7 @@ export const INITIAL_GOODS_RECEIPTS: GoodsReceiptRecord[] = [
   },
   {
     id: 'rec-002',
+    branchId: "branch-senopati",
     receiptNumber: 'RCV-20260906-002',
     receiptType: 'Konsinyasi',
     arrivalDate: todayDateStr,

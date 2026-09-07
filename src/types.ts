@@ -1,5 +1,20 @@
 export type UserRole = 'cashier' | 'supervisor' | 'admin';
 
+export interface StoreBranch {
+  id: string;
+  code: string; // e.g. 'CAB-01'
+  name: string; // e.g. 'Cabang Senopati Utama'
+  address: string;
+  city: string;
+  phone?: string;
+  operatingHours: string; // e.g. '07:00 - 22:00'
+  assignedSupervisorIds?: string[];
+  receiptHeader?: string;
+  status: 'active' | 'inactive';
+  createdAt: string;
+  updatedAt?: string;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -7,12 +22,26 @@ export interface User {
   pin: string; // 4-digit quick PIN
   avatar?: string;
   email?: string;
+  assignedBranchIds?: string[]; // Cashier: exactly 1; Supervisor: 1 or more; Admin: all
+  status: 'active' | 'inactive';
+}
+
+export interface RoleMatrixItem {
+  role: UserRole;
+  roleLabel: string;
+  description: string;
+  branchScope: string;
+  workspaces: string[];
+  canManageBranches: boolean;
+  canManageUsers: boolean;
+  canEditMasterData: boolean;
 }
 
 export type CustomerCategory = 'Walk-in' | 'Retail' | 'Corporate' | 'Individual' | 'Other';
 
 export interface Customer {
   id: string;
+  branchId?: string;
   name: string;
   phone?: string;
   email?: string;
@@ -28,6 +57,7 @@ export type ProductCategory = string;
 
 export interface ProductCategoryItem {
   id: string;
+  branchId?: string;
   name: string;
   description?: string;
   icon?: string;
@@ -39,6 +69,7 @@ export type CommissionBasis = 'gross' | 'net';
 
 export interface Product {
   id: string;
+  branchId?: string;
   sku: string;
   name: string;
   category: ProductCategory;
@@ -122,8 +153,16 @@ export interface PickupTimeEditLog {
   timestamp: string;
 }
 
+export interface MtoOrderItemInput {
+  productId: string;
+  quantity: number;
+  customPrice?: number;
+  customizationNotes?: string;
+}
+
 export interface Order {
   id: string;
+  branchId?: string;
   receiptNumber: string;
   poNumber?: string; // MTO Purchase Order identifier (e.g. PO-20260906-001)
   sessionId: string;
@@ -173,6 +212,7 @@ export interface Order {
 
 export interface CashierSession {
   id: string;
+  branchId?: string;
   cashierId: string;
   cashierName: string;
   startTime: string;
@@ -213,6 +253,7 @@ export interface CashierSession {
 
 export interface SetAsideOrder {
   id: string;
+  branchId?: string;
   sessionId: string;
   customer: Customer;
   items: CartItem[];
@@ -227,12 +268,13 @@ export interface SetAsideOrder {
 
 export interface AuditLog {
   id: string;
+  branchId?: string;
   timestamp: string;
   actorId: string;
   actorName: string;
   actorRole: UserRole;
   action: string;
-  entityType: 'order' | 'session' | 'stock' | 'user' | 'price' | 'discount' | 'supplier' | 'consignment' | 'category' | 'product' | 'receipt';
+  entityType: 'order' | 'session' | 'stock' | 'user' | 'price' | 'discount' | 'supplier' | 'consignment' | 'category' | 'product' | 'receipt' | 'branch';
   entityId: string;
   details: string;
   beforeValue?: string;
@@ -242,6 +284,7 @@ export interface AuditLog {
 
 export interface StockAdjustmentRecord {
   id: string;
+  branchId?: string;
   productId: string;
   productName: string;
   type: 'increase' | 'decrease';
@@ -261,6 +304,7 @@ export type WeeklyFrequency = 'once' | 'twice' | 'three_times';
 
 export interface Supplier {
   id: string;
+  branchId?: string;
   name: string;
   category?: SupplierCategory; // Predefined backoffice categories: KYD, RMS, TCC
   picName: string;
@@ -287,6 +331,7 @@ export type CommissionLedgerStatus = 'accrued' | 'included' | 'settled' | 'rever
 
 export interface CommissionLedgerEntry {
   id: string;
+  branchId?: string;
   orderId: string;
   orderLineId: string;
   receiptNumber: string;
@@ -316,6 +361,7 @@ export type SettlementCycleStatus = 'upcoming' | 'due' | 'overdue' | 'settled';
 
 export interface SupplierSettlementCycle {
   id: string;
+  branchId?: string;
   supplierId: string;
   supplierName: string;
   periodStart: string;
@@ -353,6 +399,7 @@ export interface GoodsReceiptItem {
 
 export interface GoodsReceiptRecord {
   id: string;
+  branchId?: string;
   receiptNumber: string; // e.g. RCV-20260906-001
   receiptType: ReceiptType;
   arrivalDate: string; // YYYY-MM-DD
@@ -376,6 +423,7 @@ export interface GoodsReceiptRecord {
 }
 
 export interface ReceivingDraft {
+  branchId?: string;
   receiptType: ReceiptType;
   arrivalDate: string;
   supplierId: string;

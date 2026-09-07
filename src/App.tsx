@@ -15,16 +15,19 @@ import { StockWorkspace } from './components/StockWorkspace';
 import { ConsignmentWorkspace } from './components/ConsignmentWorkspace';
 import { PesananWorkspace } from './components/PesananWorkspace';
 import { TransactionHistorySubView } from './components/TransactionHistorySubView';
+import { BackofficeWorkspace } from './components/BackofficeWorkspace';
+import { SelectStoreScreen } from './components/SelectStoreScreen';
+import { SwitchStoreConfirmModal } from './components/SwitchStoreConfirmModal';
 import { ShoppingCart } from 'lucide-react';
 import { formatIDR } from './utils/formatters';
 
 const POSMainContent: React.FC = () => {
   const { cart, cartTotal, currentUser } = usePOS();
 
-  // Active top-level workspace tab (POS-US-047)
+  // Active top-level workspace tab
   const [currentTab, setCurrentTab] = useState<MainWorkspaceTab>('pos');
 
-  // Cashier internal sub-view: 'catalog' | 'history' (POS-US-048)
+  // Cashier internal sub-view: 'catalog' | 'history'
   const [cashierSubView, setCashierSubView] = useState<'catalog' | 'history'>('catalog');
 
   // Core Cashier Modals
@@ -37,17 +40,20 @@ const POSMainContent: React.FC = () => {
   // Mobile cart drawer toggle
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
 
-  // Enforce role-based access control (POS-US-047 AC-02):
-  // Cashiers can access 'pos' and 'pesanan', but not management tabs (dashboard, audit, konsinyasi, stok)
+  // Enforce role-based access control:
+  // Cashiers can access 'pos' and 'pesanan', but not management/backoffice tabs
   useEffect(() => {
     if (currentUser.role === 'cashier' && currentTab !== 'pos' && currentTab !== 'pesanan') {
       setCurrentTab('pos');
+    }
+    if (currentUser.role === 'supervisor' && currentTab === 'backoffice') {
+      setCurrentTab('dashboard');
     }
   }, [currentUser.role, currentTab]);
 
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  // Guard navigation to cashier history when payment is currently in progress (POS-US-048 AC-03)
+  // Guard navigation to cashier history when payment is currently in progress
   const handleOpenCashierHistory = () => {
     if (isPaymentModalOpen) {
       alert('Selesaikan atau batalkan proses pembayaran terlebih dahulu sebelum membuka riwayat transaksi.');
@@ -58,11 +64,14 @@ const POSMainContent: React.FC = () => {
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-[#FDFBF7] text-[#2D241E] font-sans antialiased">
-      {/* Top Header Navigation (Role-aware primary workspace tabs) */}
+      {/* Top Header Navigation (Role-aware primary workspace tabs with persistent Store selector) */}
       <Header
         currentTab={currentTab}
         onSelectTab={(tab) => {
           if (currentUser.role === 'cashier' && tab !== 'pos' && tab !== 'pesanan') {
+            return;
+          }
+          if (currentUser.role === 'supervisor' && tab === 'backoffice') {
             return;
           }
           setCurrentTab(tab);
@@ -73,7 +82,7 @@ const POSMainContent: React.FC = () => {
       />
 
       {/* Main Workspace Area */}
-      <main className="relative flex flex-1 overflow-hidden p-2.5 sm:p-4">
+      <main className="relative flex flex-1 min-h-0 overflow-hidden p-2.5 sm:p-4">
         {/* TAB 1: KASIR (POS) */}
         {currentTab === 'pos' && (
           <div className="flex h-full w-full gap-3 sm:gap-4 overflow-hidden">
@@ -162,19 +171,24 @@ const POSMainContent: React.FC = () => {
           />
         )}
 
-        {/* TAB 3: AUDIT LOG (Supervisors / Admin) */}
+        {/* TAB 4: AUDIT LOG (Supervisors / Admin) */}
         {currentTab === 'audit' && currentUser.role !== 'cashier' && (
           <AuditLogView />
         )}
 
-        {/* TAB 4: KONSINYASI (Supervisors / Admin - Dedicated Workspace) */}
+        {/* TAB 5: KONSINYASI (Supervisors / Admin - Dedicated Workspace) */}
         {currentTab === 'konsinyasi' && currentUser.role !== 'cashier' && (
           <ConsignmentWorkspace />
         )}
 
-        {/* TAB 5: STOK (Supervisors / Admin - Dedicated Workspace) */}
+        {/* TAB 6: STOK (Supervisors / Admin - Dedicated Workspace) */}
         {currentTab === 'stok' && currentUser.role !== 'cashier' && (
           <StockWorkspace />
+        )}
+
+        {/* TAB 7: BACKOFFICE HQ (Superadmin only) */}
+        {currentTab === 'backoffice' && currentUser.role === 'admin' && (
+          <BackofficeWorkspace />
         )}
       </main>
 
@@ -205,6 +219,10 @@ const POSMainContent: React.FC = () => {
         isOpen={isHeldOrdersModalOpen}
         onClose={() => setIsHeldOrdersModalOpen(false)}
       />
+
+      {/* MANDATORY MULTI-BRANCH SELECT STORE SCREEN & CONFIRMATION MODALS */}
+      <SelectStoreScreen />
+      <SwitchStoreConfirmModal />
     </div>
   );
 };

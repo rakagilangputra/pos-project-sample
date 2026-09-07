@@ -130,8 +130,8 @@ export const OrderCart: React.FC<OrderCartProps> = ({
 
   return (
     <div className="flex h-full flex-col bg-white overflow-hidden select-none">
-      {/* Customer Header Bar (POS-US-038) */}
-      <div className="flex items-center justify-between border-b border-[#E5E7EB] bg-white px-4 py-3">
+      {/* Customer Header Bar (POS-US-038) - Static */}
+      <div className="flex items-center justify-between border-b border-[#E5E7EB] bg-white px-4 py-3 shrink-0">
         <button
           onClick={onOpenCustomerModal}
           className="flex items-center gap-2.5 text-left group max-w-[220px] truncate"
@@ -164,7 +164,7 @@ export const OrderCart: React.FC<OrderCartProps> = ({
 
       {/* MTO Named Customer Required Alert */}
       {hasMto && isWalkIn && (
-        <div className="mx-3 mt-2 rounded-xl bg-amber-50 border border-amber-300 p-2.5 flex items-start gap-2.5 text-amber-950 shadow-xs">
+        <div className="mx-3 mt-2 shrink-0 rounded-xl bg-amber-50 border border-amber-300 p-2.5 flex items-start gap-2.5 text-amber-950 shadow-xs">
           <AlertCircle className="h-4 w-4 shrink-0 text-amber-700 mt-0.5" />
           <div className="text-xs flex-1">
             <p className="font-bold text-amber-900 leading-tight">MTO Wajib Pelanggan Bernama</p>
@@ -183,8 +183,8 @@ export const OrderCart: React.FC<OrderCartProps> = ({
         </div>
       )}
 
-      {/* Cart Items List (POS-US-038) */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+      {/* Cart Items List (POS-US-038) - Scrollable */}
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2 scrollbar-thin">
         {cart.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center text-center p-6 text-[#6B7280]">
             <ShoppingBag className="h-10 w-10 mb-2 stroke-[1.4] text-[#E5E7EB]" />
@@ -285,9 +285,9 @@ export const OrderCart: React.FC<OrderCartProps> = ({
         )}
       </div>
 
-      {/* Cart Actions Toolbar (POS-US-038) */}
+      {/* Cart Actions Toolbar (POS-US-038) - Static */}
       {cart.length > 0 && (
-        <div className="border-t border-[#E5E7EB] bg-[#F7F7F5] p-3 space-y-2">
+        <div className="shrink-0 border-t border-[#E5E7EB] bg-[#F7F7F5] p-3 space-y-2">
           {/* Prominent Secondary Order Action: Parkir Pesanan */}
           <div className="flex items-center gap-2">
             <button
@@ -345,8 +345,8 @@ export const OrderCart: React.FC<OrderCartProps> = ({
         </div>
       )}
 
-      {/* Totals & Grand Checkout Area (POS-US-038) */}
-      <div className="p-4 sm:p-5 bg-white border-t border-[#E5E7EB] flex flex-col gap-3">
+      {/* Totals & Grand Checkout Area (POS-US-038) - Static */}
+      <div className="shrink-0 p-4 sm:p-5 bg-white border-t border-[#E5E7EB] flex flex-col gap-3">
         {/* Breakdown Summary */}
         <div className="space-y-1 text-xs">
           <div className="flex justify-between text-[#6B7280]">

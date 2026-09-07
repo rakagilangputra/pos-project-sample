@@ -13,18 +13,20 @@
 
 /* Custom scrollbars for POS touch screens */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #f8f6f0;
   border-radius: 9999px;
 }
+::-webkit-scrollbar-thumb {
+  background: #d4c8bc;
+  border-radius: 9999px;
+  border: 2px solid #f8f6f0;
+}
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #b5a698;
 }
 
 /* Thermal receipt print styling */

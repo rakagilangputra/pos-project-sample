@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import {
+  StoreBranch,
   User,
   Customer,
   Product,
@@ -16,8 +17,10 @@ import {
   SupplierSettlementCycle,
   GoodsReceiptRecord,
   ReceivingDraft,
+  MtoOrderItemInput,
 } from '../types';
 import {
+  INITIAL_BRANCHES,
   INITIAL_USERS,
   INITIAL_CUSTOMERS,
   DEFAULT_WALKIN_CUSTOMER,
@@ -33,6 +36,29 @@ import {
 import { generateReceiptNumber, posSound } from '../utils/formatters';
 
 interface POSContextType {
+  // Store Branches & Multi-Branch Management
+  branches: StoreBranch[];
+  selectedBranchId: string;
+  selectedBranch: StoreBranch;
+  isBranchReadOnly: boolean;
+  isStoreSelectionModalOpen: boolean;
+  setIsStoreSelectionModalOpen: (open: boolean) => void;
+  hasUnsavedChanges: boolean;
+  setHasUnsavedChanges: (has: boolean) => void;
+  confirmSwitchStore: { isOpen: boolean; targetBranchId: string | null };
+  requestSwitchBranch: (targetBranchId: string) => void;
+  confirmAndSwitchBranch: () => void;
+  cancelSwitchBranch: () => void;
+  selectBranch: (branchId: string, force?: boolean) => boolean;
+  addBranch: (data: Omit<StoreBranch, "id" | "createdAt">) => { success: boolean; branch?: StoreBranch; message: string };
+  updateBranch: (id: string, data: Partial<StoreBranch>) => { success: boolean; branch?: StoreBranch; message: string };
+  toggleBranchStatus: (id: string) => { success: boolean; message: string };
+
+  // Superadmin User Access Management (RBAC)
+  addUser: (userData: Omit<User, "id">) => { success: boolean; user?: User; message: string };
+  updateUser: (id: string, data: Partial<User>) => { success: boolean; user?: User; message: string };
+  toggleUserStatus: (id: string) => { success: boolean; message: string };
+
   // Localization & Audio
   lang: 'id' | 'en';
   setLang: (lang: 'id' | 'en') => void;
@@ -44,6 +70,8 @@ interface POSContextType {
   users: User[];
   switchUser: (userId: string, pin: string) => { success: boolean; message: string };
   verifySupervisorPin: (pin: string) => { success: boolean; supervisor?: User; message: string };
+
+
 
   // Cashier Session
   currentSession: CashierSession | null;
@@ -149,9 +177,10 @@ interface POSContextType {
     }
   ) => { success: boolean; order?: Order; message: string };
   createMtoOrder: (input: {
-    productId: string;
-    quantity: number;
+    productId?: string;
+    quantity?: number;
     customPrice?: number;
+    items?: MtoOrderItemInput[];
     customer: Customer;
     pickupDate: string;
     pickupTime: string;
@@ -196,6 +225,79 @@ interface POSContextType {
 const POSContext = createContext<POSContextType | undefined>(undefined);
 
 export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  // Multi-Branch State & Store Management
+  const [branches, setBranches] = useState<StoreBranch[]>(() => {
+    const saved = localStorage.getItem("pos_branches");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return INITIAL_BRANCHES;
+  });
+
+  useEffect(() => {
+    localStorage.setItem("pos_branches", JSON.stringify(branches));
+  }, [branches]);
+
+  const [users, setUsers] = useState<User[]>(() => {
+    const saved = localStorage.getItem("pos_users");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const userMap = new Map<string, User>();
+          INITIAL_USERS.forEach((u) => userMap.set(u.id, u));
+          parsed.forEach((u: User) => {
+            if (u && u.id) {
+              userMap.set(u.id, {
+                ...u,
+                assignedBranchIds:
+                  Array.isArray(u.assignedBranchIds) && u.assignedBranchIds.length > 0
+                    ? u.assignedBranchIds
+                    : u.role === 'admin'
+                    ? ['branch-senopati', 'branch-kemang', 'branch-bintaro']
+                    : ['branch-senopati'],
+              });
+            }
+          });
+          const list = Array.from(userMap.values());
+          if (!list.some((u) => u.role === 'admin')) {
+            const adminUser = INITIAL_USERS.find((u) => u.role === 'admin');
+            if (adminUser) list.push(adminUser);
+          }
+          return list;
+        }
+      } catch {}
+    }
+    return INITIAL_USERS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem("pos_users", JSON.stringify(users));
+  }, [users]);
+
+  const [selectedBranchId, setSelectedBranchId] = useState<string>(() => {
+    const saved = localStorage.getItem("pos_selected_branch_id");
+    if (saved && saved.startsWith("branch-")) return saved;
+    return "branch-senopati";
+  });
+
+  useEffect(() => {
+    localStorage.setItem("pos_selected_branch_id", selectedBranchId);
+  }, [selectedBranchId]);
+
+  const [isStoreSelectionModalOpen, setIsStoreSelectionModalOpen] = useState<boolean>(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
+  const [confirmSwitchStore, setConfirmSwitchStore] = useState<{ isOpen: boolean; targetBranchId: string | null }>({
+    isOpen: false,
+    targetBranchId: null,
+  });
+
+  const selectedBranch = branches.find((b) => b.id === selectedBranchId) || branches[0];
+  const isBranchReadOnly = selectedBranch?.status === "inactive";
+
   // Locale & Sound
   const [lang, setLang] = useState<'id' | 'en'>(() => {
     return (localStorage.getItem('pos_lang') as 'id' | 'en') || 'id';
@@ -214,11 +316,23 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [soundEnabled]);
 
   // Users & Auth
-  const [users] = useState<User[]>(INITIAL_USERS);
   const [currentUser, setCurrentUser] = useState<User>(() => {
     const saved = localStorage.getItem('pos_current_user');
     if (saved) {
-      try { return JSON.parse(saved); } catch {}
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.id) {
+          return {
+            ...parsed,
+            assignedBranchIds:
+              Array.isArray(parsed.assignedBranchIds) && parsed.assignedBranchIds.length > 0
+                ? parsed.assignedBranchIds
+                : parsed.role === 'admin'
+                ? ['branch-senopati', 'branch-kemang', 'branch-bintaro']
+                : ['branch-senopati'],
+          };
+        }
+      } catch {}
     }
     return INITIAL_USERS[0]; // Rina Kartika (Kasir)
   });
@@ -571,7 +685,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Helper to log an audit event
   const addAudit = (
     action: string,
-    entityType: 'order' | 'session' | 'stock' | 'user' | 'price' | 'discount' | 'supplier' | 'consignment' | 'category' | 'product' | 'receipt',
+    entityType: 'order' | 'session' | 'stock' | 'user' | 'price' | 'discount' | 'supplier' | 'consignment' | 'category' | 'product' | 'receipt' | 'branch',
     entityId: string,
     details: string,
     beforeValue?: string,
@@ -598,16 +712,166 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const target = users.find((u) => u.id === userId);
     if (!target) {
       posSound.error();
-      return { success: false, message: 'Pengguna tidak ditemukan' };
+      return { success: false, message: "Pengguna tidak ditemukan" };
     }
     if (target.pin !== pin) {
       posSound.error();
-      return { success: false, message: 'PIN Salah. Silakan coba lagi.' };
+      return { success: false, message: "PIN Salah. Silakan coba lagi." };
     }
     setCurrentUser(target);
     posSound.beep();
-    addAudit('LOGIN_SWITCH', 'user', target.id, `Kasir berganti ke ${target.name} (${target.role})`);
+    addAudit("LOGIN_SWITCH", "user", target.id, `Pengguna berganti ke ${target.name} (${target.role})`);
+
+    if (target.role === "cashier") {
+      const cashierBranch = (target.assignedBranchIds && target.assignedBranchIds[0]) || "branch-senopati";
+      setSelectedBranchId(cashierBranch);
+      setIsStoreSelectionModalOpen(false);
+    } else {
+      setIsStoreSelectionModalOpen(true);
+    }
+
     return { success: true, message: `Berhasil login sebagai ${target.name}` };
+  };
+
+  // Store Branch Operations (POS Multi-Branch Phase 1)
+  const selectBranch = (branchId: string, force: boolean = false): boolean => {
+    const targetBranch = branches.find((b) => b.id === branchId);
+    if (!targetBranch) {
+      posSound.error();
+      return false;
+    }
+
+    if (hasUnsavedChanges && !force) {
+      setConfirmSwitchStore({ isOpen: true, targetBranchId: branchId });
+      return false;
+    }
+
+    setSelectedBranchId(branchId);
+    setCart([]);
+    setSelectedCustomer(DEFAULT_WALKIN_CUSTOMER);
+    setHasUnsavedChanges(false);
+    setConfirmSwitchStore({ isOpen: false, targetBranchId: null });
+    setIsStoreSelectionModalOpen(false);
+
+    addAudit(
+      "SWITCH_STORE",
+      "branch",
+      branchId,
+      `Cabang aktif dialihkan ke ${targetBranch.name} (${targetBranch.code}) oleh ${currentUser.name}`
+    );
+    posSound.beep();
+    return true;
+  };
+
+  const requestSwitchBranch = (targetBranchId: string) => {
+    selectBranch(targetBranchId, false);
+  };
+
+  const confirmAndSwitchBranch = () => {
+    if (confirmSwitchStore.targetBranchId) {
+      selectBranch(confirmSwitchStore.targetBranchId, true);
+    }
+  };
+
+  const cancelSwitchBranch = () => {
+    setConfirmSwitchStore({ isOpen: false, targetBranchId: null });
+  };
+
+  const addBranch = (data: Omit<StoreBranch, "id" | "createdAt">) => {
+    const trimmedName = data.name.trim();
+    const trimmedCode = data.code.trim().toUpperCase();
+    if (!trimmedName) return { success: false, message: "Nama cabang wajib diisi!" };
+    if (!trimmedCode) return { success: false, message: "Kode cabang wajib diisi!" };
+    if (branches.some((b) => b.code.toUpperCase() === trimmedCode)) {
+      return { success: false, message: `Kode cabang "${trimmedCode}" sudah digunakan!` };
+    }
+
+    const id = "branch-" + Date.now().toString().slice(-6);
+    const newBranch: StoreBranch = {
+      ...data,
+      id,
+      name: trimmedName,
+      code: trimmedCode,
+      createdAt: new Date().toISOString(),
+    };
+
+    setBranches((prev) => [...prev, newBranch]);
+    addAudit("BRANCH_CREATE", "branch", id, `Cabang baru dibuat: ${newBranch.name} (${newBranch.code})`);
+    posSound.beep();
+    return { success: true, branch: newBranch, message: `Cabang ${newBranch.name} berhasil dibuat!` };
+  };
+
+  const updateBranch = (id: string, data: Partial<StoreBranch>) => {
+    const branch = branches.find((b) => b.id === id);
+    if (!branch) return { success: false, message: "Cabang tidak ditemukan!" };
+
+    setBranches((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, ...data, updatedAt: new Date().toISOString() } : b))
+    );
+    addAudit("BRANCH_UPDATE", "branch", id, `Data cabang ${branch.name} diperbarui oleh ${currentUser.name}`);
+    posSound.beep();
+    return { success: true, message: "Data cabang berhasil diperbarui!" };
+  };
+
+  const toggleBranchStatus = (id: string) => {
+    const branch = branches.find((b) => b.id === id);
+    if (!branch) return { success: false, message: "Cabang tidak ditemukan!" };
+
+    const newStatus = branch.status === "active" ? "inactive" : "active";
+    if (newStatus === "inactive" && currentSession?.status === "active" && currentSession.branchId === id) {
+      posSound.error();
+      return {
+        success: false,
+        message: "Tidak dapat menonaktifkan cabang karena sedang ada sesi kasir yang aktif!",
+      };
+    }
+
+    setBranches((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, status: newStatus, updatedAt: new Date().toISOString() } : b))
+    );
+    addAudit("BRANCH_STATUS_TOGGLE", "branch", id, `Status cabang ${branch.name} diubah menjadi: ${newStatus}`);
+    posSound.beep();
+    return { success: true, message: `Status cabang berhasil diubah ke ${newStatus === "active" ? "Aktif" : "Nonaktif (Read-only)"}!` };
+  };
+
+  // User Management (Superadmin RBAC)
+  const addUser = (userData: Omit<User, "id">) => {
+    const trimmedName = userData.name.trim();
+    if (!trimmedName) return { success: false, message: "Nama pengguna wajib diisi!" };
+    if (!userData.pin || userData.pin.length !== 4) return { success: false, message: "PIN harus 4 digit angka!" };
+
+    const id = "usr-" + Date.now().toString().slice(-5);
+    const newUser: User = {
+      ...userData,
+      id,
+      name: trimmedName,
+    };
+
+    setUsers((prev) => [...prev, newUser]);
+    addAudit("USER_CREATE", "user", id, `Pengguna baru dibuat: ${newUser.name} (${newUser.role})`);
+    posSound.beep();
+    return { success: true, user: newUser, message: `Pengguna ${newUser.name} berhasil ditambahkan!` };
+  };
+
+  const updateUser = (id: string, data: Partial<User>) => {
+    const targetUser = users.find((u) => u.id === id);
+    if (!targetUser) return { success: false, message: "Pengguna tidak ditemukan!" };
+
+    setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...data } : u)));
+    addAudit("USER_UPDATE", "user", id, `Data pengguna ${targetUser.name} diperbarui`);
+    posSound.beep();
+    return { success: true, message: "Data pengguna berhasil diperbarui!" };
+  };
+
+  const toggleUserStatus = (id: string) => {
+    const targetUser = users.find((u) => u.id === id);
+    if (!targetUser) return { success: false, message: "Pengguna tidak ditemukan!" };
+
+    const newStatus = targetUser.status === "active" ? "inactive" : "active";
+    setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, status: newStatus } : u)));
+    addAudit("USER_STATUS_TOGGLE", "user", id, `Status pengguna ${targetUser.name} diubah menjadi: ${newStatus}`);
+    posSound.beep();
+    return { success: true, message: `Status pengguna berhasil diubah ke ${newStatus === "active" ? "Aktif" : "Nonaktif"}!` };
   };
 
   // Verify Supervisor / Manager PIN (POS-US-011, POS-US-016, POS-US-017, POS-US-019)
@@ -841,6 +1105,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const newCust: Customer = {
       ...customerData,
       id: 'cust-' + Date.now().toString().slice(-5),
+      branchId: selectedBranchId,
       createdAt: new Date().toISOString(),
     };
     setCustomers((prev) => [newCust, ...prev]);
@@ -867,6 +1132,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const newCat: ProductCategoryItem = {
       id,
       name: trimmed,
+      branchId: selectedBranchId,
       description: description?.trim() || undefined,
       icon: '🏷️',
     };
@@ -905,6 +1171,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const newProd: Product = {
       ...productData,
       id,
+      branchId: selectedBranchId,
       name: trimmedName,
       sku: trimmedSku,
       stock: 0, // POS-US-062: Product master is created with zero stock; first stock comes only from submitted receipt
@@ -941,6 +1208,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const newSup: Supplier = {
       ...supplierData,
       id,
+      branchId: selectedBranchId,
       name: trimmedName,
       picName: supplierData.picName.trim(),
       phone: supplierData.phone.trim(),
@@ -1593,9 +1861,10 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const createMtoOrder = (input: {
-    productId: string;
-    quantity: number;
+    productId?: string;
+    quantity?: number;
     customPrice?: number;
+    items?: MtoOrderItemInput[];
     customer: Customer;
     pickupDate: string;
     pickupTime: string;
@@ -1606,17 +1875,73 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       posSound.error();
       return { success: false, message: 'Tidak ada sesi kasir yang aktif' };
     }
-    const product = products.find((p) => p.id === input.productId);
-    if (!product || !product.isMadeToOrder) {
+
+    // Support both multiple items array and single item backward compatibility
+    const itemInputs: MtoOrderItemInput[] =
+      input.items && input.items.length > 0
+        ? input.items
+        : input.productId && input.quantity
+        ? [
+            {
+              productId: input.productId,
+              quantity: input.quantity,
+              customPrice: input.customPrice,
+              customizationNotes: input.customizationNotes,
+            },
+          ]
+        : [];
+
+    if (itemInputs.length === 0) {
       posSound.error();
-      return { success: false, message: 'Produk Made-to-Order tidak valid' };
+      return { success: false, message: 'Minimal pilih 1 produk pesanan' };
     }
-    if (input.quantity <= 0) {
-      posSound.error();
-      return { success: false, message: 'Jumlah pesanan harus lebih dari 0' };
+
+    const cartItems: CartItem[] = [];
+    let subtotal = 0;
+
+    for (const itemInput of itemInputs) {
+      const product = products.find((p) => p.id === itemInput.productId);
+      if (!product) {
+        posSound.error();
+        return { success: false, message: `Produk tidak valid` };
+      }
+      if (itemInput.quantity <= 0) {
+        posSound.error();
+        return { success: false, message: `Jumlah pesanan untuk "${product.name}" harus lebih dari 0` };
+      }
+
+      const unitPrice =
+        itemInput.customPrice !== undefined && itemInput.customPrice >= 0
+          ? itemInput.customPrice
+          : product.price;
+
+      const lineTotal = unitPrice * itemInput.quantity;
+      subtotal += lineTotal;
+
+      const cartItem: CartItem = {
+        id: 'line-' + Math.random().toString(36).slice(2, 9),
+        productId: product.id,
+        productName: product.name,
+        category: product.category,
+        unitPrice,
+        originalPrice: product.price,
+        isPriceOverridden: itemInput.customPrice !== undefined && itemInput.customPrice !== product.price,
+        quantity: itemInput.quantity,
+        image: product.image,
+        isMadeToOrder: true,
+        stockAvailable: product.stock,
+        ownershipType: product.ownershipType || 'own',
+        supplierId: product.supplierId,
+        supplierName: product.supplierName,
+        commissionMethod: product.commissionMethod,
+        commissionValue: product.commissionValue,
+        commissionBasis: product.commissionBasis,
+        customizationNotes: itemInput.customizationNotes || input.customizationNotes,
+      };
+
+      cartItems.push(cartItem);
     }
-    const unitPrice = input.customPrice !== undefined && input.customPrice >= 0 ? input.customPrice : product.price;
-    const subtotal = unitPrice * input.quantity;
+
     const taxRate = taxApplied ? STORE_INFO.taxRate : 0;
     const taxAmount = Math.round(subtotal * taxRate);
     const total = subtotal + taxAmount;
@@ -1638,36 +1963,16 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const poNo = `PO-${datePrefix}-${Math.floor(100 + Math.random() * 900)}`;
 
-    const cartItem: CartItem = {
-      id: 'line-' + Math.random().toString(36).slice(2, 9),
-      productId: product.id,
-      productName: product.name,
-      category: product.category,
-      unitPrice,
-      originalPrice: product.price,
-      isPriceOverridden: input.customPrice !== undefined && input.customPrice !== product.price,
-      quantity: input.quantity,
-      image: product.image,
-      isMadeToOrder: true,
-      stockAvailable: product.stock,
-      ownershipType: product.ownershipType || 'own',
-      supplierId: product.supplierId,
-      supplierName: product.supplierName,
-      commissionMethod: product.commissionMethod,
-      commissionValue: product.commissionValue,
-      commissionBasis: product.commissionBasis,
-      customizationNotes: input.customizationNotes,
-    };
-
     const newOrder: Order = {
       id: 'ORD-' + Date.now().toString().slice(-7),
+      branchId: selectedBranchId,
       receiptNumber: receiptNo,
       poNumber: poNo,
       sessionId: currentSession.id,
       cashierId: currentUser.id,
       cashierName: currentUser.name,
       customer: input.customer,
-      items: [cartItem],
+      items: cartItems,
       subtotal,
       taxApplied,
       taxRate: STORE_INFO.taxRate,
@@ -1718,7 +2023,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       'ORDER_CREATE_PO',
       'order',
       newOrder.id,
-      `Membuat PO Made-to-Order baru ${poNo} untuk ${input.customer.name} (Total: Rp ${total.toLocaleString('id-ID')}, DP: Rp ${totalPaid.toLocaleString('id-ID')})`
+      `Membuat PO Made-to-Order baru ${poNo} (${cartItems.length} item) untuk ${input.customer.name} (Total: Rp ${total.toLocaleString('id-ID')}, DP: Rp ${totalPaid.toLocaleString('id-ID')})`
     );
 
     setActiveReceiptOrder(newOrder);
@@ -2522,6 +2827,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const newRecord: GoodsReceiptRecord = {
       ...receiptData,
       id,
+      branchId: selectedBranchId,
       receiptNumber,
       totalQuantity,
       status: 'submitted',
@@ -2583,9 +2889,45 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   };
 
+
+  // Branch-Filtered Data Views
+  const branchProducts = products.filter((p) => !p.branchId || p.branchId === selectedBranchId);
+  const branchCategories = categories.filter((c) => !c.branchId || c.branchId === selectedBranchId);
+  const branchSuppliers = suppliers.filter((s) => !s.branchId || s.branchId === selectedBranchId);
+  const branchCustomers = [
+    DEFAULT_WALKIN_CUSTOMER,
+    ...customers.filter((c) => c.id !== "cust-walkin" && (!c.branchId || c.branchId === selectedBranchId)),
+  ];
+  const branchOrders = orders.filter((o) => !o.branchId || o.branchId === selectedBranchId);
+  const branchGoodsReceipts = goodsReceipts.filter((g) => !g.branchId || g.branchId === selectedBranchId);
+  const branchCommissionLedger = commissionLedger.filter((c) => !c.branchId || c.branchId === selectedBranchId);
+  const branchSettlementCycles = settlementCycles.filter((s) => !s.branchId || s.branchId === selectedBranchId);
+  const branchAuditLogs = auditLogs.filter((a) => !a.branchId || a.branchId === selectedBranchId);
+  const branchStockAdjustments = stockAdjustments.filter((a) => !a.branchId || a.branchId === selectedBranchId);
+  const branchSetAsideOrders = setAsideOrders.filter((s) => !s.branchId || s.branchId === selectedBranchId);
+
   return (
     <POSContext.Provider
       value={{
+        branches,
+        selectedBranchId,
+        selectedBranch,
+        isBranchReadOnly,
+        isStoreSelectionModalOpen,
+        setIsStoreSelectionModalOpen,
+        hasUnsavedChanges,
+        setHasUnsavedChanges,
+        confirmSwitchStore,
+        requestSwitchBranch,
+        confirmAndSwitchBranch,
+        cancelSwitchBranch,
+        selectBranch,
+        addBranch,
+        updateBranch,
+        toggleBranchStatus,
+        addUser,
+        updateUser,
+        toggleUserStatus,
         lang,
         setLang,
         soundEnabled,
@@ -2601,19 +2943,19 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         handOffSession,
         closeSession,
         openSupportSessionCorrection,
-        categories,
+        categories: branchCategories,
         addCategory,
-        products,
+        products: branchProducts,
         addProduct,
         manualAdjustStock,
-        suppliers,
+        suppliers: branchSuppliers,
         addSupplier,
         updateSupplier,
-        commissionLedger,
-        settlementCycles,
+        commissionLedger: branchCommissionLedger,
+        settlementCycles: branchSettlementCycles,
         recordSettlementPayment,
         generateSettlementCycles,
-        customers,
+        customers: branchCustomers,
         selectedCustomer,
         setSelectedCustomer,
         addCustomer,
@@ -2636,13 +2978,13 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         cartTaxAmount,
         cartDiscountAmount,
         cartTotal,
-        setAsideOrders,
+        setAsideOrders: branchSetAsideOrders,
         holdCurrentOrder,
         resumeOrder,
         cancelHoldOrder,
         completeOrder,
         createMtoOrder,
-        orders,
+        orders: branchOrders,
         settleMadeToOrder,
         updatePoPickupTime,
         settlePoPayment,
@@ -2655,9 +2997,9 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         reprintReceipt,
         activeReceiptOrder,
         setActiveReceiptOrder,
-        auditLogs,
-        stockAdjustments,
-        goodsReceipts,
+        auditLogs: branchAuditLogs,
+        stockAdjustments: branchStockAdjustments,
+        goodsReceipts: branchGoodsReceipts,
         receivingDraft,
         setReceivingDraft,
         submitGoodsReceipt,

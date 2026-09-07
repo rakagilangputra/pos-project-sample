@@ -86,9 +86,9 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
   };
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-transparent">
-      {/* 1. Product Search Bar (POS-US-037) */}
-      <div className="pb-2.5">
+    <div className="flex h-full w-full min-h-0 flex-col overflow-hidden bg-transparent">
+      {/* 1. Product Search Bar & Categories Header (Static / Non-scrolling) */}
+      <div className="pb-2.5 shrink-0">
         <div className="relative w-full">
           <Search className="absolute left-3.5 top-3 h-4 w-4 text-[#6B7280]" />
           <input
@@ -225,8 +225,8 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
         </div>
       )}
 
-      {/* 4. Product Results Display */}
-      <div className="flex-1 overflow-y-auto pr-0.5">
+      {/* 4. Product Results Display (Scrollable) */}
+      <div className="flex-1 min-h-0 overflow-y-auto pr-0.5 pb-20 scrollbar-thin">
         {filteredProducts.length === 0 ? (
           <div className="flex h-60 flex-col items-center justify-center text-center rounded-2xl border border-dashed border-[#E5E7EB] bg-white p-6">
             <Package className="h-10 w-10 text-[#6B7280]/60 mb-2" />
