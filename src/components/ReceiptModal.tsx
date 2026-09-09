@@ -78,7 +78,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, onClose }) =
             <div>
               <h3 className="font-bold text-gray-900 text-lg">Struk Pembayaran</h3>
               <p className="text-xs text-emerald-800 font-semibold">
-                No. Nota: {order.receiptNumber} {isReprint && `(Cetak Ulang #${order.reprintCount})`}
+                {order.poNumber ? `No. PO: ${order.poNumber}` : `No. Nota: ${order.receiptNumber}`} {isReprint && `(Cetak Ulang #${order.reprintCount})`}
               </p>
             </div>
           </div>
@@ -120,8 +120,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, onClose }) =
             {/* Metadata */}
             <div className="py-2.5 border-b border-dashed border-gray-300 space-y-1 text-[11px]">
               <div className="flex justify-between">
-                <span>No. Struk:</span>
-                <span className="font-bold">{order.receiptNumber}</span>
+                <span>{order.poNumber ? 'No. PO:' : 'No. Struk:'}</span>
+                <span className="font-bold font-mono">{order.poNumber || order.receiptNumber}</span>
               </div>
               <div className="flex justify-between">
                 <span>Waktu:</span>
@@ -155,7 +155,11 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, onClose }) =
                   <div className="flex justify-between">
                     <span>STATUS PO:</span>
                     <span className="font-bold uppercase">
-                      {order.paymentStatus === 'paid' ? 'LUNAS (100%)' : 'UANG MUKA (DP)'}
+                      {order.paymentStatus === 'paid'
+                        ? 'LUNAS (100%)'
+                        : order.paidAmount === 0
+                        ? 'DIBAYAR BESOK (DP RP 0)'
+                        : 'UANG MUKA (DP)'}
                     </span>
                   </div>
                 </div>
@@ -212,14 +216,27 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, onClose }) =
 
             {/* Payment Details */}
             <div className="py-2.5 border-b border-dashed border-gray-300 space-y-1 text-[11px]">
-              {order.payments.map((p, idx) => (
-                <div key={idx} className="flex justify-between">
-                  <span className="uppercase font-semibold">
-                    Bayar {p.method === 'cash' ? 'Tunai' : p.method === 'qris' ? 'QRIS' : 'Akun Deposit'}:
-                  </span>
-                  <span>{formatIDR(p.amount)}</span>
-                </div>
-              ))}
+              {order.payments.map((p, idx) => {
+                const methodLabel =
+                  p.method === 'cash'
+                    ? 'Tunai'
+                    : p.method === 'qris'
+                    ? 'QRIS'
+                    : p.method === 'deposit'
+                    ? 'Akun Deposit'
+                    : p.method === 'pay_tomorrow'
+                    ? 'Dibayar Besok (Saat Ambil)'
+                    : 'Transfer Bank';
+
+                return (
+                  <div key={idx} className="flex justify-between">
+                    <span className="uppercase font-semibold">
+                      Bayar {methodLabel}:
+                    </span>
+                    <span>{formatIDR(p.amount)}</span>
+                  </div>
+                );
+              })}
 
               {order.payments.some((p) => p.method === 'cash' && (p.tenderedCash || 0) > 0) && (
                 <>
@@ -261,7 +278,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, onClose }) =
                   ))}
                 </div>
               </div>
-              <p className="text-[9px] text-gray-400 font-mono tracking-widest">{order.receiptNumber}</p>
+              <p className="text-[9px] text-gray-400 font-mono tracking-widest">{order.poNumber || order.receiptNumber}</p>
             </div>
           </div>
         </div>

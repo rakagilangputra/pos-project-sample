@@ -12,6 +12,9 @@ import {
   Phone,
   Printer,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  Pencil,
   Sparkles,
   Copy,
   CreditCard,
@@ -30,11 +33,13 @@ import {
   List,
   DollarSign,
   Layers,
+  MessageSquare,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 import { Order, CartItem, PaymentComponent } from '../types';
 import { formatIDR, formatDateTime, posSound } from '../utils/formatters';
 import { CreateMtoModal } from './CreateMtoModal';
+import { SupplierNotificationWorkspace } from './SupplierNotificationWorkspace';
 
 interface PesananWorkspaceProps {
   onNavigateToPOS?: () => void;
@@ -54,10 +59,12 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
     cancelPoWithSupervisor,
     duplicatePoToCart,
     setActiveReceiptOrder,
+    suppliers,
+    supplierNotificationBatches,
   } = usePOS();
 
   // Primary workspace tabs & view mode
-  const [activeTab, setActiveTab] = useState<'active' | 'schedule' | 'history'>('active');
+  const [activeTab, setActiveTab] = useState<'active' | 'schedule' | 'history' | 'supplier_notification'>('active');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [isCreateMtoOpen, setIsCreateMtoOpen] = useState(false);
 
@@ -67,6 +74,10 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
 
   // Single Overlay Selected PO Detail
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+
+  // Accordion Collapsible States for PO Detail Balloons
+  const [isCustomerAccordionOpen, setIsCustomerAccordionOpen] = useState(true);
+  const [isOrderItemsAccordionOpen, setIsOrderItemsAccordionOpen] = useState(true);
 
   // Detail Drawer Action States
   const [isEditingPickupTime, setIsEditingPickupTime] = useState(false);
@@ -199,6 +210,26 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
       .reduce((sum, o) => sum + o.remainingBalance, 0);
   }, [mtoOrders]);
 
+  // Count of suppliers with unsent consignment notifications
+  const unsentSupplierCount = useMemo(() => {
+    return suppliers.filter((supplier) => {
+      const eligibleOrders = orders.filter((order) => {
+        if (order.orderStatus === 'voided') return false;
+        return order.items.some((item) => {
+          const prod = products.find((p) => p.id === item.productId);
+          const itemSupplierId = item.supplierId || prod?.supplierId;
+          const isConsignment =
+            item.ownershipType === 'consignment' || prod?.ownershipType === 'consignment';
+          return isConsignment && itemSupplierId === supplier.id;
+        });
+      });
+      const batches = supplierNotificationBatches.filter((b) => b.supplierId === supplier.id);
+      const batchedOrderIds = new Set(batches.flatMap((b) => b.orderIds));
+      const unsent = eligibleOrders.filter((o) => !batchedOrderIds.has(o.id));
+      return unsent.length > 0;
+    }).length;
+  }, [suppliers, orders, products, supplierNotificationBatches]);
+
   // Current selected order for drawer
   const selectedOrder = useMemo(() => {
     return mtoOrders.find((o) => o.id === selectedOrderId) || null;
@@ -207,6 +238,8 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
   // Open detail drawer
   const handleOpenDetail = (order: Order) => {
     setSelectedOrderId(order.id);
+    setIsCustomerAccordionOpen(true);
+    setIsOrderItemsAccordionOpen(true);
     setIsEditingPickupTime(false);
     setNewPickupTimeInput(order.pickupTime || '');
     setCollectorNameInput(order.collectorName || order.customer.name);
@@ -444,6 +477,13 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
         </span>
       );
     }
+    if (order.paidAmount === 0 || order.paymentStatus === 'unpaid' || order.payments.some((p) => p.method === 'pay_tomorrow')) {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-800 border border-blue-200">
+          Dibayar Besok ({formatIDR(order.remainingBalance)})
+        </span>
+      );
+    }
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-800 border border-amber-200">
         DP (Sisa {formatIDR(order.remainingBalance)})
@@ -562,6 +602,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
             </button>
 
             <button
+              id="tab-btn-pesanan-history"
               onClick={() => {
                 setActiveTab('history');
                 posSound.beep();
@@ -575,88 +616,120 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
               <CheckCircle2 className="h-3.5 w-3.5" />
               <span>Selesai & Batal</span>
             </button>
-          </div>
 
-          {/* Search, Filter Chips & View Mode (Fills the right side evenly) */}
-          <div className="flex flex-1 flex-wrap items-center justify-end gap-2.5">
-            {/* Responsive Search Input */}
-            <div className="relative flex-1 min-w-[200px] max-w-md">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-[#9CA3AF]" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Cari no. PO, nota, pelanggan, telp, atau nama roti..."
-                className="w-full rounded-xl border border-[#E5E7EB] bg-[#F7F7F5] pl-9 pr-7 py-1.5 text-xs text-[#1F2937] placeholder-[#9CA3AF] focus:border-[#D97706] focus:bg-white focus:outline-none transition"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-2 text-[#9CA3AF] hover:text-[#1F2937]"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
+            <button
+              id="tab-btn-notifikasi-supplier"
+              onClick={() => {
+                setActiveTab('supplier_notification');
+                posSound.beep();
+              }}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                activeTab === 'supplier_notification'
+                  ? 'bg-white text-[#1F2937] shadow-xs font-bold'
+                  : 'text-[#6B7280] hover:text-[#1F2937]'
+              }`}
+            >
+              <MessageSquare className="h-3.5 w-3.5 text-emerald-600" />
+              <span>Notifikasi Supplier</span>
+              {unsentSupplierCount > 0 && (
+                <span className="rounded-full bg-emerald-600 px-1.5 text-[10px] font-bold text-white">
+                  {unsentSupplierCount}
+                </span>
               )}
-            </div>
-
-            {/* Quick Filter Chips */}
-            <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
-              {[
-                { id: 'all', label: 'Semua' },
-                { id: 'today', label: 'Hari Ini' },
-                { id: 'unpaid', label: 'Belum Lunas' },
-                { id: 'ready', label: 'Siap Diambil' },
-                { id: 'overdue', label: 'Terlambat' },
-              ].map((chip) => (
-                <button
-                  key={chip.id}
-                  onClick={() => {
-                    setFilterChip(chip.id as any);
-                    posSound.beep();
-                  }}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold whitespace-nowrap transition ${
-                    filterChip === chip.id
-                      ? 'bg-[#1F2937] text-white shadow-xs'
-                      : 'bg-white border border-[#E5E7EB] text-[#6B7280] hover:text-[#1F2937]'
-                  }`}
-                >
-                  {chip.label}
-                </button>
-              ))}
-            </div>
-
-            {/* View Mode Toggle */}
-            <div className="flex items-center rounded-xl border border-[#E5E7EB] bg-white p-0.5 shadow-2xs">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`p-1.5 rounded-lg transition ${
-                  viewMode === 'grid'
-                    ? 'bg-[#D97706] text-white shadow-xs'
-                    : 'text-[#6B7280] hover:text-[#1F2937]'
-                }`}
-                title="Tampilan Grid Kartu"
-              >
-                <LayoutGrid className="h-3.5 w-3.5" />
-              </button>
-              <button
-                onClick={() => setViewMode('table')}
-                className={`p-1.5 rounded-lg transition ${
-                  viewMode === 'table'
-                    ? 'bg-[#D97706] text-white shadow-xs'
-                    : 'text-[#6B7280] hover:text-[#1F2937]'
-                }`}
-                title="Tampilan Tabel Lengkap"
-              >
-                <List className="h-3.5 w-3.5" />
-              </button>
-            </div>
+            </button>
           </div>
+
+          {/* Search, Filter Chips & View Mode (Fills the right side evenly, hidden on supplier_notification) */}
+          {activeTab !== 'supplier_notification' ? (
+            <div className="flex flex-1 flex-wrap items-center justify-end gap-2.5">
+              {/* Responsive Search Input */}
+              <div className="relative flex-1 min-w-[200px] max-w-md">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-[#9CA3AF]" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Cari no. PO, pelanggan, telp, atau nama roti..."
+                  className="w-full rounded-xl border border-[#E5E7EB] bg-[#F7F7F5] pl-9 pr-7 py-1.5 text-xs text-[#1F2937] placeholder-[#9CA3AF] focus:border-[#D97706] focus:bg-white focus:outline-none transition"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2.5 top-2 text-[#9CA3AF] hover:text-[#1F2937]"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Quick Filter Chips */}
+              <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
+                {[
+                  { id: 'all', label: 'Semua' },
+                  { id: 'today', label: 'Hari Ini' },
+                  { id: 'unpaid', label: 'Belum Lunas' },
+                  { id: 'ready', label: 'Siap Diambil' },
+                  { id: 'overdue', label: 'Terlambat' },
+                ].map((chip) => (
+                  <button
+                    key={chip.id}
+                    onClick={() => {
+                      setFilterChip(chip.id as any);
+                      posSound.beep();
+                    }}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-semibold whitespace-nowrap transition ${
+                      filterChip === chip.id
+                        ? 'bg-[#1F2937] text-white shadow-xs'
+                        : 'bg-white border border-[#E5E7EB] text-[#6B7280] hover:text-[#1F2937]'
+                    }`}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* View Mode Toggle */}
+              <div className="flex items-center rounded-xl border border-[#E5E7EB] bg-white p-0.5 shadow-2xs">
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={`p-1.5 rounded-lg transition ${
+                    viewMode === 'grid'
+                      ? 'bg-[#D97706] text-white shadow-xs'
+                      : 'text-[#6B7280] hover:text-[#1F2937]'
+                  }`}
+                  title="Tampilan Grid Kartu"
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => setViewMode('table')}
+                  className={`p-1.5 rounded-lg transition ${
+                    viewMode === 'table'
+                      ? 'bg-[#D97706] text-white shadow-xs'
+                      : 'text-[#6B7280] hover:text-[#1F2937]'
+                  }`}
+                  title="Tampilan Tabel Lengkap"
+                >
+                  <List className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-1 items-center justify-end gap-2 text-xs text-[#6B7280]">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold text-xs">
+                <MessageSquare className="h-3.5 w-3.5 text-emerald-600" />
+                WhatsApp Gateway Kue Titipan (Konsinyasi)
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 pb-28 scrollbar-thin">
-        {displayedOrders.length === 0 ? (
+      <div className={`flex-1 min-h-0 overflow-y-auto ${activeTab === 'supplier_notification' ? 'p-3 sm:p-5' : 'p-4 sm:p-6 pb-28'} scrollbar-thin`}>
+        {activeTab === 'supplier_notification' ? (
+          <SupplierNotificationWorkspace onNavigateToPOS={onNavigateToPOS} />
+        ) : displayedOrders.length === 0 ? (
           <div className="flex h-72 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#E5E7EB] bg-white p-6 text-center text-[#6B7280]">
             <ClipboardList className="h-12 w-12 text-[#9CA3AF] mb-2 stroke-[1.5]" />
             <h4 className="text-sm font-bold text-[#1F2937]">Tidak Ada Pesanan PO Ditemukan</h4>
@@ -700,9 +773,6 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                         <div className="flex items-center gap-1.5">
                           <span className="font-mono text-xs font-black text-[#D97706]">
                             {order.poNumber || order.receiptNumber}
-                          </span>
-                          <span className="text-[10px] text-[#9CA3AF]">
-                            ({order.receiptNumber})
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5 mt-0.5">
@@ -788,7 +858,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="border-b border-[#E5E7EB] bg-[#F7F7F5] text-[#6B7280] font-black uppercase tracking-wider text-[10px]">
-                  <th className="py-3 px-4">No. PO & Nota</th>
+                  <th className="py-3 px-4">No. PO</th>
                   <th className="py-3 px-4">Pelanggan</th>
                   <th className="py-3 px-4">Jadwal Pengambilan</th>
                   <th className="py-3 px-4">Ringkasan Item</th>
@@ -806,12 +876,11 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                       onClick={() => handleOpenDetail(order)}
                       className="hover:bg-[#FDFBF7] cursor-pointer transition"
                     >
-                      {/* PO & Receipt */}
+                      {/* PO Number */}
                       <td className="py-3 px-4">
                         <div className="font-mono font-bold text-[#D97706] text-xs">
                           {order.poNumber || order.receiptNumber}
                         </div>
-                        <div className="text-[10px] text-[#9CA3AF]">{order.receiptNumber}</div>
                       </td>
 
                       {/* Customer */}
@@ -916,169 +985,22 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
             </div>
 
             {/* Drawer Body (Scrollable) */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {/* Section 1: Customer Info Card */}
-              <div className="rounded-xl border border-[#E5E7EB] bg-white p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-[#D97706]">
-                      <User className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#6B7280]">
-                        Pelanggan Pemesan
-                      </span>
-                      <h4 className="text-sm font-bold text-[#1F2937]">
-                        {selectedOrder.customer.name}
-                      </h4>
-                    </div>
-                  </div>
-                  <div className="text-right text-xs">
-                    <span className="text-[#6B7280] block">No. Telepon / WhatsApp:</span>
-                    <span className="font-semibold text-[#1F2937]">
-                      {selectedOrder.customer.phone || '-'}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mt-3 pt-3 border-t border-[#F3F4F6] flex items-center justify-between text-xs text-[#6B7280]">
-                  <span>Kategori: <strong className="text-[#1F2937]">{selectedOrder.customer.category}</strong></span>
-                  <span>Saldo Deposit Saat Ini: <strong className="text-emerald-700">{formatIDR(selectedOrder.customer.depositBalance)}</strong></span>
-                </div>
-              </div>
-
-              {/* Section 2: Order Items & Customization (Locked from accidental edits) */}
-              <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 space-y-3">
+            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+              {/* Balon 1: STATUS KEUANGAN & PEMBAYARAN (Paling Atas) */}
+              <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 space-y-3 shadow-xs">
                 <div className="flex items-center justify-between border-b border-[#F3F4F6] pb-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-[#6B7280]">
-                    Daftar Item Pesanan (Terkunci)
-                  </span>
-                  <span className="text-xs text-[#6B7280]">
-                    {selectedOrder.items.length} jenis item
-                  </span>
-                </div>
-
-                <div className="space-y-2">
-                  {selectedOrder.items.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between text-xs py-1">
-                      <div className="flex-1">
-                        <span className="font-bold text-[#1F2937]">{item.productName}</span>
-                        <span className="text-[#6B7280] ml-2">
-                          {item.quantity} x {formatIDR(item.unitPrice)}
-                        </span>
-                        {item.isMadeToOrder && (
-                          <span className="ml-2 rounded bg-amber-50 border border-amber-200 px-1.5 py-0.2 text-[10px] font-bold text-amber-800">
-                            Custom Cake
-                          </span>
-                        )}
-                      </div>
-                      <span className="font-bold text-[#1F2937]">
-                        {formatIDR(item.unitPrice * item.quantity)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Customization Notes */}
-                {selectedOrder.customizationNotes && (
-                  <div className="mt-3 rounded-xl bg-amber-50/80 border border-amber-200 p-3 text-xs text-amber-950">
-                    <span className="font-bold block text-amber-900 mb-1">
-                      Catatan Kustomisasi / Instruksi Khusus:
-                    </span>
-                    <p className="whitespace-pre-line leading-relaxed">
-                      {selectedOrder.customizationNotes}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Section 3: Schedule & Pickup Time Management (Allowed to edit pickup time with audit log) */}
-              <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 space-y-3">
-                <div className="flex items-center justify-between border-b border-[#F3F4F6] pb-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-[#6B7280]">
-                    Jadwal Pengambilan Pesanan
-                  </span>
-                  {selectedOrder.orderStatus !== 'picked_up' && selectedOrder.orderStatus !== 'cancelled' && (
-                    <button
-                      onClick={() => setIsEditingPickupTime(!isEditingPickupTime)}
-                      className="rounded-lg border border-[#E5E7EB] px-2.5 py-1 text-xs font-semibold text-[#1F2937] hover:border-[#D97706] hover:bg-[#F7F7F5] transition"
-                    >
-                      {isEditingPickupTime ? 'Batal Ubah' : 'Ubah Jam Ambil'}
-                    </button>
-                  )}
-                </div>
-
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
                   <div className="flex items-center gap-2">
-                    <Calendar className="h-4 w-4 text-[#D97706]" />
-                    <span>Tanggal: <strong className="text-[#1F2937]">{selectedOrder.pickupDate || 'Hari Ini'}</strong></span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-[#D97706]" />
-                    <span>Jam Pengambilan: <strong className="text-[#1F2937]">{selectedOrder.pickupTime || '14:00'} WIB</strong></span>
-                  </div>
-                </div>
-
-                {/* Edit Form for Pickup Time */}
-                {isEditingPickupTime && (
-                  <div className="rounded-xl bg-[#F7F7F5] border border-[#E5E7EB] p-3 space-y-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-[#1F2937] mb-1">
-                        Masukkan Jam Pengambilan Baru (WIB)
-                      </label>
-                      <input
-                        type="time"
-                        value={newPickupTimeInput}
-                        onChange={(e) => setNewPickupTimeInput(e.target.value)}
-                        className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-bold text-[#1F2937] focus:border-[#D97706] focus:outline-none"
-                      />
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+                      <DollarSign className="h-4 w-4" />
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={handleSavePickupTime}
-                        className="rounded-lg bg-[#D97706] px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-amber-700 active:scale-95 transition"
-                      >
-                        Simpan Perubahan Jam
-                      </button>
-                      <button
-                        onClick={() => setIsEditingPickupTime(false)}
-                        className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B7280] hover:text-[#1F2937]"
-                      >
-                        Batal
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Pickup Time Audit History */}
-                {selectedOrder.pickupTimeHistory && selectedOrder.pickupTimeHistory.length > 0 && (
-                  <div className="mt-2 space-y-1 pt-2 border-t border-[#F3F4F6]">
-                    <span className="text-[11px] font-bold text-[#6B7280] flex items-center gap-1">
-                      <History className="h-3 w-3" />
-                      Riwayat Perubahan Jam Pengambilan:
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#1F2937]">
+                      Status Keuangan & Pembayaran
                     </span>
-                    {selectedOrder.pickupTimeHistory.map((log, idx) => (
-                      <p key={idx} className="text-[11px] text-[#6B7280]">
-                        • {log.previousTime} → <strong>{log.newTime} WIB</strong> oleh {log.updatedBy} ({formatDateTime(log.timestamp)})
-                      </p>
-                    ))}
                   </div>
-                )}
-              </div>
-
-              {/* Section 4: Financial & Settlement Section */}
-              <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 space-y-3">
-                <div className="flex items-center justify-between border-b border-[#F3F4F6] pb-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-[#6B7280]">
-                    Status Keuangan & Pembayaran
-                  </span>
-                  {selectedOrder.remainingBalance > 0 && selectedOrder.orderStatus !== 'cancelled' && (
-                    <button
-                      onClick={() => setIsSettlementOpen(!isSettlementOpen)}
-                      className="rounded-lg bg-[#059669] px-3 py-1 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 active:scale-95 transition"
-                    >
-                      {isSettlementOpen ? 'Tutup Pelunasan' : 'Pelunasan Sisa Tagihan'}
-                    </button>
+                  {selectedOrder.remainingBalance === 0 && (
+                    <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
+                      Lunas
+                    </span>
                   )}
                 </div>
 
@@ -1096,6 +1018,20 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                     <span className="text-sm font-bold text-rose-800">{formatIDR(selectedOrder.remainingBalance)}</span>
                   </div>
                 </div>
+
+                {/* Tombol Pelunasan di pojok kanan bawah di bawah Sisa Tagihan */}
+                {selectedOrder.remainingBalance > 0 && selectedOrder.orderStatus !== 'cancelled' && (
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setIsSettlementOpen(!isSettlementOpen)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-[#059669] px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 active:scale-95 transition"
+                    >
+                      <CreditCard className="h-3.5 w-3.5" />
+                      <span>{isSettlementOpen ? 'Tutup Pelunasan' : 'Pelunasan Sisa Tagihan'}</span>
+                    </button>
+                  </div>
+                )}
 
                 {/* Settlement Form (Integrated directly inside drawer) */}
                 {isSettlementOpen && selectedOrder.remainingBalance > 0 && (
@@ -1207,8 +1143,240 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                 )}
               </div>
 
-              {/* Section 5: Fulfillment Actions (Ready & Pickup) */}
-              <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 space-y-3">
+              {/* Balon 2: PELANGGAN PEMESAN (Collapsible List / Accordion) */}
+              <div className="rounded-xl border border-[#E5E7EB] bg-white overflow-hidden shadow-xs transition">
+                <button
+                  type="button"
+                  onClick={() => setIsCustomerAccordionOpen(!isCustomerAccordionOpen)}
+                  className="w-full flex items-center justify-between p-4 bg-white hover:bg-[#FDFBF7] text-left transition"
+                  aria-expanded={isCustomerAccordionOpen}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-[#D97706] shrink-0">
+                      <User className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#6B7280]">
+                          Pelanggan Pemesan
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-bold text-[#1F2937]">
+                        {selectedOrder.customer.name}
+                      </h4>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-semibold text-[#6B7280]">
+                    <span className="text-[11px] text-[#9CA3AF] hidden sm:inline">
+                      {isCustomerAccordionOpen ? 'Perkecil' : 'Perluas'}
+                    </span>
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#E5E7EB] bg-[#F7F7F5] text-[#1F2937]">
+                      {isCustomerAccordionOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </div>
+                  </div>
+                </button>
+
+                {isCustomerAccordionOpen && (
+                  <div className="border-t border-[#F3F4F6] p-4 pt-3 bg-white space-y-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <div>
+                        <span className="text-[#6B7280] block text-[11px]">No. Telepon / WhatsApp:</span>
+                        <span className="font-semibold text-[#1F2937]">
+                          {selectedOrder.customer.phone || '-'}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[#6B7280] block text-[11px]">Kategori:</span>
+                        <strong className="text-[#1F2937]">{selectedOrder.customer.category}</strong>
+                      </div>
+                    </div>
+
+                    <div className="pt-2.5 border-t border-[#F3F4F6] flex items-center justify-between text-xs text-[#6B7280]">
+                      <span>Saldo Deposit Saat Ini:</span>
+                      <strong className="text-emerald-700 font-bold">{formatIDR(selectedOrder.customer.depositBalance)}</strong>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Balon 3: DAFTAR ITEM PESANAN (Collapsible List / Accordion) */}
+              <div className="rounded-xl border border-[#E5E7EB] bg-white overflow-hidden shadow-xs transition">
+                <button
+                  type="button"
+                  onClick={() => setIsOrderItemsAccordionOpen(!isOrderItemsAccordionOpen)}
+                  className="w-full flex items-center justify-between p-4 bg-white hover:bg-[#FDFBF7] text-left transition"
+                  aria-expanded={isOrderItemsAccordionOpen}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-700 shrink-0">
+                      <Package className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#6B7280] block">
+                        Daftar Item Pesanan (Terkunci)
+                      </span>
+                      <span className="text-xs font-bold text-[#1F2937]">
+                        {selectedOrder.items.length} jenis item ({selectedOrder.items.reduce((sum, item) => sum + item.quantity, 0)} pcs)
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-semibold text-[#6B7280]">
+                    <span className="text-[11px] text-[#9CA3AF] hidden sm:inline">
+                      {isOrderItemsAccordionOpen ? 'Perkecil' : 'Perluas'}
+                    </span>
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#E5E7EB] bg-[#F7F7F5] text-[#1F2937]">
+                      {isOrderItemsAccordionOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </div>
+                  </div>
+                </button>
+
+                {isOrderItemsAccordionOpen && (
+                  <div className="border-t border-[#F3F4F6] p-4 pt-3 bg-white space-y-3">
+                    <div className="space-y-2">
+                      {selectedOrder.items.map((item) => (
+                        <div key={item.id} className="flex items-center justify-between text-xs py-1 border-b border-[#F9FAFB] last:border-0">
+                          <div className="flex-1">
+                            <span className="font-bold text-[#1F2937]">{item.productName}</span>
+                            <span className="text-[#6B7280] ml-2">
+                              {item.quantity} x {formatIDR(item.unitPrice)}
+                            </span>
+                            {item.isMadeToOrder && (
+                              <span className="ml-2 rounded bg-amber-50 border border-amber-200 px-1.5 py-0.2 text-[10px] font-bold text-amber-800">
+                                Custom Cake
+                              </span>
+                            )}
+                          </div>
+                          <span className="font-bold text-[#1F2937]">
+                            {formatIDR(item.unitPrice * item.quantity)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Customization Notes */}
+                    {selectedOrder.customizationNotes && (
+                      <div className="mt-3 rounded-xl bg-amber-50/80 border border-amber-200 p-3 text-xs text-amber-950">
+                        <span className="font-bold block text-amber-900 mb-1">
+                          Catatan Kustomisasi / Instruksi Khusus:
+                        </span>
+                        <p className="whitespace-pre-line leading-relaxed">
+                          {selectedOrder.customizationNotes}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Balon 4: JADWAL PENGAMBILAN PESANAN */}
+              <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 space-y-3 shadow-xs">
+                <div className="flex items-center justify-between border-b border-[#F3F4F6] pb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#6B7280]">
+                    Jadwal Pengambilan Pesanan
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Tanggal Pengambilan Card */}
+                  <div className="flex items-center gap-3 rounded-lg bg-[#F9FAFB] border border-[#F3F4F6] p-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-[#D97706] shrink-0">
+                      <Calendar className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-[#6B7280] block">
+                        Tanggal Pengambilan
+                      </span>
+                      <strong className="text-xs font-bold text-[#1F2937]">
+                        {selectedOrder.pickupDate || 'Hari Ini'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* Jam Pengambilan Card with integrated inline Edit action */}
+                  <div className="flex items-center justify-between gap-2 rounded-lg bg-[#F9FAFB] border border-[#F3F4F6] p-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-[#D97706] shrink-0">
+                        <Clock className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-[10px] uppercase font-bold tracking-wider text-[#6B7280] block">
+                          Jam Pengambilan
+                        </span>
+                        <strong className="text-xs font-bold text-[#1F2937]">
+                          {selectedOrder.pickupTime || '14:00'} WIB
+                        </strong>
+                      </div>
+                    </div>
+
+                    {selectedOrder.orderStatus !== 'picked_up' && selectedOrder.orderStatus !== 'cancelled' && (
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingPickupTime(!isEditingPickupTime)}
+                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition shadow-2xs shrink-0 ${
+                          isEditingPickupTime
+                            ? 'border-neutral-300 bg-white text-[#6B7280] hover:text-[#1F2937] hover:bg-neutral-100'
+                            : 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 hover:border-amber-400 active:scale-95'
+                        }`}
+                        title="Ubah jam pengambilan pesanan ini"
+                      >
+                        <Pencil className="h-3.5 w-3.5 text-[#D97706]" />
+                        <span>{isEditingPickupTime ? 'Batal' : 'Ubah Jam'}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Edit Form for Pickup Time */}
+                {isEditingPickupTime && (
+                  <div className="rounded-xl bg-[#F7F7F5] border border-[#E5E7EB] p-3 space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#1F2937] mb-1">
+                        Masukkan Jam Pengambilan Baru (WIB)
+                      </label>
+                      <input
+                        type="time"
+                        value={newPickupTimeInput}
+                        onChange={(e) => setNewPickupTimeInput(e.target.value)}
+                        className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-xs font-bold text-[#1F2937] focus:border-[#D97706] focus:outline-none"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSavePickupTime}
+                        className="rounded-lg bg-[#D97706] px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-amber-700 active:scale-95 transition"
+                      >
+                        Simpan Perubahan Jam
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingPickupTime(false)}
+                        className="rounded-lg border border-[#E5E7EB] bg-white px-3.5 py-2 text-xs font-semibold text-[#6B7280] hover:text-[#1F2937]"
+                      >
+                        Batal
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Pickup Time Audit History */}
+                {selectedOrder.pickupTimeHistory && selectedOrder.pickupTimeHistory.length > 0 && (
+                  <div className="mt-2 space-y-1 pt-2 border-t border-[#F3F4F6]">
+                    <span className="text-[11px] font-bold text-[#6B7280] flex items-center gap-1">
+                      <History className="h-3 w-3" />
+                      Riwayat Perubahan Jam Pengambilan:
+                    </span>
+                    {selectedOrder.pickupTimeHistory.map((log, idx) => (
+                      <p key={idx} className="text-[11px] text-[#6B7280]">
+                        • {log.previousTime} → <strong>{log.newTime} WIB</strong> oleh {log.updatedBy} ({formatDateTime(log.timestamp)})
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Balon 5: STATUS OPERASIONAL & PENGAMBILAN (Tidak Ada yang Diubah) */}
+              <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 space-y-3 shadow-xs">
                 <span className="text-xs font-bold uppercase tracking-wider text-[#6B7280]">
                   Status Operasional & Pengambilan
                 </span>
@@ -1249,11 +1417,11 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                         value={collectorNameInput}
                         onChange={(e) => setCollectorNameInput(e.target.value)}
                         placeholder="Nama Pengambil Pesanan (Wajib)..."
-                        className="flex-1 rounded-lg border border-teal-300 bg-white px-3 py-1.5 text-xs text-[#1F2937] focus:outline-none"
+                        className="flex-1 rounded-lg border border-teal-300 bg-white px-3 py-2 text-xs text-[#1F2937] focus:outline-none"
                       />
                       <button
                         onClick={handleConfirmPickup}
-                        className="rounded-lg bg-teal-700 px-4 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-teal-800 active:scale-95 transition whitespace-nowrap"
+                        className="rounded-lg bg-teal-700 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-teal-800 active:scale-95 transition whitespace-nowrap"
                       >
                         Konfirmasi Diambil
                       </button>
@@ -1291,9 +1459,9 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                 )}
               </div>
 
-              {/* Section 6: Duplikasi Pesanan (Strictly from completed orders) */}
+              {/* Duplikasi Pesanan (Strictly for completed orders) */}
               {selectedOrder.orderStatus === 'picked_up' && (
-                <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-4 space-y-3">
+                <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-4 space-y-3 shadow-xs">
                   <div className="flex items-center justify-between">
                     <div>
                       <h5 className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
@@ -1336,33 +1504,35 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                 </div>
               )}
 
-              {/* Section 7: Supervisor Cancellation Form */}
+              {/* Balon 6: Batalkan Pesanan PO (Dibuat dalam bentuk Button untuk kemudahan layar sentuh) */}
               {selectedOrder.orderStatus !== 'picked_up' && selectedOrder.orderStatus !== 'cancelled' && (
                 <div className="pt-2">
                   {!isCancelOpen ? (
                     <button
+                      type="button"
                       onClick={() => setIsCancelOpen(true)}
-                      className="text-xs font-semibold text-rose-600 hover:text-rose-800 hover:underline flex items-center gap-1"
+                      className="w-full flex items-center justify-center gap-2 rounded-xl border-2 border-rose-300 bg-rose-50 px-4 py-3.5 text-xs sm:text-sm font-bold text-rose-700 hover:bg-rose-100 hover:border-rose-400 active:scale-98 transition shadow-xs"
                     >
-                      <ShieldAlert className="h-3.5 w-3.5" />
-                      <span>Batalkan Pesanan PO Ini (Memerlukan Otorisasi Supervisor)</span>
+                      <ShieldAlert className="h-4 w-4 text-rose-600 shrink-0" />
+                      <span>Batalkan Pesanan PO</span>
                     </button>
                   ) : (
-                    <div className="rounded-xl border border-rose-300 bg-rose-50/70 p-4 space-y-3">
+                    <div className="rounded-xl border border-rose-300 bg-rose-50/80 p-4 space-y-3 shadow-xs">
                       <div className="flex items-center justify-between">
                         <h5 className="text-xs font-bold text-rose-950 flex items-center gap-1.5">
                           <ShieldAlert className="h-4 w-4 text-rose-700" />
                           Pembatalan Pesanan PO & Kredit Saldo Deposit
                         </h5>
                         <button
+                          type="button"
                           onClick={() => setIsCancelOpen(false)}
-                          className="text-xs text-rose-700 hover:underline"
+                          className="rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50 active:scale-95 transition"
                         >
                           Tutup
                         </button>
                       </div>
 
-                      <p className="text-[11px] text-rose-900">
+                      <p className="text-[11px] text-rose-900 leading-relaxed">
                         Total pembayaran yang telah diterima sebesar <strong>{formatIDR(selectedOrder.paidAmount)}</strong> akan dikreditkan secara otomatis ke Akun Saldo Deposit milik {selectedOrder.customer.name}.
                       </p>
 
@@ -1375,7 +1545,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                           value={cancelReasonInput}
                           onChange={(e) => setCancelReasonInput(e.target.value)}
                           placeholder="Misal: Pelanggan membatalkan acara / perubahan rencana..."
-                          className="w-full rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs text-[#1F2937] focus:outline-none"
+                          className="w-full rounded-lg border border-rose-300 bg-white px-3 py-2 text-xs text-[#1F2937] focus:outline-none"
                         />
                       </div>
 
@@ -1389,7 +1559,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                           value={supervisorPinInput}
                           onChange={(e) => setSupervisorPinInput(e.target.value)}
                           placeholder="Masukkan PIN SPV..."
-                          className="w-48 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-mono text-[#1F2937] focus:outline-none"
+                          className="w-48 rounded-lg border border-rose-300 bg-white px-3 py-2 text-xs font-mono text-[#1F2937] focus:outline-none"
                         />
                       </div>
 
@@ -1399,8 +1569,9 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
 
                       <div className="flex justify-end gap-2 pt-1">
                         <button
+                          type="button"
                           onClick={handleExecuteCancel}
-                          className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-rose-700 active:scale-95 transition"
+                          className="w-full sm:w-auto rounded-xl bg-rose-600 px-5 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-rose-700 active:scale-95 transition"
                         >
                           Konfirmasi Pembatalan & Kreditkan Dana
                         </button>

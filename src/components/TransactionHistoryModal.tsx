@@ -249,7 +249,7 @@ export const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = (
                 >
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="font-black text-gray-900 text-base">{order.receiptNumber}</span>
+                      <span className="font-black text-gray-900 text-base">{order.poNumber || order.receiptNumber}</span>
                       <span
                         className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase ${
                           order.orderStatus === 'completed'

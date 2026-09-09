@@ -54,6 +54,8 @@ export interface Customer {
 }
 
 export type ProductCategory = string;
+export type Category = ProductCategoryItem;
+export type Branch = StoreBranch;
 
 export interface ProductCategoryItem {
   id: string;
@@ -77,6 +79,8 @@ export interface Product {
   price: number;
   isPriceCustomizable: boolean;
   stock: number;
+  inTransitStock?: number;
+  badStock?: number;
   lowStockThreshold: number;
   isMadeToOrder: boolean;
   baseProductId?: string; // Links made-to-order to base ready stock product
@@ -121,7 +125,7 @@ export interface CartItem {
   commissionBasis?: CommissionBasis;
 }
 
-export type PaymentMethod = 'cash' | 'qris' | 'deposit';
+export type PaymentMethod = 'cash' | 'qris' | 'deposit' | 'pay_tomorrow' | 'transfer';
 
 export interface PaymentComponent {
   method: PaymentMethod;
@@ -164,7 +168,7 @@ export interface Order {
   id: string;
   branchId?: string;
   receiptNumber: string;
-  poNumber?: string; // MTO Purchase Order identifier (e.g. PO-20260906-001)
+  poNumber?: string; // MTO Purchase Order identifier (e.g. SPU-260909-0001)
   sessionId: string;
   cashierId: string;
   cashierName: string;
@@ -438,3 +442,130 @@ export interface ReceivingDraft {
   paymentMethod?: 'cash' | 'transfer' | 'qris' | 'deposit';
   activeLineIndexForNewSku?: number;
 }
+
+// POS-US-069: Category Daily Stock Closing
+export interface CategoryClosingRow {
+  productId: string;
+  productName: string;
+  sku: string;
+  systemStock: number;
+  actualClosingStock: number;
+  variance: number;
+  remark?: string;
+}
+export type CategoryClosingItemRow = CategoryClosingRow;
+
+export interface CategoryClosingSession {
+  id: string;
+  branchId: string;
+  branchName?: string;
+  categoryId: string;
+  categoryName: string;
+  closingDate: string; // YYYY-MM-DD
+  status: 'draft' | 'submitted';
+  rows: CategoryClosingRow[];
+  submittedBy?: string;
+  submittedAt?: string;
+  createdAt: string;
+}
+
+// POS-US-070: Stock Transfer
+export type StockTransferStatus = 'in_transit' | 'received' | 'cancelled';
+
+export interface StockTransferRecord {
+  id: string;
+  transferNo: string;
+  fromBranchId: string;
+  fromBranchName: string;
+  toBranchId: string;
+  toBranchName: string;
+  productId: string;
+  productName: string;
+  sku: string;
+  quantity: number;
+  status: StockTransferStatus;
+  notes?: string;
+  createdBy: string;
+  createdAt: string;
+  receivedAt?: string;
+  receivedBy?: string;
+}
+
+// POS-US-071: Bad Stock & Expired Record
+export type BadStockReason = 'expired' | 'damaged' | 'spoiled' | 'other';
+export type BadStockDisposition = 'disposed' | 'returned_supplier';
+
+export interface BadStockRecord {
+  id: string;
+  recordNo: string;
+  branchId: string;
+  productId: string;
+  productName: string;
+  sku: string;
+  quantity: number;
+  reason: BadStockReason;
+  disposition: BadStockDisposition;
+  notes?: string;
+  recordedBy: string;
+  createdAt: string;
+}
+
+// POS-US-072: Consolidated Stock History Event
+export type StockHistoryEventType = 'receiving' | 'daily_closing' | 'transfer_out' | 'transfer_in' | 'bad_stock' | 'manual';
+
+export interface StockHistoryItem {
+  id: string;
+  branchId: string;
+  productId: string;
+  productName: string;
+  sku: string;
+  type: StockHistoryEventType;
+  typeLabel: string;
+  quantityChange: number;
+  previousStock?: number;
+  resultingStock?: number;
+  referenceNo: string;
+  notes: string;
+  actorName: string;
+  timestamp: string;
+}
+
+// POS-US-059 to POS-US-063: Supplier WhatsApp Notification
+export type NotificationDeliveryResult = 'success' | 'failed' | 'no_internet' | 'other';
+export type NotificationAttemptType = 'send' | 'resend';
+
+export interface SupplierNotificationBatch {
+  id: string; // e.g. 'BATCH-SUP1-20260909-01'
+  supplierId: string;
+  supplierName: string;
+  supplierPhone: string;
+  orderIds: string[];
+  status: 'unsent' | 'success' | 'failed' | 'no_internet' | 'other';
+  createdAt: string;
+  sentAt?: string;
+  sentBy?: string;
+  attemptsCount: number;
+  lastAttemptResult?: NotificationDeliveryResult;
+  lastAttemptAt?: string;
+  lastErrorMessage?: string;
+}
+
+export interface SupplierDeliveryLogEntry {
+  id: string;
+  batchId: string;
+  supplierId: string;
+  supplierName: string;
+  supplierPhone: string;
+  orderIds: string[];
+  orderReceipts: string[];
+  attemptType: NotificationAttemptType;
+  result: NotificationDeliveryResult;
+  messageText: string;
+  actorName: string;
+  actorRole: string;
+  timestamp: string;
+  errorMessage?: string;
+  rawResponse?: string;
+}
+
+

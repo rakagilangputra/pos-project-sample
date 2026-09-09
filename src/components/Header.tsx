@@ -10,6 +10,8 @@ import {
   ChevronDown,
   Building2,
   Lock,
+  Eye,
+  CheckCircle2,
   ClipboardList,
   Check,
 } from 'lucide-react';
@@ -171,64 +173,81 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="h-14 shrink-0 bg-white border-b border-[#E5E7EB] px-3 sm:px-5 flex items-center justify-between select-none relative z-40">
-      {/* Left: Brand & Persistent Store Selector */}
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 bg-[#D97706] rounded-lg flex items-center justify-center text-white font-bold text-base shadow-xs">
-          S
-        </div>
-        
+      {/* Left: Persistent Store Selector */}
+      <div className="flex items-center gap-2">
         {/* Persistent Top-Bar Store Selector */}
         <div className="relative" ref={storeDropdownRef}>
           {isCashier ? (
             /* Cashier: Branch locked by session */
             <div
               id="current-store-display-locked"
-              className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs text-gray-700"
-              title="Cabang kasir ditentukan oleh sesi aktif"
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50/80 px-2.5 py-1 text-xs text-gray-700 shadow-2xs"
+              title={isBranchReadOnly ? 'Mode Lihat Saja (Read-only)' : 'Cabang Aktif Beroperasi'}
             >
-              <Store className="h-3.5 w-3.5 text-amber-600" />
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] text-gray-500 font-medium hidden sm:inline">Current Store:</span>
-                <span className="font-bold text-gray-900">{selectedBranch?.name || 'Senopati'}</span>
-              </div>
+              {isBranchReadOnly ? (
+                <Eye className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+              ) : (
+                <span className="relative flex h-2 w-2 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+              )}
+              <span className="font-semibold text-gray-900 max-w-[140px] truncate">
+                {selectedBranch?.name || 'Senopati'}
+              </span>
+              {isBranchReadOnly && (
+                <span className="rounded bg-rose-100 px-1 py-0.2 text-[9px] font-bold text-rose-700">
+                  Lihat
+                </span>
+              )}
             </div>
           ) : (
-            /* Supervisor / Superadmin: Interactive Selector */
+            /* Supervisor / Superadmin: Compact Interactive Selector */
             <div className="relative">
               <button
                 id="current-store-selector-btn"
                 type="button"
                 onClick={() => setIsStoreDropdownOpen((prev) => !prev)}
-                className={`flex items-center gap-2 rounded-xl border px-2.5 py-1.5 text-xs font-semibold transition active:scale-95 ${
+                className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition active:scale-95 shadow-2xs ${
                   isBranchReadOnly
-                    ? 'border-rose-300 bg-rose-50 text-rose-900 hover:bg-rose-100'
-                    : 'border-amber-300 bg-amber-50/70 text-amber-950 hover:bg-amber-100'
+                    ? 'border-rose-200 bg-rose-50/80 text-rose-900 hover:bg-rose-100/80'
+                    : 'border-gray-200 bg-white text-gray-800 hover:bg-gray-50 hover:border-gray-300'
                 }`}
-                title="Klik untuk beralih cabang toko"
+                title={isBranchReadOnly ? 'Cabang dalam mode Lihat Saja (Read-only) - Klik untuk beralih' : 'Cabang Aktif & Dapat Dioperasikan - Klik untuk beralih'}
               >
-                <Store className="h-3.5 w-3.5 text-amber-700 shrink-0" />
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] text-amber-800 font-medium hidden md:inline">Current Store:</span>
-                  <span className="font-black text-gray-900">{selectedBranch?.name || 'Pilih Toko'}</span>
-                  {isBranchReadOnly && (
-                    <span className="flex items-center gap-0.5 rounded-full bg-rose-200 px-1.5 py-0.2 text-[9px] font-bold text-rose-800">
-                      <Lock className="h-2.5 w-2.5" /> Read-only
-                    </span>
-                  )}
-                </div>
-                <ChevronDown className="h-3 w-3 text-amber-700 shrink-0" />
+                {isBranchReadOnly ? (
+                  <Eye className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+                ) : (
+                  <span className="relative flex h-2 w-2 shrink-0">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                )}
+                <span className="font-bold text-gray-900 max-w-[130px] sm:max-w-[160px] truncate">
+                  {selectedBranch?.name || 'Pilih Cabang'}
+                </span>
+                {isBranchReadOnly ? (
+                  <span className="flex items-center gap-0.5 rounded bg-rose-100 px-1 py-0.2 text-[9px] font-bold text-rose-700">
+                    Lihat
+                  </span>
+                ) : (
+                  <span className="hidden xl:inline-block rounded bg-emerald-50 px-1 py-0.2 text-[9px] font-bold text-emerald-700 border border-emerald-200">
+                    Aktif
+                  </span>
+                )}
+                <ChevronDown className="h-3 w-3 text-gray-400 shrink-0 ml-0.5" />
               </button>
 
               {/* Dropdown Menu */}
               {isStoreDropdownOpen && (
                 <div className="absolute left-0 top-full mt-1.5 w-64 rounded-2xl border border-gray-200 bg-white p-2 shadow-xl animate-in fade-in zoom-in-95 duration-150 z-50">
                   <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-gray-400">
-                    Pilih Cabang Aktif
+                    Pilih Cabang Toko
                   </div>
                   <div className="space-y-1 mt-1">
                     {selectableBranches.map((b) => {
                       const isSelected = selectedBranch?.id === b.id;
-                      const isInactive = b.status === 'inactive';
+                      const isInactive = !isSuperadmin && b.status === 'inactive';
 
                       return (
                         <button
@@ -242,13 +261,24 @@ export const Header: React.FC<HeaderProps> = ({
                           }`}
                         >
                           <div className="flex flex-col">
-                            <span className="font-bold text-gray-900">{b.name}</span>
-                            <span className="text-[10px] text-gray-400">{b.code} • {b.city}</span>
+                            <div className="flex items-center gap-1.5">
+                              {isInactive ? (
+                                <Eye className="h-3 w-3 text-rose-500" />
+                              ) : (
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                              )}
+                              <span className="font-bold text-gray-900">{b.name}</span>
+                            </div>
+                            <span className="text-[10px] text-gray-400 ml-3">{b.code} • {b.city}</span>
                           </div>
                           <div className="flex items-center gap-1">
-                            {isInactive && (
+                            {isInactive ? (
                               <span className="rounded bg-rose-100 px-1 py-0.2 text-[9px] font-bold text-rose-700">
-                                Read-only
+                                Lihat
+                              </span>
+                            ) : (
+                              <span className="rounded bg-emerald-50 px-1 py-0.2 text-[9px] font-bold text-emerald-700">
+                                Aktif
                               </span>
                             )}
                             {isSelected && <Check className="h-4 w-4 text-amber-600" />}

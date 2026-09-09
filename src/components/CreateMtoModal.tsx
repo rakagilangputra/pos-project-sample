@@ -41,7 +41,7 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
   const [pickupTime, setPickupTime] = useState('10:00');
   const [customizationNotes, setCustomizationNotes] = useState('');
 
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'qris' | 'transfer' | 'deposit'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'qris' | 'transfer' | 'deposit' | 'pay_tomorrow'>('cash');
   const [paidAmountInput, setPaidAmountInput] = useState('');
 
   // Reset or sync rows when modal opens
@@ -132,8 +132,10 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
       };
     });
 
-    const paidAmt = parseFloat(paidAmountInput) || 0;
-    if (paidAmt <= 0) {
+    const isPayTomorrow = paymentMethod === 'pay_tomorrow';
+    const paidAmt = parseFloat(paidAmountInput) >= 0 ? parseFloat(paidAmountInput) : 0;
+
+    if (!isPayTomorrow && paidAmt <= 0) {
       alert('Masukkan jumlah pembayaran DP atau pembayaran pertama yang valid');
       return;
     }
@@ -163,6 +165,7 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
       setProductRows([createInitialRow()]);
       setCustomizationNotes('');
       setPaidAmountInput('');
+      setPaymentMethod('cash');
       onClose();
     } else {
       alert(res.message);
@@ -378,30 +381,67 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
           </div>
 
           {/* Pembayaran / DP */}
-          <div className="border-t border-[#E5DACE] pt-3 grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-[#6B7280] mb-1">Metode Pembayaran / DP</label>
-              <select
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value as any)}
-                className="w-full rounded-xl border border-[#E5DACE] px-3 py-2 text-sm font-semibold bg-[#FDFBF7]"
-              >
-                <option value="cash">Tunai (Cash)</option>
-                <option value="qris">QRIS</option>
-                <option value="transfer">Transfer Bank</option>
-                <option value="deposit">Deposit Pelanggan</option>
-              </select>
+          <div className="border-t border-[#E5DACE] pt-3 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label id="lbl-payment-method-dp" className="block text-xs font-bold text-[#6B7280] mb-1">
+                  Metode Pembayaran / DP
+                </label>
+                <select
+                  id="select-mto-payment-method"
+                  value={paymentMethod}
+                  onChange={(e) => {
+                    const nextMethod = e.target.value as any;
+                    setPaymentMethod(nextMethod);
+                    if (nextMethod === 'pay_tomorrow') {
+                      setPaidAmountInput('0');
+                    } else if (paidAmountInput === '0') {
+                      setPaidAmountInput('');
+                    }
+                  }}
+                  className="w-full rounded-xl border border-[#E5DACE] px-3 py-2 text-sm font-semibold bg-[#FDFBF7] text-[#2D241E] focus:border-[#D97706] focus:outline-none focus:ring-1 focus:ring-[#D97706] transition"
+                >
+                  <option value="cash">Tunai (Cash)</option>
+                  <option value="qris">QRIS</option>
+                  <option value="transfer">Transfer Bank</option>
+                  <option value="deposit">Deposit Pelanggan</option>
+                  <option value="pay_tomorrow">Dibayar Besok (DP Rp 0 / Bayar Saat Ambil)</option>
+                </select>
+              </div>
+
+              <div>
+                <label id="lbl-paid-amount" className="block text-xs font-bold text-[#6B7280] mb-1 flex items-center justify-between">
+                  <span>Nominal Dibayar (DP/Lunas)</span>
+                  {paymentMethod === 'pay_tomorrow' ? (
+                    <span className="text-[10px] text-blue-700 font-bold bg-blue-100 px-1.5 py-0.5 rounded">
+                      Boleh Kosong / Rp 0
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-amber-700 font-medium">
+                      Minimal DP/Lunas
+                    </span>
+                  )}
+                </label>
+                <input
+                  id="input-mto-paid-amount"
+                  type="number"
+                  min={0}
+                  value={paidAmountInput}
+                  onChange={(e) => setPaidAmountInput(e.target.value)}
+                  placeholder={paymentMethod === 'pay_tomorrow' ? '0 (Dibayar saat ambil)' : `Total: ${formatIDR(total)}`}
+                  className="w-full rounded-xl border border-[#E5DACE] px-3 py-2 text-sm font-semibold text-[#2D241E] focus:border-[#D97706] focus:outline-none focus:ring-1 focus:ring-[#D97706] transition placeholder:text-gray-400"
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-bold text-[#6B7280] mb-1">Nominal Dibayar (DP/Lunas)</label>
-              <input
-                type="number"
-                value={paidAmountInput}
-                onChange={(e) => setPaidAmountInput(e.target.value)}
-                placeholder={`Total: ${formatIDR(total)}`}
-                className="w-full rounded-xl border border-[#E5DACE] px-3 py-2 text-sm font-semibold"
-              />
-            </div>
+
+            {paymentMethod === 'pay_tomorrow' && (
+              <div className="rounded-xl bg-blue-50/80 border border-blue-200 p-2.5 text-xs text-blue-900 flex items-start gap-2">
+                <span className="text-base leading-none">🗓️</span>
+                <div>
+                  <strong className="font-bold">Dibayar Besok:</strong> Pelanggan tidak membayar DP saat pemesanan dibuat (DP Rp 0). Seluruh tagihan sebesar <strong>{formatIDR(total)}</strong> akan dilunasi saat pesanan diambil esok hari.
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Summary Box */}

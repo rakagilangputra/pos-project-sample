@@ -332,7 +332,7 @@ export const TransactionHistorySubView: React.FC<TransactionHistorySubViewProps>
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="font-black text-sm text-[#2D241E]">
-                          {order.receiptNumber}
+                          {order.poNumber || order.receiptNumber}
                         </span>
                         <span
                           className={`rounded-md px-2 py-0.5 text-[10px] font-black ${

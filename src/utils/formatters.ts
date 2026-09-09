@@ -48,6 +48,63 @@ export function generateReceiptNumber(): string {
   return `RN-${year}${month}${day}-${randomSuffix}`;
 }
 
+/**
+ * Store initials alias for PO Number
+ * Senopati Utama -> SPU
+ */
+export function getBranchInitials(branchNameOrId?: string): string {
+  if (!branchNameOrId) return 'SPU';
+  const val = branchNameOrId.toLowerCase();
+  if (val.includes('senopati') || val.includes('cab-01') || val.includes('spu')) return 'SPU';
+  if (val.includes('kemang') || val.includes('cab-02') || val.includes('kma')) return 'KMA';
+  if (val.includes('bintaro') || val.includes('cab-03') || val.includes('bts')) return 'BTS';
+  
+  const clean = branchNameOrId.replace(/cabang/i, '').trim();
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length >= 3) {
+    return (words[0][0] + words[1][0] + words[2][0]).toUpperCase();
+  }
+  if (words.length === 2) {
+    return (words[0].slice(0, 2) + words[1][0]).toUpperCase();
+  }
+  return clean.slice(0, 3).toUpperCase() || 'SPU';
+}
+
+/**
+ * Generate PO Number with format: [xxx]-[xxxxxx]-[xxxx]
+ * 1. Store initials alias: e.g. SPU (Senopati Utama)
+ * 2. Date in format yy-mm-dd (6 characters: yymmdd)
+ * 3. Daily PO sequence count during that day (4 digits: 0001, 0002, ...)
+ */
+export function generatePONumber(
+  existingOrders: Array<{ poNumber?: string; createdAt?: string }> = [],
+  branchNameOrId: string = 'SPU',
+  date: Date = new Date()
+): string {
+  const branchInitials = getBranchInitials(branchNameOrId);
+  const yy = String(date.getFullYear()).slice(-2);
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  const dateCode = `${yy}${mm}${dd}`;
+
+  const prefix = `${branchInitials}-${dateCode}-`;
+  let maxSeq = 0;
+
+  for (const order of existingOrders) {
+    if (!order.poNumber) continue;
+    if (order.poNumber.startsWith(prefix)) {
+      const seqStr = order.poNumber.slice(prefix.length);
+      const num = parseInt(seqStr, 10);
+      if (!isNaN(num) && num > maxSeq) {
+        maxSeq = num;
+      }
+    }
+  }
+
+  const nextSeq = String(maxSeq + 1).padStart(4, '0');
+  return `${prefix}${nextSeq}`;
+}
+
 // Pleasant Web Audio sound chimes for touch POS feedback
 class POSAudio {
   private ctx: AudioContext | null = null;
@@ -107,6 +164,10 @@ class POSAudio {
     } catch {
       // ignore
     }
+  }
+
+  success() {
+    this.cashRegister();
   }
 
   error() {
