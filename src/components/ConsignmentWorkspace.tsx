@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Building2,
   Calendar,
@@ -16,11 +16,14 @@ import {
   FileText,
   DollarSign,
   ChevronRight,
+  ChevronDown,
+  ChevronsUpDown,
   UserPlus,
   Info,
   Pencil,
   X,
   Check,
+  Package,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 import { SupplierSettlementCycle, Supplier } from '../types';
@@ -65,6 +68,9 @@ export const ConsignmentWorkspace: React.FC = () => {
   const [paySuccess, setPaySuccess] = useState('');
   const [isSubmittingPay, setIsSubmittingPay] = useState(false);
 
+  // Accordion open/close state for suppliers
+  const [expandedSupplierIds, setExpandedSupplierIds] = useState<string[]>([]);
+
   // Filtered Commission Ledger
   const filteredLedger = useMemo(() => {
     const now = new Date();
@@ -93,6 +99,57 @@ export const ConsignmentWorkspace: React.FC = () => {
       return true;
     });
   }, [commissionLedger, datePeriod, selectedSupplierId, searchQuery]);
+
+  // Grouped Supplier Ledger for Accordion List
+  const groupedSupplierLedger = useMemo(() => {
+    let targetSuppliers = suppliers;
+    if (selectedSupplierId !== 'all') {
+      targetSuppliers = suppliers.filter((s) => s.id === selectedSupplierId);
+    }
+
+    return targetSuppliers.map((supplier) => {
+      const items = filteredLedger.filter((e) => e.supplierId === supplier.id && e.status !== 'reversed');
+      const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+      const totalHargaJual = items.reduce((sum, item) => sum + item.netAmount, 0);
+      const totalKomisiToko = items.reduce((sum, item) => sum + item.commissionAmount, 0);
+      const totalHargaBeliSupplier = items.reduce((sum, item) => sum + item.storeNetAmount, 0);
+
+      return {
+        supplier,
+        items,
+        totalQuantity,
+        totalHargaJual,
+        totalHargaBeliSupplier,
+        totalKomisiToko,
+      };
+    });
+  }, [suppliers, selectedSupplierId, filteredLedger]);
+
+  // Auto-expand suppliers that have items or all suppliers on initial load
+  useEffect(() => {
+    const withItems = groupedSupplierLedger.filter((g) => g.items.length > 0).map((g) => g.supplier.id);
+    if (withItems.length > 0) {
+      setExpandedSupplierIds(withItems);
+    } else {
+      setExpandedSupplierIds(suppliers.map((s) => s.id));
+    }
+  }, [suppliers, selectedSupplierId, datePeriod]);
+
+  const toggleSupplierAccordion = (supplierId: string) => {
+    setExpandedSupplierIds((prev) =>
+      prev.includes(supplierId)
+        ? prev.filter((id) => id !== supplierId)
+        : [...prev, supplierId]
+    );
+  };
+
+  const handleExpandAll = () => {
+    setExpandedSupplierIds(suppliers.map((s) => s.id));
+  };
+
+  const handleCollapseAll = () => {
+    setExpandedSupplierIds([]);
+  };
 
   // Primary KPIs (Accounting Summary for Consignment)
   const kpis = useMemo(() => {
@@ -411,11 +468,11 @@ export const ConsignmentWorkspace: React.FC = () => {
       )}
 
       {/* -------------------------------------------------------------
-          LOCAL VIEW 2: BUKU BESAR KOMISI (Traceability Table, POS-US-051 AC-04)
+          LOCAL VIEW 2: BUKU BESAR KOMISI (Accordion List by Mitra Supplier)
           ------------------------------------------------------------- */}
       {activeView === 'ledger' && (
         <div className="flex flex-1 flex-col overflow-hidden">
-          {/* Filters Bar */}
+          {/* Filters & Control Bar */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E5DACE] bg-white px-6 py-3 shrink-0">
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-[#8C7B6C]" />
@@ -423,7 +480,7 @@ export const ConsignmentWorkspace: React.FC = () => {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Cari no nota, produk, atau mitra..."
+                placeholder="Cari produk, nota, atau mitra supplier..."
                 className="w-full rounded-xl border border-[#E5DACE] bg-[#FDFBF7] pl-10 pr-4 py-2 text-xs font-bold text-[#2D241E] focus:border-purple-600 focus:outline-none"
               />
             </div>
@@ -454,65 +511,168 @@ export const ConsignmentWorkspace: React.FC = () => {
                 <option value="week">7 Hari Terakhir</option>
                 <option value="month">30 Hari Terakhir</option>
               </select>
+
+              {/* Accordion Global Toggle Buttons */}
+              <div className="flex items-center gap-1 border-l border-[#E5DACE] pl-2">
+                <button
+                  type="button"
+                  onClick={handleExpandAll}
+                  className="rounded-lg border border-[#E5DACE] bg-[#FDFBF7] px-2.5 py-1.5 text-[11px] font-bold text-[#8C7B6C] hover:bg-purple-50 hover:text-purple-900 transition"
+                >
+                  Buka Semua
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCollapseAll}
+                  className="rounded-lg border border-[#E5DACE] bg-[#FDFBF7] px-2.5 py-1.5 text-[11px] font-bold text-[#8C7B6C] hover:bg-purple-50 hover:text-purple-900 transition"
+                >
+                  Tutup Semua
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Ledger Table */}
-          <div className="flex-1 overflow-auto p-4">
-            {filteredLedger.length === 0 ? (
+          {/* Accordion List Container */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+            {groupedSupplierLedger.length === 0 ? (
               <div className="flex h-64 flex-col items-center justify-center text-center p-8 text-[#8C7B6C]">
                 <Receipt className="h-12 w-12 opacity-30 mb-2" />
-                <p className="font-bold text-sm">Tidak ada catatan transaksi komisi pada filter ini.</p>
+                <p className="font-bold text-sm">Tidak ada catatan transaksi penjualan konsinyasi pada filter ini.</p>
               </div>
             ) : (
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b-2 border-[#E5DACE] bg-[#FDFBF7] text-[#8C7B6C] font-black uppercase text-[10px]">
-                    <th className="py-2.5 px-3">Tanggal</th>
-                    <th className="py-2.5 px-3">No. Nota</th>
-                    <th className="py-2.5 px-3">Mitra Supplier</th>
-                    <th className="py-2.5 px-3">Produk</th>
-                    <th className="py-2.5 px-3 text-center">Qty</th>
-                    <th className="py-2.5 px-3 text-right">Penjualan Bersih</th>
-                    <th className="py-2.5 px-3 text-right">Komisi Toko</th>
-                    <th className="py-2.5 px-3 text-right">Hutang Supplier</th>
-                    <th className="py-2.5 px-3 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E5DACE]/60">
-                  {filteredLedger.map((entry) => (
-                    <tr key={entry.id} className="hover:bg-[#FDFBF7] transition">
-                      <td className="py-2 px-3 text-[#8C7B6C]">{formatDateTime(entry.createdAt)}</td>
-                      <td className="py-2 px-3 font-bold text-[#2D241E]">{entry.receiptNumber}</td>
-                      <td className="py-2 px-3 font-semibold text-purple-950">{entry.supplierName}</td>
-                      <td className="py-2 px-3 font-bold text-[#2D241E]">{entry.productName}</td>
-                      <td className="py-2 px-3 text-center font-bold">{entry.quantity}</td>
-                      <td className="py-2 px-3 text-right font-semibold">{formatIDR(entry.netAmount)}</td>
-                      <td className="py-2 px-3 text-right font-bold text-emerald-800">
-                        {formatIDR(entry.commissionAmount)}
-                      </td>
-                      <td className="py-2 px-3 text-right font-black text-purple-950">
-                        {formatIDR(entry.storeNetAmount)}
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[9px] font-black ${
-                            entry.status === 'settled'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : entry.status === 'included'
-                              ? 'bg-amber-100 text-amber-800'
-                              : entry.status === 'reversed'
-                              ? 'bg-rose-100 text-rose-800'
-                              : 'bg-purple-100 text-purple-800'
-                          }`}
-                        >
-                          {entry.status.toUpperCase()}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              groupedSupplierLedger.map((group) => {
+                const isExpanded = expandedSupplierIds.includes(group.supplier.id);
+
+                return (
+                  <div
+                    key={group.supplier.id}
+                    className="overflow-hidden rounded-2xl border-2 border-[#E5DACE] bg-white shadow-xs transition"
+                  >
+                    {/* Accordion Group Header (Clickable) */}
+                    <button
+                      type="button"
+                      onClick={() => toggleSupplierAccordion(group.supplier.id)}
+                      className="flex w-full flex-wrap items-center justify-between gap-3 bg-[#FDFBF7] p-4 text-left hover:bg-purple-50/40 transition cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3 min-w-[240px]">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-100 text-purple-900 border border-purple-200 shrink-0">
+                          {isExpanded ? (
+                            <ChevronDown className="h-5 w-5 transition-transform duration-200" />
+                          ) : (
+                            <ChevronRight className="h-5 w-5 transition-transform duration-200" />
+                          )}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-extrabold text-sm text-[#2D241E]">
+                              {group.supplier.name}
+                            </span>
+                            {group.supplier.category && (
+                              <span className="rounded-md bg-amber-100 text-amber-900 border border-amber-200 px-2 py-0.2 text-[10px] font-black">
+                                {group.supplier.category}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-[#8C7B6C] font-semibold mt-0.5">
+                            PIC: {group.supplier.picName || '-'} • Telp: {group.supplier.phone || '-'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Group Summary Metrics on Header */}
+                      <div className="flex items-center gap-4 text-xs font-bold shrink-0">
+                        <div className="text-right">
+                          <div className="text-[10px] uppercase font-bold text-[#8C7B6C]">Total Penjualan</div>
+                          <div className="text-xs font-black text-[#2D241E]">{formatIDR(group.totalHargaJual)}</div>
+                        </div>
+                        <div className="h-7 w-px bg-[#E5DACE]" />
+                        <div className="text-right">
+                          <div className="text-[10px] uppercase font-bold text-purple-800">Harga Beli Supplier</div>
+                          <div className="text-xs font-black text-purple-950">{formatIDR(group.totalHargaBeliSupplier)}</div>
+                        </div>
+                        <div className="h-7 w-px bg-[#E5DACE]" />
+                        <div className="text-right">
+                          <div className="text-[10px] uppercase font-bold text-emerald-800">Komisi Toko</div>
+                          <div className="text-xs font-black text-emerald-800">{formatIDR(group.totalKomisiToko)}</div>
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* Accordion Maximized Body: Items Sold During That Period */}
+                    {isExpanded && (
+                      <div className="border-t border-[#E5DACE] bg-white p-0">
+                        {group.items.length === 0 ? (
+                          <div className="p-6 text-center text-xs font-semibold text-[#8C7B6C]">
+                            Belum ada item terjual untuk mitra {group.supplier.name} pada periode yang dipilih.
+                          </div>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead>
+                                <tr className="border-b-2 border-[#E5DACE] bg-[#FDFBF7] text-[#8C7B6C] font-black uppercase text-[10px]">
+                                  <th className="py-2.5 px-4">Tanggal</th>
+                                  <th className="py-2.5 px-4">Items</th>
+                                  <th className="py-2.5 px-4 text-center">Quantity</th>
+                                  <th className="py-2.5 px-4 text-right">Harga Jual</th>
+                                  <th className="py-2.5 px-4 text-right">Harga Beli dari Supplier</th>
+                                  <th className="py-2.5 px-4 text-right">Komisi Toko</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-[#E5DACE]/60">
+                                {group.items.map((item) => (
+                                  <tr key={item.id} className="hover:bg-purple-50/20 transition">
+                                    {/* Column 1: Tanggal */}
+                                    <td className="py-2.5 px-4 text-[#8C7B6C] whitespace-nowrap">
+                                      <div className="font-bold text-[#2D241E]">{formatDateTime(item.createdAt)}</div>
+                                      <div className="text-[10px] text-[#8C7B6C]">Nota: {item.receiptNumber}</div>
+                                    </td>
+
+                                    {/* Column 2: Items */}
+                                    <td className="py-2.5 px-4">
+                                      <div className="font-extrabold text-[#2D241E]">{item.productName}</div>
+                                    </td>
+
+                                    {/* Column 3: Quantity */}
+                                    <td className="py-2.5 px-4 text-center font-extrabold text-[#2D241E]">
+                                      <span className="inline-block rounded-lg bg-gray-100 px-2.5 py-0.5 text-xs font-black">
+                                        {item.quantity} pcs
+                                      </span>
+                                    </td>
+
+                                    {/* Column 4: Harga Jual */}
+                                    <td className="py-2.5 px-4 text-right">
+                                      <div className="font-extrabold text-[#2D241E]">{formatIDR(item.netAmount)}</div>
+                                      <div className="text-[10px] text-[#8C7B6C]">
+                                        @ {formatIDR(item.unitPrice)}
+                                      </div>
+                                    </td>
+
+                                    {/* Column 5: Harga Beli dari Supplier */}
+                                    <td className="py-2.5 px-4 text-right">
+                                      <div className="font-black text-purple-950">{formatIDR(item.storeNetAmount)}</div>
+                                      <div className="text-[10px] text-purple-700 font-semibold">
+                                        @ {formatIDR(Math.round(item.storeNetAmount / (item.quantity || 1)))}
+                                      </div>
+                                    </td>
+
+                                    {/* Column 6: Komisi Toko */}
+                                    <td className="py-2.5 px-4 text-right">
+                                      <div className="font-black text-emerald-800">{formatIDR(item.commissionAmount)}</div>
+                                      <div className="text-[10px] text-emerald-700 font-semibold">
+                                        ({item.commissionMethod === 'percentage' ? `${item.commissionValue}%` : `${formatIDR(item.commissionValue)}/pcs`})
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
             )}
           </div>
         </div>

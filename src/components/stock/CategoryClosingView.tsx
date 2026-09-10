@@ -198,8 +198,8 @@ export const CategoryClosingView: React.FC<CategoryClosingViewProps> = ({
             </button>
           </div>
 
-          {/* Categories Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 overflow-y-auto">
+          {/* Categories Grid (4 Cards per row on desktop) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 overflow-y-auto pr-0.5">
             {categories
               .filter((c) => c.id !== 'all')
               .map((cat) => {
@@ -219,43 +219,54 @@ export const CategoryClosingView: React.FC<CategoryClosingViewProps> = ({
                 return (
                   <div
                     key={cat.id}
-                    className="flex flex-col justify-between rounded-2xl border-2 border-[#E5DACE] bg-white p-4 shadow-xs hover:border-[#D97706] transition"
+                    className="flex flex-col justify-between rounded-2xl border-2 border-[#E5DACE] bg-white p-3.5 shadow-xs hover:border-[#D97706] hover:shadow-sm transition group"
                   >
                     <div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-xl border border-amber-200">
+                      {/* Top Row: Icon + Title & Draft Badge */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-lg border border-amber-200/80 group-hover:scale-105 transition">
                             {cat.icon || '🏷️'}
                           </div>
-                          <div>
-                            <h4 className="font-black text-sm text-[#2D241E]">{cat.name}</h4>
-                            <p className="text-[11px] text-[#8C7B6C]">{readyCount} SKU Ready Stock</p>
+                          <div className="min-w-0">
+                            <h4 className="font-extrabold text-xs sm:text-sm text-[#2D241E] truncate group-hover:text-[#D97706] transition">
+                              {cat.name}
+                            </h4>
+                            <span className="inline-block text-[10px] font-bold text-[#8C7B6C]">
+                              {readyCount} SKU Ready
+                            </span>
                           </div>
                         </div>
 
                         {hasDraft && (
-                          <span className="rounded-full bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 text-[10px] font-black">
-                            Draft Ada
+                          <span className="shrink-0 rounded-md bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 text-[9px] font-black">
+                            Draft
                           </span>
                         )}
                       </div>
 
-                      {lastSession && (
-                        <div className="mt-3 rounded-xl bg-[#FDFBF7] border border-[#E5DACE] p-2 text-[11px] text-[#8C7B6C]">
-                          <div>Closing Terakhir: <strong>{lastSession.closingDate}</strong></div>
-                          <div>Oleh: {lastSession.submittedBy}</div>
+                      {/* Last Closing Metadata */}
+                      {lastSession ? (
+                        <div className="mt-2.5 rounded-xl bg-[#FDFBF7] border border-[#E5DACE]/80 px-2.5 py-1.5 text-[10px] text-[#8C7B6C] flex items-center justify-between">
+                          <span className="truncate">Terakhir: <strong>{lastSession.closingDate}</strong></span>
+                          <span className="text-[9px] text-[#8C7B6C] truncate ml-1">({lastSession.submittedBy})</span>
+                        </div>
+                      ) : (
+                        <div className="mt-2.5 rounded-xl bg-[#FDFBF7]/50 border border-dashed border-[#E5DACE]/60 px-2.5 py-1.5 text-[10px] text-[#8C7B6C]/70">
+                          Belum ada closing sebelumnya
                         </div>
                       )}
                     </div>
 
-                    <div className="mt-4 pt-3 border-t border-[#E5DACE]/60">
+                    {/* Action Button */}
+                    <div className="mt-3 pt-2.5 border-t border-[#E5DACE]/60">
                       <button
                         type="button"
                         onClick={() => handleOpenCategoryClosing(cat.id)}
-                        className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#D97706] px-3.5 py-2 text-xs font-black text-white hover:bg-amber-700 shadow-xs active:scale-95 transition"
+                        className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-[#D97706] hover:bg-amber-700 active:bg-amber-800 px-3 py-2 text-xs font-black text-white shadow-xs active:scale-[0.98] transition cursor-pointer"
                       >
-                        <ClipboardCheck className="h-4 w-4" />
-                        <span>Sesuaikan Stok Penutupan</span>
+                        <ClipboardCheck className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">Sesuaikan Stok Penutupan</span>
                       </button>
                     </div>
                   </div>

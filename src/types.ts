@@ -278,7 +278,7 @@ export interface AuditLog {
   actorName: string;
   actorRole: UserRole;
   action: string;
-  entityType: 'order' | 'session' | 'stock' | 'user' | 'price' | 'discount' | 'supplier' | 'consignment' | 'category' | 'product' | 'receipt' | 'branch';
+  entityType: 'order' | 'session' | 'stock' | 'user' | 'price' | 'discount' | 'supplier' | 'consignment' | 'category' | 'product' | 'receipt' | 'branch' | 'purchase_plan';
   entityId: string;
   details: string;
   beforeValue?: string;
@@ -399,6 +399,13 @@ export interface GoodsReceiptItem {
   productName: string;
   sellingPrice: number;
   quantityReceived: number; // Sellable quantity added to inventory
+  buyPrice?: number;
+  actualBuyPrice?: number;
+  lineTotal?: number;
+  plannedQuantity?: number;
+  plannedBuyPrice?: number;
+  plannedLineTotal?: number;
+  condition?: 'Sesuai Rencana' | 'Berbeda' | 'Tidak Direncanakan' | 'Tidak Diterima';
 }
 
 export interface GoodsReceiptRecord {
@@ -419,11 +426,60 @@ export interface GoodsReceiptRecord {
   totalPurchaseCost?: number;
   paymentMethod?: 'cash' | 'transfer' | 'qris' | 'deposit';
 
+  // For Purchase Plan Linkage (POS-US-075)
+  sourceType?: 'Manual' | 'Dari Rencana Pembelian';
+  purchasePlanId?: string;
+  purchasePlanName?: string;
+  totalPlannedValue?: number;
+  totalActualValue?: number;
+  varianceValue?: number;
+
   // Traceable Stock Movement Reference
   stockMovementRef: string; // e.g. MOV-IN-RCV-20260906-001
   submittedAt?: string;
   createdAt: string;
   updatedAt?: string;
+}
+
+// POS-US-073, POS-US-074, POS-US-075: Rencana Pembelian (Owned Purchases Only)
+export type PurchasePlanStatus =
+  | 'Direncanakan'
+  | 'Terkait Penerimaan'
+  | 'Terealisasi'
+  | 'Dibatalkan';
+
+export interface PurchasePlanProductLine {
+  id: string;
+  productId: string;
+  productSku: string;
+  productName: string;
+  category: string; // Read-only snapshot of product category
+  plannedQuantity: number; // positive whole number >= 1
+  plannedBuyPrice: number; // >= 0
+  lineTotal: number; // plannedQuantity * plannedBuyPrice
+}
+
+export interface PurchasePlan {
+  id: string; // Format: RP-{BRANCHCODE}-{YYYYMM}-{NNNN}
+  namaRencana: string;
+  branchId: string;
+  branchCode: string;
+  branchName: string;
+  supplierId: string;
+  supplierName: string;
+  supplierCategory: string; // Read-only snapshot from supplier master
+  lines: PurchasePlanProductLine[];
+  totalPlannedValue: number;
+  status: PurchasePlanStatus;
+  linkedReceiptId?: string;
+  linkedReceiptNumber?: string;
+  notes?: string;
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+  updatedBy?: string;
+  updatedByName?: string;
+  updatedAt: string;
 }
 
 export interface ReceivingDraft {

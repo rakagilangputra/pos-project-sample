@@ -26,13 +26,15 @@ import {
   ChevronRight,
   ShieldCheck,
   Filter,
+  ClipboardList,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 import { StoreBranch, User, UserRole, Customer, Product, ProductCategoryItem, Supplier, SupplierCategory, AuditLog } from '../types';
 import { FIXED_ROLE_MATRIX, STORE_INFO } from '../data/mockData';
 import { formatIDR, formatDateTime } from '../utils/formatters';
+import { PurchasePlanWorkspace } from './PurchasePlanWorkspace';
 
-type BackofficeTab = 'dashboard' | 'branches' | 'access' | 'audit';
+type BackofficeTab = 'dashboard' | 'branches' | 'access' | 'audit' | 'purchase_plans';
 
 export const BackofficeWorkspace: React.FC = () => {
   const {
@@ -422,6 +424,22 @@ export const BackofficeWorkspace: React.FC = () => {
               <FileText className="h-4 w-4" />
               <span>Audit Log Cabang</span>
             </button>
+
+            {currentUser.role === 'admin' && (
+              <button
+                id="backoffice-tab-purchase-plans"
+                type="button"
+                onClick={() => setActiveTab('purchase_plans')}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition ${
+                  activeTab === 'purchase_plans'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <ClipboardList className="h-4 w-4" />
+                <span>Rencana Pembelian</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1257,6 +1275,13 @@ export const BackofficeWorkspace: React.FC = () => {
                 </table>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ================= TAB 5: RENCANA PEMBELIAN (SUPERADMIN ONLY) ================= */}
+        {activeTab === 'purchase_plans' && (
+          <div className="rounded-3xl border-2 border-[#E5DACE] bg-white overflow-hidden shadow-xs min-h-[720px]">
+            <PurchasePlanWorkspace />
           </div>
         )}
         </div>

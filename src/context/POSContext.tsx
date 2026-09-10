@@ -26,6 +26,9 @@ import {
   SupplierDeliveryLogEntry,
   NotificationDeliveryResult,
   NotificationAttemptType,
+  PurchasePlan,
+  PurchasePlanProductLine,
+  PurchasePlanStatus,
 } from '../types';
 import {
   INITIAL_BRANCHES,
@@ -45,6 +48,7 @@ import {
   INITIAL_CATEGORY_CLOSINGS,
   INITIAL_SUPPLIER_NOTIFICATION_BATCHES,
   INITIAL_SUPPLIER_DELIVERY_LOGS,
+  INITIAL_PURCHASE_PLANS,
 } from '../data/mockData';
 import { generateReceiptNumber, generatePONumber, posSound } from '../utils/formatters';
 
@@ -286,6 +290,28 @@ interface POSContextType {
     supplier: Supplier,
     ordersToInclude: Order[]
   ) => string;
+
+  // Purchase Planning (POS-US-073, POS-US-074, POS-US-075)
+  purchasePlans: PurchasePlan[];
+  addPurchasePlan: (data: {
+    namaRencana: string;
+    branchId: string;
+    supplierId: string;
+    lines: { productId: string; plannedQuantity: number; plannedBuyPrice: number }[];
+    notes?: string;
+  }) => { success: boolean; plan?: PurchasePlan; message: string };
+  updatePurchasePlan: (
+    id: string,
+    data: {
+      namaRencana?: string;
+      supplierId?: string;
+      lines?: { productId: string; plannedQuantity: number; plannedBuyPrice: number }[];
+      notes?: string;
+    }
+  ) => { success: boolean; plan?: PurchasePlan; message: string };
+  cancelPurchasePlan: (id: string, reason?: string) => { success: boolean; message: string };
+  lockPurchasePlanForReceipt: (id: string) => { success: boolean; message: string };
+  unlockPurchasePlanFromReceipt: (id: string) => { success: boolean; message: string };
 }
 
 const POSContext = createContext<POSContextType | undefined>(undefined);
@@ -668,6 +694,22 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [receivingDraft]);
 
+  // POS-US-073, POS-US-074, POS-US-075: Rencana Pembelian (Owned Purchases Only)
+  const [purchasePlans, setPurchasePlans] = useState<PurchasePlan[]>(() => {
+    const saved = localStorage.getItem('pos_purchase_plans_v1');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return INITIAL_PURCHASE_PLANS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('pos_purchase_plans_v1', JSON.stringify(purchasePlans));
+  }, [purchasePlans]);
+
   // POS-US-069: Category Daily Closings
   const [categoryClosings, setCategoryClosings] = useState<CategoryClosingSession[]>(() => {
     const saved = localStorage.getItem('pos_category_closings');
@@ -863,7 +905,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Helper to log an audit event
   const addAudit = (
     action: string,
-    entityType: 'order' | 'session' | 'stock' | 'user' | 'price' | 'discount' | 'supplier' | 'consignment' | 'category' | 'product' | 'receipt' | 'branch',
+    entityType: AuditLog['entityType'],
     entityId: string,
     details: string,
     beforeValue?: string,
@@ -2983,19 +3025,24 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
+    let safeTotalPurchaseCost = receiptData.totalPurchaseCost;
+    let safePaymentMethod = receiptData.paymentMethod;
+
     if (receiptData.receiptType === 'Dibeli Sendiri') {
       if (
-        receiptData.totalPurchaseCost === undefined ||
-        receiptData.totalPurchaseCost === null ||
-        isNaN(receiptData.totalPurchaseCost) ||
-        receiptData.totalPurchaseCost < 0
+        safeTotalPurchaseCost === undefined ||
+        safeTotalPurchaseCost === null ||
+        isNaN(safeTotalPurchaseCost) ||
+        safeTotalPurchaseCost < 0
       ) {
-        posSound.error();
-        return { success: false, message: 'Total biaya pembelian wajib diisi untuk penerimaan Dibeli Sendiri!' };
+        // Auto-calculate from items if available, or fallback to 0
+        safeTotalPurchaseCost = receiptData.items.reduce((sum, it) => {
+          const price = it.actualBuyPrice ?? it.plannedBuyPrice ?? Math.round(it.sellingPrice * 0.6);
+          return sum + (it.quantityReceived * price);
+        }, 0);
       }
-      if (!receiptData.paymentMethod) {
-        posSound.error();
-        return { success: false, message: 'Metode pembayaran wajib dipilih untuk penerimaan Dibeli Sendiri!' };
+      if (!safePaymentMethod) {
+        safePaymentMethod = 'transfer';
       }
     }
 
@@ -3014,6 +3061,8 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       branchId: selectedBranchId,
       receiptNumber,
       totalQuantity,
+      totalPurchaseCost: safeTotalPurchaseCost,
+      paymentMethod: safePaymentMethod,
       status: 'submitted',
       stockMovementRef,
       submittedAt: now.toISOString(),
@@ -3054,7 +3103,33 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setStockAdjustments((prev) => [...newStockAdjustments, ...prev]);
     setGoodsReceipts((prev) => [newRecord, ...prev]);
 
-    // 4. Log audit trail
+    // 4. Atomically realize linked purchase plan (POS-US-075)
+    if (receiptData.purchasePlanId) {
+      setPurchasePlans((prevPlans) =>
+        prevPlans.map((p) => {
+          if (p.id === receiptData.purchasePlanId) {
+            return {
+              ...p,
+              status: 'Terealisasi',
+              linkedReceiptId: id,
+              linkedReceiptNumber: receiptNumber,
+              updatedAt: now.toISOString(),
+              updatedBy: currentUser.id,
+              updatedByName: `${currentUser.name} (${currentUser.role})`,
+            };
+          }
+          return p;
+        })
+      );
+      addAudit(
+        'REALISASI_RENCANA_PEMBELIAN',
+        'purchase_plan',
+        receiptData.purchasePlanId,
+        `Realisasi Rencana Pembelian ${receiptData.purchasePlanId} berhasil melalui Bukti Penerimaan ${receiptNumber} [Ref: ${stockMovementRef}]`
+      );
+    }
+
+    // 5. Log audit trail
     addAudit(
       'SUBMIT_GOODS_RECEIPT',
       'receipt',
@@ -3062,7 +3137,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       `Penerimaan Barang ${receiptNumber} (${receiptData.receiptType}) dari ${receiptData.supplierName}: ${totalQuantity} pcs masuk stok jual. Ref: ${stockMovementRef}`
     );
 
-    // 5. Sound & Clear Draft
+    // 6. Sound & Clear Draft
     posSound.cashRegister();
     setReceivingDraft(null);
 
@@ -3071,6 +3146,385 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       receipt: newRecord,
       message: `Penerimaan barang ${receiptNumber} berhasil disimpan! ${totalQuantity} pcs telah ditambahkan ke stok jual.`,
     };
+  };
+
+  // =========================================================================
+  // POS-US-073, POS-US-074, POS-US-075: RENCANA PEMBELIAN (PURCHASE PLANNING)
+  // Superadmin Only - Owned Purchases Only - No stock edits in this module
+  // =========================================================================
+
+  // Create Purchase Plan (Superadmin Only)
+  const addPurchasePlan = (data: {
+    namaRencana: string;
+    branchId: string;
+    supplierId: string;
+    lines: { productId: string; plannedQuantity: number; plannedBuyPrice: number }[];
+    notes?: string;
+  }) => {
+    // 1. Permission check
+    if (currentUser.role !== 'admin') {
+      posSound.error();
+      return { success: false, message: 'Hanya Superadmin yang berhak membuat Rencana Pembelian!' };
+    }
+
+    // 2. Validate Branch
+    const targetBranch = branches.find((b) => b.id === data.branchId);
+    if (!targetBranch || targetBranch.status === 'inactive') {
+      posSound.error();
+      return { success: false, message: 'Cabang aktif wajib dipilih sebelum membuat rencana pembelian!' };
+    }
+
+    // 3. Validate Plan Name
+    if (!data.namaRencana || !data.namaRencana.trim()) {
+      posSound.error();
+      return { success: false, message: 'Nama Rencana Pembelian wajib diisi!' };
+    }
+
+    // 4. Validate Supplier
+    const targetSupplier = suppliers.find((s) => s.id === data.supplierId);
+    if (!targetSupplier) {
+      posSound.error();
+      return { success: false, message: 'Mitra Supplier wajib dipilih!' };
+    }
+
+    // 5. Validate Product Lines
+    if (!data.lines || data.lines.length === 0) {
+      posSound.error();
+      return { success: false, message: 'Minimal harus ada 1 baris item produk dalam rencana pembelian!' };
+    }
+
+    // Check for duplicate products
+    const productIdsSeen = new Set<string>();
+    const formattedLines: PurchasePlanProductLine[] = [];
+
+    for (let i = 0; i < data.lines.length; i++) {
+      const line = data.lines[i];
+      if (!line.productId) {
+        posSound.error();
+        return { success: false, message: `Baris #${i + 1} belum memilih produk!` };
+      }
+      if (productIdsSeen.has(line.productId)) {
+        posSound.error();
+        return {
+          success: false,
+          message: 'Produk tidak boleh diduplikasi dalam rencana pembelian yang sama. Silakan edit kuantitas baris yang sudah ada.',
+        };
+      }
+      productIdsSeen.add(line.productId);
+
+      const prod = products.find((p) => p.id === line.productId);
+      if (!prod) {
+        posSound.error();
+        return { success: false, message: `Produk pada baris #${i + 1} tidak ditemukan!` };
+      }
+      if (prod.ownershipType === 'consignment') {
+        posSound.error();
+        return {
+          success: false,
+          message: `Produk "${prod.name}" adalah barang titipan konsinyasi. Modul Rencana Pembelian hanya berlaku untuk barang Dibeli Sendiri (Owned Goods)!`,
+        };
+      }
+
+      const qty = Math.floor(Number(line.plannedQuantity));
+      if (isNaN(qty) || qty <= 0) {
+        posSound.error();
+        return {
+          success: false,
+          message: `Jumlah rencana beli untuk "${prod.name}" harus berupa angka bulat positif (minimal 1)!`,
+        };
+      }
+
+      const price = Math.max(0, Number(line.plannedBuyPrice) || 0);
+      const lineTotal = qty * price;
+
+      formattedLines.push({
+        id: `rpl-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
+        productId: prod.id,
+        productSku: prod.sku,
+        productName: prod.name,
+        category: prod.categoryLabel || prod.category || 'Umum',
+        plannedQuantity: qty,
+        plannedBuyPrice: price,
+        lineTotal,
+      });
+    }
+
+    // 6. Calculate total planned value
+    const totalPlannedValue = formattedLines.reduce((sum, l) => sum + l.lineTotal, 0);
+
+    // 7. Generate ID format: RP-{BRANCHCODE}-{YYYYMM}-{NNNN}
+    const now = new Date();
+    const yearMonth = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const cleanBranchCode = (targetBranch.code || 'CAB01').replace(/[^a-zA-Z0-9]/g, '').toUpperCase() || 'CAB01';
+    const prefix = `RP-${cleanBranchCode}-${yearMonth}-`;
+
+    let maxSeq = 0;
+    purchasePlans.forEach((p) => {
+      if (p.id.startsWith(prefix)) {
+        const seqStr = p.id.replace(prefix, '');
+        const num = parseInt(seqStr, 10);
+        if (!isNaN(num) && num > maxSeq) {
+          maxSeq = num;
+        }
+      }
+    });
+    const seq = String(maxSeq + 1).padStart(4, '0');
+    const planId = `${prefix}${seq}`;
+
+    // 8. Create Plan object (DO NOT ADD OR EDIT STOCK QUANTITY HERE)
+    const newPlan: PurchasePlan = {
+      id: planId,
+      namaRencana: data.namaRencana.trim(),
+      branchId: targetBranch.id,
+      branchCode: targetBranch.code,
+      branchName: targetBranch.name,
+      supplierId: targetSupplier.id,
+      supplierName: targetSupplier.name,
+      supplierCategory: targetSupplier.category || 'Umum',
+      lines: formattedLines,
+      totalPlannedValue,
+      status: 'Direncanakan',
+      notes: data.notes?.trim() || undefined,
+      createdBy: currentUser.id,
+      createdByName: `${currentUser.name} (${currentUser.role})`,
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+    };
+
+    setPurchasePlans((prev) => [newPlan, ...prev]);
+
+    // 9. Audit log
+    addAudit(
+      'CREATE_PURCHASE_PLAN',
+      'purchase_plan',
+      planId,
+      `Superadmin ${currentUser.name} membuat Rencana Pembelian ${planId} (${newPlan.namaRencana}) di ${targetBranch.name} untuk supplier ${targetSupplier.name} senilai Rp ${totalPlannedValue.toLocaleString('id-ID')}`
+    );
+
+    posSound.cashRegister();
+    return {
+      success: true,
+      plan: newPlan,
+      message: `Rencana Pembelian ${planId} berhasil disimpan dengan status Direncanakan!`,
+    };
+  };
+
+  // Edit Purchase Plan (Superadmin Only, Only 'Direncanakan', Branch is IMMUTABLE)
+  const updatePurchasePlan = (
+    id: string,
+    data: {
+      namaRencana?: string;
+      supplierId?: string;
+      lines?: { productId: string; plannedQuantity: number; plannedBuyPrice: number }[];
+      notes?: string;
+    }
+  ) => {
+    if (currentUser.role !== 'admin') {
+      posSound.error();
+      return { success: false, message: 'Hanya Superadmin yang berhak mengubah Rencana Pembelian!' };
+    }
+
+    const targetPlan = purchasePlans.find((p) => p.id === id);
+    if (!targetPlan) {
+      posSound.error();
+      return { success: false, message: 'Rencana Pembelian tidak ditemukan!' };
+    }
+
+    if (targetPlan.status !== 'Direncanakan') {
+      posSound.error();
+      return {
+        success: false,
+        message: `Rencana Pembelian ${id} berstatus "${targetPlan.status}" dan tidak dapat diubah lagi!`,
+      };
+    }
+
+    let updatedSupplierId = targetPlan.supplierId;
+    let updatedSupplierName = targetPlan.supplierName;
+    let updatedSupplierCategory = targetPlan.supplierCategory;
+
+    if (data.supplierId && data.supplierId !== targetPlan.supplierId) {
+      const sup = suppliers.find((s) => s.id === data.supplierId);
+      if (sup) {
+        updatedSupplierId = sup.id;
+        updatedSupplierName = sup.name;
+        updatedSupplierCategory = sup.category || 'Umum';
+      }
+    }
+
+    let updatedLines = targetPlan.lines;
+    if (data.lines) {
+      if (data.lines.length === 0) {
+        posSound.error();
+        return { success: false, message: 'Minimal harus ada 1 baris item produk dalam rencana pembelian!' };
+      }
+      const productIdsSeen = new Set<string>();
+      const formattedLines: PurchasePlanProductLine[] = [];
+
+      for (let i = 0; i < data.lines.length; i++) {
+        const line = data.lines[i];
+        if (productIdsSeen.has(line.productId)) {
+          posSound.error();
+          return {
+            success: false,
+            message: 'Produk tidak boleh diduplikasi dalam rencana pembelian yang sama. Silakan edit kuantitas baris yang sudah ada.',
+          };
+        }
+        productIdsSeen.add(line.productId);
+
+        const prod = products.find((p) => p.id === line.productId);
+        if (!prod) {
+          posSound.error();
+          return { success: false, message: `Produk pada baris #${i + 1} tidak ditemukan!` };
+        }
+        if (prod.ownershipType === 'consignment') {
+          posSound.error();
+          return {
+            success: false,
+            message: `Produk "${prod.name}" adalah barang konsinyasi. Rencana Pembelian hanya untuk barang Dibeli Sendiri!`,
+          };
+        }
+
+        const qty = Math.floor(Number(line.plannedQuantity));
+        if (isNaN(qty) || qty <= 0) {
+          posSound.error();
+          return {
+            success: false,
+            message: `Jumlah rencana beli untuk "${prod.name}" harus berupa angka bulat positif (minimal 1)!`,
+          };
+        }
+
+        const price = Math.max(0, Number(line.plannedBuyPrice) || 0);
+        const lineTotal = qty * price;
+
+        formattedLines.push({
+          id: `rpl-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
+          productId: prod.id,
+          productSku: prod.sku,
+          productName: prod.name,
+          category: prod.categoryLabel || prod.category || 'Umum',
+          plannedQuantity: qty,
+          plannedBuyPrice: price,
+          lineTotal,
+        });
+      }
+      updatedLines = formattedLines;
+    }
+
+    const totalPlannedValue = updatedLines.reduce((sum, l) => sum + l.lineTotal, 0);
+    const now = new Date();
+
+    const updatedPlan: PurchasePlan = {
+      ...targetPlan,
+      namaRencana: data.namaRencana !== undefined ? data.namaRencana.trim() : targetPlan.namaRencana,
+      supplierId: updatedSupplierId,
+      supplierName: updatedSupplierName,
+      supplierCategory: updatedSupplierCategory,
+      lines: updatedLines,
+      totalPlannedValue,
+      notes: data.notes !== undefined ? data.notes.trim() : targetPlan.notes,
+      updatedAt: now.toISOString(),
+      updatedBy: currentUser.id,
+      updatedByName: `${currentUser.name} (${currentUser.role})`,
+    };
+
+    setPurchasePlans((prev) => prev.map((p) => (p.id === id ? updatedPlan : p)));
+
+    addAudit(
+      'UPDATE_PURCHASE_PLAN',
+      'purchase_plan',
+      id,
+      `Superadmin ${currentUser.name} memperbarui Rencana Pembelian ${id} (Total Rencana: Rp ${totalPlannedValue.toLocaleString('id-ID')})`
+    );
+
+    posSound.beep();
+    return {
+      success: true,
+      plan: updatedPlan,
+      message: `Rencana Pembelian ${id} berhasil diperbarui!`,
+    };
+  };
+
+  // Cancel Purchase Plan (Superadmin Only, Only 'Direncanakan')
+  const cancelPurchasePlan = (id: string, reason?: string) => {
+    if (currentUser.role !== 'admin') {
+      posSound.error();
+      return { success: false, message: 'Hanya Superadmin yang berhak membatalkan Rencana Pembelian!' };
+    }
+
+    const targetPlan = purchasePlans.find((p) => p.id === id);
+    if (!targetPlan) {
+      posSound.error();
+      return { success: false, message: 'Rencana Pembelian tidak ditemukan!' };
+    }
+
+    if (targetPlan.status !== 'Direncanakan') {
+      posSound.error();
+      return {
+        success: false,
+        message: `Rencana Pembelian ${id} tidak dapat dibatalkan karena berstatus "${targetPlan.status}"!`,
+      };
+    }
+
+    const now = new Date();
+    setPurchasePlans((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p;
+        return {
+          ...p,
+          status: 'Dibatalkan',
+          notes: reason ? `${p.notes ? p.notes + ' | ' : ''}Alasan Batal: ${reason}` : p.notes,
+          updatedAt: now.toISOString(),
+          updatedBy: currentUser.id,
+          updatedByName: `${currentUser.name} (${currentUser.role})`,
+        };
+      })
+    );
+
+    addAudit(
+      'CANCEL_PURCHASE_PLAN',
+      'purchase_plan',
+      id,
+      `Superadmin ${currentUser.name} membatalkan Rencana Pembelian ${id}. ${reason ? 'Alasan: ' + reason : ''}`
+    );
+
+    posSound.beep();
+    return {
+      success: true,
+      message: `Rencana Pembelian ${id} berhasil dibatalkan!`,
+    };
+  };
+
+  // Lock Purchase Plan for Goods Receipt draft
+  const lockPurchasePlanForReceipt = (id: string) => {
+    const targetPlan = purchasePlans.find((p) => p.id === id);
+    if (!targetPlan) {
+      return { success: false, message: 'Rencana Pembelian tidak ditemukan!' };
+    }
+    if (targetPlan.status !== 'Direncanakan') {
+      return {
+        success: false,
+        message: `Rencana Pembelian ${id} tidak tersedia (status: ${targetPlan.status}).`,
+      };
+    }
+
+    const now = new Date();
+    setPurchasePlans((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, status: 'Terkait Penerimaan', updatedAt: now.toISOString() } : p))
+    );
+
+    return { success: true, message: 'Rencana Pembelian dikunci untuk proses penerimaan barang.' };
+  };
+
+  // Unlock Purchase Plan if Goods Receipt draft is discarded
+  const unlockPurchasePlanFromReceipt = (id: string) => {
+    const targetPlan = purchasePlans.find((p) => p.id === id);
+    if (targetPlan && targetPlan.status === 'Terkait Penerimaan') {
+      const now = new Date();
+      setPurchasePlans((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, status: 'Direncanakan', updatedAt: now.toISOString() } : p))
+      );
+    }
+    return { success: true, message: 'Rencana Pembelian dikembalikan ke status Direncanakan.' };
   };
 
   // POS-US-072 & POS-US-067: Update Product Information (Master data only, NEVER stock or Stok Awal)
@@ -3927,6 +4381,12 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         sendSupplierWhatsAppNotification,
         resendSupplierWhatsAppNotification,
         generateSupplierWhatsAppMessage,
+        purchasePlans,
+        addPurchasePlan,
+        updatePurchasePlan,
+        cancelPurchasePlan,
+        lockPurchasePlanForReceipt,
+        unlockPurchasePlanFromReceipt,
       }}
     >
       {children}

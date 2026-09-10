@@ -3,8 +3,6 @@ import {
   AlertTriangle,
   Plus,
   Building2,
-  Trash2,
-  RotateCcw,
   AlertCircle,
   CheckCircle2,
   Package,
@@ -296,7 +294,6 @@ export const BadStockView: React.FC<BadStockViewProps> = ({
                 <th className="py-3 px-3">Produk</th>
                 <th className="py-3 px-3 text-center">Jumlah</th>
                 <th className="py-3 px-3">Alasan Kerusakan</th>
-                <th className="py-3 px-3">Tindakan</th>
                 <th className="py-3 px-3">Pencatat</th>
                 <th className="py-3 px-3.5">Catatan</th>
               </tr>
@@ -327,22 +324,6 @@ export const BadStockView: React.FC<BadStockViewProps> = ({
                         : rec.reason === 'damaged'
                         ? 'Rusak Fisik'
                         : 'Lainnya'}
-                    </span>
-                  </td>
-
-                  <td className="py-2.5 px-3">
-                    <span className="inline-flex items-center gap-1 font-bold text-xs text-[#2D241E]">
-                      {rec.disposition === 'disposed' ? (
-                        <>
-                          <Trash2 className="h-3.5 w-3.5 text-gray-500" />
-                          <span>Dimusnahkan</span>
-                        </>
-                      ) : (
-                        <>
-                          <RotateCcw className="h-3.5 w-3.5 text-purple-700" />
-                          <span>Retur Supplier</span>
-                        </>
-                      )}
                     </span>
                   </td>
 
