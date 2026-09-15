@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, X, Check, Phone, User, CreditCard } from 'lucide-react';
+import { Building2, X, Check, Phone, User, CreditCard, Tag } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
-import { Supplier, SupplierCategory } from '../types';
+import { Supplier } from '../types';
 
 interface AddSupplierModalProps {
   isOpen: boolean;
@@ -16,9 +16,9 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
   onSupplierCreated,
   supplierToEdit,
 }) => {
-  const { addSupplier, updateSupplier } = usePOS();
+  const { addSupplier, updateSupplier, categories } = usePOS();
   const [name, setName] = useState('');
-  const [category, setCategory] = useState<SupplierCategory>('KYD');
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [picName, setPicName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
@@ -29,10 +29,24 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
+  // Active product categories from Stok Kategori
+  const stockCategories = categories.filter((c) => c.id !== 'all');
+
   useEffect(() => {
     if (supplierToEdit) {
       setName(supplierToEdit.name || '');
-      setCategory(supplierToEdit.category || 'KYD');
+      if (supplierToEdit.categories && supplierToEdit.categories.length > 0) {
+        setSelectedCategories(supplierToEdit.categories);
+      } else if (supplierToEdit.category) {
+        setSelectedCategories(
+          supplierToEdit.category
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        );
+      } else {
+        setSelectedCategories([]);
+      }
       setPicName(supplierToEdit.picName || '');
       setPhone(supplierToEdit.phone || '');
       setAddress(supplierToEdit.address || '');
@@ -41,7 +55,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
       setBankAccountHolder(supplierToEdit.bankAccountHolder || '');
     } else {
       setName('');
-      setCategory('KYD');
+      setSelectedCategories([]);
       setPicName('');
       setPhone('');
       setAddress('');
@@ -55,6 +69,23 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
 
   if (!isOpen) return null;
 
+  const handleToggleCategory = (catName: string) => {
+    setSelectedCategories((prev) =>
+      prev.includes(catName) ? prev.filter((c) => c !== catName) : [...prev, catName]
+    );
+  };
+
+  const handleAddCategory = (catName: string) => {
+    if (!catName) return;
+    setSelectedCategories((prev) =>
+      prev.includes(catName) ? prev : [...prev, catName]
+    );
+  };
+
+  const handleRemoveCategory = (catName: string) => {
+    setSelectedCategories((prev) => prev.filter((c) => c !== catName));
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
@@ -66,11 +97,19 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
       return;
     }
 
+    if (selectedCategories.length === 0) {
+      setErrorMsg('Pilih minimal satu Kategori produk dari Stok!');
+      return;
+    }
+
+    const joinedCategory = selectedCategories.join(', ');
+
     let res;
     if (supplierToEdit) {
       res = updateSupplier(supplierToEdit.id, {
         name: trimmedName,
-        category,
+        category: joinedCategory,
+        categories: selectedCategories,
         picName: picName.trim(),
         phone: phone.trim(),
         address: address.trim() || undefined,
@@ -81,7 +120,8 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
     } else {
       res = addSupplier({
         name: trimmedName,
-        category,
+        category: joinedCategory,
+        categories: selectedCategories,
         picName: picName.trim(),
         phone: phone.trim(),
         address: address.trim() || undefined,
@@ -169,25 +209,98 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
             />
           </div>
 
-          {/* Kategori Supplier (Predefined: KYD, RMS, TCC) */}
-          <div className="space-y-1.5">
+          {/* Kategori (Data source: Stok Kategori with Multi-Tag selection) */}
+          <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label htmlFor="supplier-category-select" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-                Kategori Supplier <span className="text-rose-500">*</span>
+                Kategori <span className="text-rose-500">*</span>
               </label>
-              <span className="text-[10px] text-[#8C7B6C] font-semibold">Predefined Backoffice</span>
+              <span className="text-[10px] text-[#8C7B6C] font-semibold">
+                {selectedCategories.length > 0
+                  ? `${selectedCategories.length} Kategori Dipilih`
+                  : 'Pilih dari Kategori Stok'}
+              </span>
             </div>
-            <select
-              id="supplier-category-select"
-              value={category}
-              onChange={(e) => setCategory(e.target.value as SupplierCategory)}
-              className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white px-4 py-2.5 text-sm font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none cursor-pointer"
-              required
-            >
-              <option value="KYD">KYD</option>
-              <option value="RMS">RMS</option>
-              <option value="TCC">TCC</option>
-            </select>
+
+            {/* Selected Categories Badge Chips */}
+            {selectedCategories.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5 p-2 rounded-2xl bg-amber-50/70 border border-amber-200 min-h-[42px] items-center">
+                {selectedCategories.map((catName) => {
+                  const catObj = stockCategories.find((c) => c.name === catName);
+                  return (
+                    <span
+                      key={catName}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-white border border-amber-300 px-2.5 py-1 text-xs font-black text-amber-950 shadow-2xs animate-in fade-in zoom-in-95 duration-150"
+                    >
+                      {catObj?.icon && <span className="text-xs">{catObj.icon}</span>}
+                      <span>{catName}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCategory(catName)}
+                        className="ml-0.5 rounded-md p-0.5 text-amber-700 hover:bg-amber-100 hover:text-amber-900 transition"
+                        title={`Hapus kategori ${catName}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-2xl border-2 border-dashed border-[#E5DACE] bg-white/60 p-2.5 text-center text-xs text-[#8C7B6C] font-medium">
+                Belum ada kategori dipilih. Klik tombol kategori produk di bawah untuk memilih:
+              </div>
+            )}
+
+            {/* Multi-Select Category Pills from Stok Kategori */}
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center gap-1 text-[11px] font-bold text-[#8C7B6C]">
+                <Tag className="h-3 w-3 text-amber-600" />
+                <span>Pilih Kategori Produk (Bisa pilih lebih dari satu):</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {stockCategories.map((cat) => {
+                  const isSelected = selectedCategories.includes(cat.name);
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => handleToggleCategory(cat.name)}
+                      className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-bold transition shadow-2xs active:scale-95 ${
+                        isSelected
+                          ? 'bg-amber-600 text-white border border-amber-700 shadow-xs font-black'
+                          : 'bg-white text-[#2D241E] border border-[#E5DACE] hover:border-amber-400 hover:bg-amber-50/50'
+                      }`}
+                    >
+                      {cat.icon && <span className="text-xs">{cat.icon}</span>}
+                      <span>{cat.name}</span>
+                      {isSelected && <Check className="h-3 w-3 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Dropdown Alternative for Fast / Keyboard Selection */}
+            <div className="pt-1">
+              <select
+                id="supplier-category-select"
+                value=""
+                onChange={(e) => {
+                  if (e.target.value) {
+                    handleAddCategory(e.target.value);
+                  }
+                }}
+                className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3 py-2 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none cursor-pointer"
+              >
+                <option value="">+ Tambah / Pilih Kategori dari Stok...</option>
+                {stockCategories.map((c) => (
+                  <option key={c.id} value={c.name} disabled={selectedCategories.includes(c.name)}>
+                    {c.icon ? `${c.icon} ` : ''}{c.name} {selectedCategories.includes(c.name) ? '✓ (Terpilih)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* PIC & Phone */}

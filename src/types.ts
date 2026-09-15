@@ -302,7 +302,7 @@ export interface StockAdjustmentRecord {
 }
 
 // POS-US-030: Supplier Master
-export type SupplierCategory = 'KYD' | 'RMS' | 'TCC';
+export type SupplierCategory = string;
 export type SettlementScheduleType = 'weekly' | 'twice_monthly';
 export type WeeklyFrequency = 'once' | 'twice' | 'three_times';
 
@@ -310,7 +310,8 @@ export interface Supplier {
   id: string;
   branchId?: string;
   name: string;
-  category?: SupplierCategory; // Predefined backoffice categories: KYD, RMS, TCC
+  category?: string; // e.g. "Roti Manis, Pastry & Croissant"
+  categories?: string[]; // Tagged product categories from Stok Kategori (e.g. ['Roti Manis', 'Cakes & Tart'])
   picName: string;
   phone: string;
   address?: string;
@@ -381,6 +382,9 @@ export interface SupplierSettlementCycle {
   // POS-US-035: Payment evidence
   paymentMethod?: 'cash' | 'transfer' | 'qris' | 'other';
   paymentAmount?: number;
+  piutangUsed?: number;
+  newPiutangGenerated?: number;
+  totalSettledBuyAmount?: number;
   paymentReference?: string;
   settlementNotes?: string;
   settledBy?: string;

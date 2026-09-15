@@ -33,6 +33,37 @@ import { AddSupplierModal } from './AddSupplierModal';
 type ConsignmentLocalView = 'summary' | 'ledger' | 'settlement' | 'suppliers';
 type DateFilterPeriod = 'today' | 'week' | 'month' | 'all';
 
+// Unified Row Type for Accordion Table (Sales & Settlements)
+export type SupplierLedgerRow =
+  | {
+      rowType: 'sale';
+      id: string;
+      date: string;
+      receiptNumber: string;
+      productName: string;
+      quantity: number;
+      hargaBeliSupplier: number;
+      unitHargaBeli: number;
+      status: string;
+      settlementId?: string;
+    }
+  | {
+      rowType: 'settlement';
+      id: string;
+      date: string;
+      reference: string;
+      paymentMethod?: string;
+      title: string;
+      quantitySettled: number;
+      hargaBeliSupplierSettled: number;
+      piutangUsed: number;
+      newPiutangGenerated: number;
+      paymentAmount: number;
+      settlementNotes?: string;
+      settledBy?: string;
+      status: string;
+    };
+
 export const ConsignmentWorkspace: React.FC = () => {
   const {
     suppliers,
@@ -100,36 +131,101 @@ export const ConsignmentWorkspace: React.FC = () => {
     });
   }, [commissionLedger, datePeriod, selectedSupplierId, searchQuery]);
 
-  // Grouped Supplier Ledger for Accordion List
+  // Grouped Supplier Ledger for Accordion List (Sales & Settlement Records)
   const groupedSupplierLedger = useMemo(() => {
     let targetSuppliers = suppliers;
     if (selectedSupplierId !== 'all') {
       targetSuppliers = suppliers.filter((s) => s.id === selectedSupplierId);
     }
 
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const now = new Date();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
     return targetSuppliers.map((supplier) => {
-      const items = filteredLedger.filter((e) => e.supplierId === supplier.id && e.status !== 'reversed');
-      const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
-      const totalHargaJual = items.reduce((sum, item) => sum + item.netAmount, 0);
-      const totalKomisiToko = items.reduce((sum, item) => sum + item.commissionAmount, 0);
-      const totalHargaBeliSupplier = items.reduce((sum, item) => sum + item.storeNetAmount, 0);
+      // 1. Sales Items for this supplier
+      const supSales = filteredLedger.filter((e) => e.supplierId === supplier.id && e.status !== 'reversed');
+      const totalQuantity = supSales.reduce((sum, item) => sum + item.quantity, 0);
+      const totalHargaJual = supSales.reduce((sum, item) => sum + item.netAmount, 0);
+      const totalKomisiToko = supSales.reduce((sum, item) => sum + item.commissionAmount, 0);
+      const totalHargaBeliSupplier = supSales.reduce((sum, item) => sum + item.storeNetAmount, 0);
+
+      const saleRows: SupplierLedgerRow[] = supSales.map((item) => ({
+        rowType: 'sale',
+        id: item.id,
+        date: item.createdAt,
+        receiptNumber: item.receiptNumber,
+        productName: item.productName,
+        quantity: item.quantity,
+        hargaBeliSupplier: item.storeNetAmount,
+        unitHargaBeli: Math.round(item.storeNetAmount / (item.quantity || 1)),
+        status: item.status,
+        settlementId: item.settlementId,
+      }));
+
+      // 2. Settled Cycles for this supplier (displaying settlement history & piutang used)
+      const supSettlements = settlementCycles.filter(
+        (c) => c.supplierId === supplier.id && c.status === 'settled'
+      );
+
+      const filteredSupSettlements = supSettlements.filter((c) => {
+        const settleDate = c.settledAt || c.createdAt;
+        if (datePeriod === 'today' && !settleDate.startsWith(todayStr)) return false;
+        if (datePeriod === 'week' && new Date(settleDate) < weekAgo) return false;
+        if (datePeriod === 'month' && new Date(settleDate) < monthAgo) return false;
+
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase();
+          const matchRef = (c.paymentReference || c.id).toLowerCase().includes(q);
+          const matchMethod = (c.paymentMethod || '').toLowerCase().includes(q);
+          const matchNotes = (c.settlementNotes || '').toLowerCase().includes(q);
+          const matchName = c.supplierName.toLowerCase().includes(q);
+          if (!matchRef && !matchMethod && !matchNotes && !matchName) return false;
+        }
+        return true;
+      });
+
+      const settlementRows: SupplierLedgerRow[] = filteredSupSettlements.map((c) => ({
+        rowType: 'settlement',
+        id: c.id,
+        date: c.settledAt || c.createdAt,
+        reference: c.paymentReference || c.id,
+        paymentMethod: c.paymentMethod,
+        title: `Pelunasan Settlement Konsinyasi (${c.id})`,
+        quantitySettled: c.commissionEntryIds?.length || 1,
+        hargaBeliSupplierSettled: c.totalSettledBuyAmount || c.storeNetAfterCommission,
+        piutangUsed: c.piutangUsed || 0,
+        newPiutangGenerated: c.newPiutangGenerated || 0,
+        paymentAmount: c.paymentAmount !== undefined ? c.paymentAmount : c.storeNetAfterCommission,
+        settlementNotes: c.settlementNotes,
+        settledBy: c.settledBy,
+        status: c.status,
+      }));
+
+      // Unified Rows chronologically descending
+      const rows: SupplierLedgerRow[] = [...saleRows, ...settlementRows].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
 
       return {
         supplier,
-        items,
+        rows,
+        saleRows,
+        settlementRows,
         totalQuantity,
         totalHargaJual,
         totalHargaBeliSupplier,
         totalKomisiToko,
       };
     });
-  }, [suppliers, selectedSupplierId, filteredLedger]);
+  }, [suppliers, selectedSupplierId, filteredLedger, settlementCycles, datePeriod, searchQuery]);
 
-  // Auto-expand suppliers that have items or all suppliers on initial load
+  // Auto-expand suppliers that have rows or all suppliers on initial load
   useEffect(() => {
-    const withItems = groupedSupplierLedger.filter((g) => g.items.length > 0).map((g) => g.supplier.id);
-    if (withItems.length > 0) {
-      setExpandedSupplierIds(withItems);
+    const withRows = groupedSupplierLedger.filter((g) => g.rows.length > 0).map((g) => g.supplier.id);
+    if (withRows.length > 0) {
+      setExpandedSupplierIds(withRows);
     } else {
       setExpandedSupplierIds(suppliers.map((s) => s.id));
     }
@@ -582,8 +678,8 @@ export const ConsignmentWorkspace: React.FC = () => {
                       {/* Group Summary Metrics on Header */}
                       <div className="flex items-center gap-4 text-xs font-bold shrink-0">
                         <div className="text-right">
-                          <div className="text-[10px] uppercase font-bold text-[#8C7B6C]">Total Penjualan</div>
-                          <div className="text-xs font-black text-[#2D241E]">{formatIDR(group.totalHargaJual)}</div>
+                          <div className="text-[10px] uppercase font-bold text-[#8C7B6C]">Item Terjual</div>
+                          <div className="text-xs font-black text-[#2D241E]">{group.totalQuantity} pcs</div>
                         </div>
                         <div className="h-7 w-px bg-[#E5DACE]" />
                         <div className="text-right">
@@ -592,18 +688,18 @@ export const ConsignmentWorkspace: React.FC = () => {
                         </div>
                         <div className="h-7 w-px bg-[#E5DACE]" />
                         <div className="text-right">
-                          <div className="text-[10px] uppercase font-bold text-emerald-800">Komisi Toko</div>
-                          <div className="text-xs font-black text-emerald-800">{formatIDR(group.totalKomisiToko)}</div>
+                          <div className="text-[10px] uppercase font-bold text-amber-800">Saldo Piutang</div>
+                          <div className="text-xs font-black text-amber-900">{formatIDR(group.supplier.balance || 0)}</div>
                         </div>
                       </div>
                     </button>
 
-                    {/* Accordion Maximized Body: Items Sold During That Period */}
+                    {/* Accordion Maximized Body: Items Sold & Settlement History During That Period */}
                     {isExpanded && (
                       <div className="border-t border-[#E5DACE] bg-white p-0">
-                        {group.items.length === 0 ? (
+                        {group.rows.length === 0 ? (
                           <div className="p-6 text-center text-xs font-semibold text-[#8C7B6C]">
-                            Belum ada item terjual untuk mitra {group.supplier.name} pada periode yang dipilih.
+                            Belum ada catatan item terjual atau settlement untuk mitra {group.supplier.name} pada periode yang dipilih.
                           </div>
                         ) : (
                           <div className="overflow-x-auto">
@@ -613,57 +709,136 @@ export const ConsignmentWorkspace: React.FC = () => {
                                   <th className="py-2.5 px-4">Tanggal</th>
                                   <th className="py-2.5 px-4">Items</th>
                                   <th className="py-2.5 px-4 text-center">Quantity</th>
-                                  <th className="py-2.5 px-4 text-right">Harga Jual</th>
                                   <th className="py-2.5 px-4 text-right">Harga Beli dari Supplier</th>
-                                  <th className="py-2.5 px-4 text-right">Komisi Toko</th>
+                                  <th className="py-2.5 px-4 text-right">Piutang (Supplier Balance)</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-[#E5DACE]/60">
-                                {group.items.map((item) => (
-                                  <tr key={item.id} className="hover:bg-purple-50/20 transition">
-                                    {/* Column 1: Tanggal */}
-                                    <td className="py-2.5 px-4 text-[#8C7B6C] whitespace-nowrap">
-                                      <div className="font-bold text-[#2D241E]">{formatDateTime(item.createdAt)}</div>
-                                      <div className="text-[10px] text-[#8C7B6C]">Nota: {item.receiptNumber}</div>
-                                    </td>
+                                {group.rows.map((row) => {
+                                  if (row.rowType === 'sale') {
+                                    return (
+                                      <tr key={row.id} className="hover:bg-purple-50/20 transition">
+                                        {/* Column 1: Tanggal */}
+                                        <td className="py-2.5 px-4 text-[#8C7B6C] whitespace-nowrap">
+                                          <div className="font-bold text-[#2D241E]">{formatDateTime(row.date)}</div>
+                                          <div className="text-[10px] text-[#8C7B6C]">Nota: {row.receiptNumber}</div>
+                                        </td>
 
-                                    {/* Column 2: Items */}
-                                    <td className="py-2.5 px-4">
-                                      <div className="font-extrabold text-[#2D241E]">{item.productName}</div>
-                                    </td>
+                                        {/* Column 2: Items */}
+                                        <td className="py-2.5 px-4">
+                                          <div className="font-extrabold text-[#2D241E]">{row.productName}</div>
+                                          {row.status === 'settled' ? (
+                                            <span className="inline-flex items-center gap-1 mt-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.2 text-[9px] font-bold">
+                                              <Check className="h-2.5 w-2.5 text-emerald-600" /> Disettle (Ref: {row.settlementId})
+                                            </span>
+                                          ) : (
+                                            <span className="inline-flex items-center gap-1 mt-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.2 text-[9px] font-bold">
+                                              Belum Settlement
+                                            </span>
+                                          )}
+                                        </td>
 
-                                    {/* Column 3: Quantity */}
-                                    <td className="py-2.5 px-4 text-center font-extrabold text-[#2D241E]">
-                                      <span className="inline-block rounded-lg bg-gray-100 px-2.5 py-0.5 text-xs font-black">
-                                        {item.quantity} pcs
-                                      </span>
-                                    </td>
+                                        {/* Column 3: Quantity */}
+                                        <td className="py-2.5 px-4 text-center font-extrabold text-[#2D241E]">
+                                          <span className="inline-block rounded-lg bg-gray-100 px-2.5 py-0.5 text-xs font-black">
+                                            {row.quantity} pcs
+                                          </span>
+                                        </td>
 
-                                    {/* Column 4: Harga Jual */}
-                                    <td className="py-2.5 px-4 text-right">
-                                      <div className="font-extrabold text-[#2D241E]">{formatIDR(item.netAmount)}</div>
-                                      <div className="text-[10px] text-[#8C7B6C]">
-                                        @ {formatIDR(item.unitPrice)}
-                                      </div>
-                                    </td>
+                                        {/* Column 4: Harga Beli dari Supplier */}
+                                        <td className="py-2.5 px-4 text-right">
+                                          <div className="font-black text-purple-950">{formatIDR(row.hargaBeliSupplier)}</div>
+                                          <div className="text-[10px] text-purple-700 font-semibold">
+                                            @ {formatIDR(row.unitHargaBeli)}
+                                          </div>
+                                        </td>
 
-                                    {/* Column 5: Harga Beli dari Supplier */}
-                                    <td className="py-2.5 px-4 text-right">
-                                      <div className="font-black text-purple-950">{formatIDR(item.storeNetAmount)}</div>
-                                      <div className="text-[10px] text-purple-700 font-semibold">
-                                        @ {formatIDR(Math.round(item.storeNetAmount / (item.quantity || 1)))}
-                                      </div>
-                                    </td>
+                                        {/* Column 5: Piutang (Supplier Balance) */}
+                                        <td className="py-2.5 px-4 text-right">
+                                          <span className="text-xs text-[#8C7B6C] font-semibold">—</span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  }
 
-                                    {/* Column 6: Komisi Toko */}
-                                    <td className="py-2.5 px-4 text-right">
-                                      <div className="font-black text-emerald-800">{formatIDR(item.commissionAmount)}</div>
-                                      <div className="text-[10px] text-emerald-700 font-semibold">
-                                        ({item.commissionMethod === 'percentage' ? `${item.commissionValue}%` : `${formatIDR(item.commissionValue)}/pcs`})
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
+                                  // row.rowType === 'settlement'
+                                  return (
+                                    <tr key={row.id} className="bg-purple-50/40 hover:bg-purple-100/50 transition border-l-4 border-l-purple-600">
+                                      {/* Column 1: Tanggal Settlement */}
+                                      <td className="py-2.5 px-4 whitespace-nowrap">
+                                        <div className="font-black text-purple-950">{formatDateTime(row.date)}</div>
+                                        <div className="text-[10px] text-purple-700 font-semibold">Ref: {row.reference}</div>
+                                      </td>
+
+                                      {/* Column 2: Items (Settlement Record Info) */}
+                                      <td className="py-2.5 px-4">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="rounded-md bg-purple-700 text-white px-2 py-0.5 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
+                                            <CheckCircle2 className="h-3 w-3" /> Pelunasan Settlement
+                                          </span>
+                                          <span className="font-black text-xs text-[#2D241E]">
+                                            Pelunasan Hak Supplier ({row.id})
+                                          </span>
+                                        </div>
+                                        <div className="text-[10px] text-[#8C7B6C] mt-0.5">
+                                          Metode: <strong className="text-purple-950 uppercase">{row.paymentMethod || 'TRANSFER'}</strong>
+                                          {row.settledBy && <span> • Dicatat: {row.settledBy}</span>}
+                                          {row.settlementNotes && <span> • Catatan: {row.settlementNotes}</span>}
+                                        </div>
+                                      </td>
+
+                                      {/* Column 3: Quantity */}
+                                      <td className="py-2.5 px-4 text-center">
+                                        <span className="inline-block rounded-lg bg-purple-100 text-purple-900 border border-purple-200 px-2.5 py-0.5 text-xs font-black">
+                                          {row.quantitySettled} Item Disettle
+                                        </span>
+                                      </td>
+
+                                      {/* Column 4: Harga Beli dari Supplier (Yang Disettle) */}
+                                      <td className="py-2.5 px-4 text-right">
+                                        <div className="font-black text-purple-950 text-xs">
+                                          {formatIDR(row.hargaBeliSupplierSettled)}
+                                        </div>
+                                        <div className="text-[10px] text-emerald-700 font-bold flex items-center justify-end gap-1">
+                                          <Check className="h-3 w-3" /> Lunas Diselesaikan
+                                        </div>
+                                        {row.paymentAmount !== row.hargaBeliSupplierSettled && (
+                                          <div className="text-[9px] text-[#8C7B6C] font-semibold">
+                                            Bayar: {formatIDR(row.paymentAmount)}
+                                          </div>
+                                        )}
+                                      </td>
+
+                                      {/* Column 5: Piutang (Supplier Balance Used / Generated) */}
+                                      <td className="py-2.5 px-4 text-right">
+                                        {row.piutangUsed > 0 ? (
+                                          <div>
+                                            <div className="font-black text-amber-900 text-xs">
+                                              -{formatIDR(row.piutangUsed)}
+                                            </div>
+                                            <div className="text-[10px] text-amber-700 font-bold">
+                                              Piutang Digunakan
+                                            </div>
+                                          </div>
+                                        ) : row.newPiutangGenerated > 0 ? (
+                                          <div>
+                                            <div className="font-black text-emerald-800 text-xs">
+                                              +{formatIDR(row.newPiutangGenerated)}
+                                            </div>
+                                            <div className="text-[10px] text-emerald-700 font-bold">
+                                              Lebih Bayar (Piutang Baru)
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <div>
+                                            <div className="font-bold text-[#8C7B6C] text-xs">Rp 0</div>
+                                            <div className="text-[10px] text-[#8C7B6C]">Tanpa Piutang</div>
+                                          </div>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
                               </tbody>
                             </table>
                           </div>
@@ -725,64 +900,86 @@ export const ConsignmentWorkspace: React.FC = () => {
                     <th className="py-2.5 px-3 text-right">Penjualan Bersih</th>
                     <th className="py-2.5 px-3 text-right">Komisi Toko</th>
                     <th className="py-2.5 px-3 text-right">Hutang Dibayar (Net)</th>
+                    <th className="py-2.5 px-3 text-right">Piutang</th>
                     <th className="py-2.5 px-3 text-center">Status</th>
                     <th className="py-2.5 px-3 text-right">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E5DACE]/60">
-                  {filteredCycles.map((cycle) => (
-                    <tr key={cycle.id} className="hover:bg-[#FDFBF7] transition">
-                      <td className="py-2.5 px-3">
-                        <span className="font-bold text-[#2D241E]">{cycle.supplierName}</span>
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-semibold">
-                        {formatIDR(cycle.netItemSales)}
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-bold text-emerald-800">
-                        {formatIDR(cycle.commissionPayable)}
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-black text-purple-950 text-sm">
-                        {formatIDR(cycle.storeNetAfterCommission)}
-                      </td>
-                      <td className="py-2.5 px-3 text-center">
-                        <span
-                          className={`rounded-full px-2.5 py-0.5 text-[9px] font-black ${
-                            cycle.status === 'settled'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-amber-100 text-amber-800'
-                          }`}
-                        >
-                          {cycle.status === 'settled' ? 'LUNAS' : 'BELUM DIBAYAR'}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-right">
-                        {cycle.status !== 'settled' ? (
-                          <button
-                            onClick={() => {
-                              setPaymentCycle(cycle);
-                              setPayMethod('transfer');
-                              const sup = suppliers.find((s) => s.id === cycle.supplierId);
-                              const piutang = sup?.balance || 0;
-                              const defaultPay = Math.max(0, cycle.storeNetAfterCommission - piutang);
-                              setPayAmount(defaultPay.toString());
-                              setPayReference('');
-                              setPayNotes('');
-                              setPayPin('');
-                              setPayError('');
-                              setPaySuccess('');
-                            }}
-                            className="rounded-xl bg-purple-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-purple-800 shadow-xs active:scale-95 transition"
+                  {filteredCycles.map((cycle) => {
+                    const piutangExcess =
+                      cycle.newPiutangGenerated !== undefined && cycle.newPiutangGenerated > 0
+                        ? cycle.newPiutangGenerated
+                        : cycle.paymentAmount !== undefined
+                        ? Math.max(0, (cycle.paymentAmount + (cycle.piutangUsed || 0)) - cycle.storeNetAfterCommission)
+                        : 0;
+
+                    return (
+                      <tr key={cycle.id} className="hover:bg-[#FDFBF7] transition">
+                        <td className="py-2.5 px-3">
+                          <span className="font-bold text-[#2D241E]">{cycle.supplierName}</span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-semibold">
+                          {formatIDR(cycle.netItemSales)}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-bold text-emerald-800">
+                          {formatIDR(cycle.commissionPayable)}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-black text-purple-950 text-sm">
+                          {formatIDR(cycle.storeNetAfterCommission)}
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          {piutangExcess > 0 ? (
+                            <div className="flex flex-col items-end">
+                              <span className="inline-flex items-center gap-1 rounded-lg bg-amber-100 px-2 py-0.5 text-[11px] font-black text-amber-950 border border-amber-300">
+                                +{formatIDR(piutangExcess)}
+                              </span>
+                              <span className="text-[9px] text-amber-700 font-bold">Lebih Bayar</span>
+                            </div>
+                          ) : (
+                            <span className="text-[#8C7B6C] font-semibold text-xs">-</span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span
+                            className={`rounded-full px-2.5 py-0.5 text-[9px] font-black ${
+                              cycle.status === 'settled'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}
                           >
-                            Catat Bayar
-                          </button>
-                        ) : (
-                          <span className="text-[11px] text-emerald-800 font-bold">
-                            Dibayar ({cycle.paymentMethod?.toUpperCase()})
+                            {cycle.status === 'settled' ? 'LUNAS' : 'BELUM DIBAYAR'}
                           </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          {cycle.status !== 'settled' ? (
+                            <button
+                              onClick={() => {
+                                setPaymentCycle(cycle);
+                                setPayMethod('transfer');
+                                const sup = suppliers.find((s) => s.id === cycle.supplierId);
+                                const piutang = sup?.balance || 0;
+                                const defaultPay = Math.max(0, cycle.storeNetAfterCommission - piutang);
+                                setPayAmount(defaultPay.toString());
+                                setPayReference('');
+                                setPayNotes('');
+                                setPayPin('');
+                                setPayError('');
+                                setPaySuccess('');
+                              }}
+                              className="rounded-xl bg-purple-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-purple-800 shadow-xs active:scale-95 transition"
+                            >
+                              Catat Bayar
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-emerald-800 font-bold">
+                              Dibayar ({cycle.paymentMethod?.toUpperCase()})
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
@@ -825,13 +1022,24 @@ export const ConsignmentWorkspace: React.FC = () => {
                   <div className="space-y-2">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <h4 className="font-black text-base text-[#2D241E]">{sup.name}</h4>
-                          {sup.category && (
-                            <span className="rounded-lg bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 text-[10px] font-black tracking-wide">
-                              {sup.category}
-                            </span>
-                          )}
+                          {(() => {
+                            const cats =
+                              sup.categories && sup.categories.length > 0
+                                ? sup.categories
+                                : sup.category
+                                ? sup.category.split(',').map((s) => s.trim()).filter(Boolean)
+                                : [];
+                            return cats.map((catName) => (
+                              <span
+                                key={catName}
+                                className="rounded-lg bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 text-[10px] font-black tracking-wide"
+                              >
+                                {catName}
+                              </span>
+                            ));
+                          })()}
                         </div>
                         <p className="text-xs text-[#8C7B6C] font-semibold">
                           PIC: {sup.picName} • {sup.phone}
