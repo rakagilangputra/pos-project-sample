@@ -19,6 +19,9 @@ import {
   Sparkles,
   ArrowRight,
   Info,
+  FolderPlus,
+  PackagePlus,
+  Package,
 } from 'lucide-react';
 import { Product, Category, Branch } from '../../types';
 import { formatIDR } from '../../utils/formatters';
@@ -31,12 +34,16 @@ interface ProductStockTableProps {
   onNavigateToCategoryClosing: (categoryId?: string) => void;
   onNavigateToTransfer: (productId?: string) => void;
   onNavigateToBadStock: (productId?: string) => void;
+  onOpenAddCategory?: () => void;
+  onOpenAddProduct?: () => void;
 }
 
 export const ProductStockTable: React.FC<ProductStockTableProps> = ({
   onNavigateToCategoryClosing,
   onNavigateToTransfer,
   onNavigateToBadStock,
+  onOpenAddCategory,
+  onOpenAddProduct,
 }) => {
   const {
     products,
@@ -116,11 +123,56 @@ export const ProductStockTable: React.FC<ProductStockTableProps> = ({
   const canEditProductInfo = isSuperadmin && !isBranchReadOnly && selectedBranch.status === 'active';
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden p-6 space-y-4">
-      {/* -------------------------------------------------------------
-          SEARCH & FILTER TOOLBAR
-          ------------------------------------------------------------- */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white border-2 border-[#E5DACE] p-3.5 rounded-2xl shadow-xs">
+    <div className="flex flex-col flex-1 h-full bg-[#FDFBF7] overflow-hidden">
+      {/* Top Header inside Produk (Informasi Stok) */}
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-[#E5DACE] bg-white px-6 py-3.5 shrink-0">
+        <div>
+          <h2 className="text-base font-black text-[#2D241E] flex items-center gap-2">
+            <span>Produk (Informasi Stok)</span>
+            <span className="rounded-lg bg-amber-100 text-[#D97706] px-2 py-0.5 text-xs font-bold">
+              {filteredProducts.length} Produk
+            </span>
+          </h2>
+          <p className="text-xs text-[#8C7B6C]">
+            Katalog master produk, ketersediaan stok fisik cabang, dan penyesuaian informasi barang.
+          </p>
+        </div>
+
+        {/* Action Buttons: Kategori Master & Tambah Produk Baru */}
+        <div className="flex items-center gap-2">
+          {onOpenAddCategory && (
+            <button
+              type="button"
+              id="product-stock-btn-add-category"
+              onClick={onOpenAddCategory}
+              className="flex items-center gap-1.5 rounded-xl border border-[#E5DACE] bg-white px-3.5 py-2 text-xs font-bold text-[#6D5D50] hover:bg-amber-50 hover:text-[#D97706] shadow-xs active:scale-95 transition"
+            >
+              <FolderPlus className="h-4 w-4" />
+              <span>Kategori Master</span>
+            </button>
+          )}
+
+          {isSuperadmin && onOpenAddProduct && (
+            <button
+              type="button"
+              id="product-stock-btn-add-product"
+              disabled={!canEditProductInfo}
+              onClick={onOpenAddProduct}
+              className="flex items-center gap-1.5 rounded-xl bg-[#D97706] px-4 py-2 text-xs font-black text-white hover:bg-amber-700 shadow-xs active:scale-95 transition disabled:opacity-50"
+            >
+              <PackagePlus className="h-4 w-4" />
+              <span>Tambah Produk Baru</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Main Table Content */}
+      <div className="flex flex-1 flex-col overflow-hidden p-6 space-y-4 min-h-0">
+        {/* -------------------------------------------------------------
+            SEARCH & FILTER TOOLBAR
+            ------------------------------------------------------------- */}
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white border-2 border-[#E5DACE] p-3.5 rounded-2xl shadow-xs">
         {/* Search Bar */}
         <div className="relative flex-1">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#8C7B6C]" />
@@ -394,6 +446,7 @@ export const ProductStockTable: React.FC<ProductStockTableProps> = ({
             </tbody>
           </table>
         )}
+      </div>
       </div>
 
       {/* -------------------------------------------------------------

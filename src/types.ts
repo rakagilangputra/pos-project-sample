@@ -57,6 +57,19 @@ export type ProductCategory = string;
 export type Category = ProductCategoryItem;
 export type Branch = StoreBranch;
 
+// Master Kategori - Central Category Master (POS-HQ)
+export type MasterCategoryType = 'KONSINYASI' | 'PRODUKSI' | 'BELI (RESELLER)';
+
+export interface MasterCategory {
+  id: string; // Freetext alphanumeric ID (e.g. KAT-RTI-01)
+  name: string; // Nama Kategori
+  categoryType: MasterCategoryType; // KONSINYASI | PRODUKSI | BELI (RESELLER)
+  branchIds: string[]; // Store branches included
+  description?: string; // Deskripsi (optional)
+  createdAt: string;
+  updatedAt?: string;
+}
+
 export interface ProductCategoryItem {
   id: string;
   branchId?: string;
@@ -626,6 +639,25 @@ export interface SupplierDeliveryLogEntry {
   timestamp: string;
   errorMessage?: string;
   rawResponse?: string;
+}
+
+// Raw Material (Bahan Baku) Master Data
+export interface RawMaterial {
+  id: string;
+  branchId?: string;
+  sku: string; // e.g. RAW-EGG-01
+  name: string; // e.g. Telur Ayam Negeri
+  category: string; // e.g. Telur & Dairy, Pemanis & Gula, Tepung & Gandum
+  unit: string; // kg, liter, butir, pack, gram, sak, kaleng
+  costPrice: number; // Harga Beli Acuan / Estimasi Biaya Satuan (Rp)
+  stock: number; // Kuantitas stok fisik saat ini (hanya dapat bertambah lewat Penerimaan Barang)
+  lowStockThreshold: number; // Batas minimum stok peringatan
+  supplierId?: string;
+  supplierName?: string;
+  image?: string;
+  description?: string;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 

@@ -91,9 +91,9 @@ export const AuditLogView: React.FC = () => {
             <p className="font-bold text-gray-600">Tidak ada log yang sesuai filter.</p>
           </div>
         ) : (
-          filteredLogs.map((log) => (
+          filteredLogs.map((log, idx) => (
             <div
-              key={log.id}
+              key={`${log.id}-${idx}`}
               className="rounded-3xl border border-gray-200 bg-white p-4 shadow-xs transition hover:border-gray-300 space-y-2"
             >
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-2">

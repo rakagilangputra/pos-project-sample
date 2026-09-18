@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, X, Check, Phone, User, CreditCard, Tag } from 'lucide-react';
+import { Building2, X, Check, CreditCard, Info } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
-import { Supplier } from '../types';
+import { Supplier, MasterCategory } from '../types';
 
 interface AddSupplierModalProps {
   isOpen: boolean;
@@ -16,9 +16,9 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
   onSupplierCreated,
   supplierToEdit,
 }) => {
-  const { addSupplier, updateSupplier, categories } = usePOS();
+  const { addSupplier, updateSupplier, masterCategories, suppliers } = usePOS();
   const [name, setName] = useState('');
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [picName, setPicName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
@@ -29,23 +29,72 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Active product categories from Stok Kategori
-  const stockCategories = categories.filter((c) => c.id !== 'all');
+  // Active categories from Master Kategori Backoffice
+  const availableMasterCategories: MasterCategory[] = masterCategories && masterCategories.length > 0
+    ? masterCategories
+    : [
+        {
+          id: 'KAT-PROD-01',
+          name: 'Roti Manis & Roti Tawar',
+          categoryType: 'PRODUKSI',
+          branchIds: ['branch-senopati', 'branch-kemang'],
+          description: 'Kategori produk roti produksi in-house dapur utama pusat',
+          createdAt: '2026-01-15T08:00:00Z',
+        },
+        {
+          id: 'KAT-KSN-01',
+          name: 'Kue Basah Tradisional',
+          categoryType: 'KONSINYASI',
+          branchIds: ['branch-senopati'],
+          description: 'Produk titipan konsinyasi jajanan pasar dari mitra UMKM lokal',
+          createdAt: '2026-02-01T09:30:00Z',
+        },
+        {
+          id: 'KAT-RSL-01',
+          name: 'Minuman Kemasan & Botol',
+          categoryType: 'BELI (RESELLER)',
+          branchIds: ['branch-senopati', 'branch-kemang', 'branch-bintaro'],
+          description: 'Produk siap jual dari distributor retail minuman segar',
+          createdAt: '2026-02-10T11:15:00Z',
+        },
+        {
+          id: 'KAT-PROD-02',
+          name: 'Artisan Pastry & Croissant',
+          categoryType: 'PRODUKSI',
+          branchIds: ['branch-senopati', 'branch-kemang'],
+          description: 'Pastry butter olahan chef pastry in-house',
+          createdAt: '2026-02-20T14:00:00Z',
+        },
+        {
+          id: 'KAT-KSN-02',
+          name: 'Keripik & Snack Kering UMKM',
+          categoryType: 'KONSINYASI',
+          branchIds: ['branch-senopati', 'branch-kemang'],
+          description: 'Camilan kering kemasan titip jual dari pengrajin lokal',
+          createdAt: '2026-03-05T10:00:00Z',
+        },
+      ];
+
+  // Helper: check if a category is already linked to another supplier (1:1 rule)
+  const getAssignedSupplierForCategory = (catName: string): Supplier | undefined => {
+    return suppliers.find(
+      (s) =>
+        s.id !== supplierToEdit?.id &&
+        (s.category?.trim().toLowerCase() === catName.trim().toLowerCase() ||
+          s.categories?.some((c) => c.trim().toLowerCase() === catName.trim().toLowerCase()))
+    );
+  };
 
   useEffect(() => {
     if (supplierToEdit) {
       setName(supplierToEdit.name || '');
-      if (supplierToEdit.categories && supplierToEdit.categories.length > 0) {
-        setSelectedCategories(supplierToEdit.categories);
-      } else if (supplierToEdit.category) {
-        setSelectedCategories(
-          supplierToEdit.category
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean)
-        );
+      if (supplierToEdit.category) {
+        const primaryCat = supplierToEdit.category.split(',')[0].trim();
+        setSelectedCategory(primaryCat);
+      } else if (supplierToEdit.categories && supplierToEdit.categories.length > 0) {
+        setSelectedCategory(supplierToEdit.categories[0]);
       } else {
-        setSelectedCategories([]);
+        setSelectedCategory('');
       }
       setPicName(supplierToEdit.picName || '');
       setPhone(supplierToEdit.phone || '');
@@ -55,7 +104,11 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
       setBankAccountHolder(supplierToEdit.bankAccountHolder || '');
     } else {
       setName('');
-      setSelectedCategories([]);
+      // Default to first UNASSIGNED master category
+      const firstAvailable = availableMasterCategories.find(
+        (c) => !getAssignedSupplierForCategory(c.name)
+      );
+      setSelectedCategory(firstAvailable ? firstAvailable.name : '');
       setPicName('');
       setPhone('');
       setAddress('');
@@ -65,25 +118,12 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
     }
     setErrorMsg('');
     setSuccessMsg('');
-  }, [supplierToEdit, isOpen]);
+  }, [supplierToEdit, isOpen, suppliers]);
 
   if (!isOpen) return null;
 
-  const handleToggleCategory = (catName: string) => {
-    setSelectedCategories((prev) =>
-      prev.includes(catName) ? prev.filter((c) => c !== catName) : [...prev, catName]
-    );
-  };
-
-  const handleAddCategory = (catName: string) => {
-    if (!catName) return;
-    setSelectedCategories((prev) =>
-      prev.includes(catName) ? prev : [...prev, catName]
-    );
-  };
-
-  const handleRemoveCategory = (catName: string) => {
-    setSelectedCategories((prev) => prev.filter((c) => c !== catName));
+  const handleSelectCategory = (catName: string) => {
+    setSelectedCategory(catName);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -97,19 +137,26 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
       return;
     }
 
-    if (selectedCategories.length === 0) {
-      setErrorMsg('Pilih minimal satu Kategori produk dari Stok!');
+    if (!selectedCategory) {
+      setErrorMsg('Pilih satu Master Kategori yang masih tersedia!');
       return;
     }
 
-    const joinedCategory = selectedCategories.join(', ');
+    // Enforce 1:1 rule: A Master Category can only have one Supplier
+    const assignedSupplier = getAssignedSupplierForCategory(selectedCategory);
+    if (assignedSupplier) {
+      setErrorMsg(
+        `Master Kategori "${selectedCategory}" sudah terhubung dengan mitra "${assignedSupplier.name}". 1 Master Kategori hanya boleh terhubung dengan 1 Mitra Supplier!`
+      );
+      return;
+    }
 
     let res;
     if (supplierToEdit) {
       res = updateSupplier(supplierToEdit.id, {
         name: trimmedName,
-        category: joinedCategory,
-        categories: selectedCategories,
+        category: selectedCategory,
+        categories: [selectedCategory],
         picName: picName.trim(),
         phone: phone.trim(),
         address: address.trim() || undefined,
@@ -120,8 +167,8 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
     } else {
       res = addSupplier({
         name: trimmedName,
-        category: joinedCategory,
-        categories: selectedCategories,
+        category: selectedCategory,
+        categories: [selectedCategory],
         picName: picName.trim(),
         phone: phone.trim(),
         address: address.trim() || undefined,
@@ -144,6 +191,21 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
       onClose();
     }, 800);
   };
+
+  const getTypeBadgeStyle = (type: string) => {
+    switch (type) {
+      case 'KONSINYASI':
+        return 'bg-amber-100 text-amber-900 border-amber-300';
+      case 'PRODUKSI':
+        return 'bg-blue-100 text-blue-900 border-blue-300';
+      case 'BELI (RESELLER)':
+        return 'bg-emerald-100 text-emerald-900 border-emerald-300';
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-300';
+    }
+  };
+
+  const activeCategoryObj = availableMasterCategories.find((c) => c.name === selectedCategory);
 
   return (
     <div
@@ -193,10 +255,58 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
             </div>
           )}
 
-          {/* Supplier Name */}
+          {/* 1. Master Kategori (Single selection from Master Kategori Backoffice - 1:1 Rule) */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label htmlFor="supplier-category-select" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
+                1. Master Kategori <span className="text-rose-500">*</span>
+              </label>
+              {activeCategoryObj && (
+                <span className={`rounded-md px-2 py-0.5 text-[10px] font-black border ${getTypeBadgeStyle(activeCategoryObj.categoryType)}`}>
+                  Tipe: {activeCategoryObj.categoryType}
+                </span>
+              )}
+            </div>
+
+            {/* Main Select Dropdown */}
+            <select
+              id="supplier-category-select"
+              required
+              value={selectedCategory}
+              onChange={(e) => handleSelectCategory(e.target.value)}
+              className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white px-4 py-2.5 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none cursor-pointer shadow-2xs"
+            >
+              <option value="" disabled>-- Pilih 1 Kategori dari Master Kategori --</option>
+              {availableMasterCategories.map((c) => {
+                const assignedSupplier = getAssignedSupplierForCategory(c.name);
+                const isAssigned = !!assignedSupplier;
+
+                return (
+                  <option
+                    key={c.id}
+                    value={c.name}
+                    disabled={isAssigned}
+                    className={isAssigned ? 'text-gray-400 bg-gray-100 font-normal' : 'text-gray-900 font-bold'}
+                  >
+                    [{c.categoryType}] {c.name} {isAssigned ? `(Sudah Digunakan - ${assignedSupplier?.name})` : ''}
+                  </option>
+                );
+              })}
+            </select>
+
+            {/* Helper notice explaining 1:1 relation rule */}
+            <div className="flex items-start gap-1.5 rounded-xl bg-amber-50/80 border border-amber-200/80 px-3 py-2 text-[11px] text-amber-900 font-medium">
+              <Info className="h-3.5 w-3.5 text-amber-700 shrink-0 mt-0.5" />
+              <span>
+                <strong>Aturan Relasi 1:1:</strong> Satu Master Kategori hanya dapat terhubung dengan 1 Mitra Supplier. Kategori yang telah terdaftar pada supplier lain tidak dapat dipilih kembali.
+              </span>
+            </div>
+          </div>
+
+          {/* 2. Nama Usaha */}
           <div className="space-y-1.5">
             <label className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-              Nama Usaha / Mitra UMKM <span className="text-rose-500">*</span>
+              2. Nama Usaha / Mitra UMKM <span className="text-rose-500">*</span>
             </label>
             <input
               id="supplier-name-input"
@@ -209,105 +319,11 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
             />
           </div>
 
-          {/* Kategori (Data source: Stok Kategori with Multi-Tag selection) */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label htmlFor="supplier-category-select" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-                Kategori <span className="text-rose-500">*</span>
-              </label>
-              <span className="text-[10px] text-[#8C7B6C] font-semibold">
-                {selectedCategories.length > 0
-                  ? `${selectedCategories.length} Kategori Dipilih`
-                  : 'Pilih dari Kategori Stok'}
-              </span>
-            </div>
-
-            {/* Selected Categories Badge Chips */}
-            {selectedCategories.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5 p-2 rounded-2xl bg-amber-50/70 border border-amber-200 min-h-[42px] items-center">
-                {selectedCategories.map((catName) => {
-                  const catObj = stockCategories.find((c) => c.name === catName);
-                  return (
-                    <span
-                      key={catName}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-white border border-amber-300 px-2.5 py-1 text-xs font-black text-amber-950 shadow-2xs animate-in fade-in zoom-in-95 duration-150"
-                    >
-                      {catObj?.icon && <span className="text-xs">{catObj.icon}</span>}
-                      <span>{catName}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveCategory(catName)}
-                        className="ml-0.5 rounded-md p-0.5 text-amber-700 hover:bg-amber-100 hover:text-amber-900 transition"
-                        title={`Hapus kategori ${catName}`}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </span>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="rounded-2xl border-2 border-dashed border-[#E5DACE] bg-white/60 p-2.5 text-center text-xs text-[#8C7B6C] font-medium">
-                Belum ada kategori dipilih. Klik tombol kategori produk di bawah untuk memilih:
-              </div>
-            )}
-
-            {/* Multi-Select Category Pills from Stok Kategori */}
-            <div className="space-y-1.5 pt-1">
-              <div className="flex items-center gap-1 text-[11px] font-bold text-[#8C7B6C]">
-                <Tag className="h-3 w-3 text-amber-600" />
-                <span>Pilih Kategori Produk (Bisa pilih lebih dari satu):</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {stockCategories.map((cat) => {
-                  const isSelected = selectedCategories.includes(cat.name);
-                  return (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      onClick={() => handleToggleCategory(cat.name)}
-                      className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-bold transition shadow-2xs active:scale-95 ${
-                        isSelected
-                          ? 'bg-amber-600 text-white border border-amber-700 shadow-xs font-black'
-                          : 'bg-white text-[#2D241E] border border-[#E5DACE] hover:border-amber-400 hover:bg-amber-50/50'
-                      }`}
-                    >
-                      {cat.icon && <span className="text-xs">{cat.icon}</span>}
-                      <span>{cat.name}</span>
-                      {isSelected && <Check className="h-3 w-3 shrink-0" />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Dropdown Alternative for Fast / Keyboard Selection */}
-            <div className="pt-1">
-              <select
-                id="supplier-category-select"
-                value=""
-                onChange={(e) => {
-                  if (e.target.value) {
-                    handleAddCategory(e.target.value);
-                  }
-                }}
-                className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3 py-2 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none cursor-pointer"
-              >
-                <option value="">+ Tambah / Pilih Kategori dari Stok...</option>
-                {stockCategories.map((c) => (
-                  <option key={c.id} value={c.name} disabled={selectedCategories.includes(c.name)}>
-                    {c.icon ? `${c.icon} ` : ''}{c.name} {selectedCategories.includes(c.name) ? '✓ (Terpilih)' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* PIC & Phone */}
+          {/* 3. PIC & 4. Phone */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-                Nama PIC / Pemilik
+                3. Nama PIC / Pemilik
               </label>
               <input
                 id="supplier-pic-input"
@@ -320,7 +336,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-                No. WhatsApp / HP
+                4. No. WhatsApp / HP
               </label>
               <input
                 id="supplier-phone-input"
@@ -333,12 +349,12 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
             </div>
           </div>
 
-          {/* Bank & Payment Destination */}
+          {/* 5. Rekening Pembayaran */}
           <div className="rounded-2xl border-2 border-[#E5DACE] bg-white p-4 space-y-3">
             <div className="flex items-center gap-2">
               <CreditCard className="h-4 w-4 text-[#D97706]" />
               <label className="text-xs font-black uppercase tracking-wider text-[#2D241E]">
-                Rekening Pembayaran Settlement (Opsional)
+                5. Rekening Pembayaran Settlement (Opsional)
               </label>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">

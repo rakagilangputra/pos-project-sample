@@ -27,14 +27,16 @@ import {
   ShieldCheck,
   Filter,
   ClipboardList,
+  Database,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 import { StoreBranch, User, UserRole, Customer, Product, ProductCategoryItem, Supplier, SupplierCategory, AuditLog } from '../types';
 import { FIXED_ROLE_MATRIX, STORE_INFO } from '../data/mockData';
 import { formatIDR, formatDateTime } from '../utils/formatters';
 import { PurchasePlanWorkspace } from './PurchasePlanWorkspace';
+import { MasterCategoryWorkspace } from './MasterCategoryWorkspace';
 
-type BackofficeTab = 'dashboard' | 'branches' | 'access' | 'audit' | 'purchase_plans';
+type BackofficeTab = 'branches' | 'access' | 'master_data' | 'audit' | 'purchase_plans' | 'master_categories';
 
 export const BackofficeWorkspace: React.FC = () => {
   const {
@@ -59,9 +61,10 @@ export const BackofficeWorkspace: React.FC = () => {
     customers,
     addCustomer,
     auditLogs,
+    masterCategories,
   } = usePOS();
 
-  const [activeTab, setActiveTab] = useState<BackofficeTab>('dashboard');
+  const [activeTab, setActiveTab] = useState<BackofficeTab>('branches');
   const [accessSubTab, setAccessSubTab] = useState<'users' | 'matrix'>('users');
   const [masterDataType, setMasterDataType] = useState<'products' | 'categories' | 'suppliers' | 'customers'>('products');
 
@@ -370,20 +373,6 @@ export const BackofficeWorkspace: React.FC = () => {
           {/* Tab Switcher */}
           <div className="flex items-center gap-1.5 rounded-2xl bg-gray-100 p-1.5">
             <button
-              id="backoffice-tab-dashboard"
-              type="button"
-              onClick={() => setActiveTab('dashboard')}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition ${
-                activeTab === 'dashboard'
-                  ? 'bg-white text-gray-900 shadow-xs'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <Store className="h-4 w-4" />
-              <span>Dashboard</span>
-            </button>
-
-            <button
               id="backoffice-tab-branches"
               type="button"
               onClick={() => setActiveTab('branches')}
@@ -394,7 +383,7 @@ export const BackofficeWorkspace: React.FC = () => {
               }`}
             >
               <Building2 className="h-4 w-4" />
-              <span>Store Branches & Master Data</span>
+              <span>Cabang Toko</span>
             </button>
 
             <button
@@ -412,6 +401,20 @@ export const BackofficeWorkspace: React.FC = () => {
             </button>
 
             <button
+              id="backoffice-tab-master-data"
+              type="button"
+              onClick={() => setActiveTab('master_data')}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition ${
+                activeTab === 'master_data'
+                  ? 'bg-white text-gray-900 shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Database className="h-4 w-4" />
+              <span>Master Data</span>
+            </button>
+
+            <button
               id="backoffice-tab-audit"
               type="button"
               onClick={() => setActiveTab('audit')}
@@ -426,19 +429,35 @@ export const BackofficeWorkspace: React.FC = () => {
             </button>
 
             {currentUser.role === 'admin' && (
-              <button
-                id="backoffice-tab-purchase-plans"
-                type="button"
-                onClick={() => setActiveTab('purchase_plans')}
-                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition ${
-                  activeTab === 'purchase_plans'
-                    ? 'bg-amber-600 text-white shadow-xs'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                <ClipboardList className="h-4 w-4" />
-                <span>Rencana Pembelian</span>
-              </button>
+              <>
+                <button
+                  id="backoffice-tab-purchase-plans"
+                  type="button"
+                  onClick={() => setActiveTab('purchase_plans')}
+                  className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition ${
+                    activeTab === 'purchase_plans'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <ClipboardList className="h-4 w-4" />
+                  <span>Rencana Pembelian</span>
+                </button>
+
+                <button
+                  id="backoffice-tab-master-categories"
+                  type="button"
+                  onClick={() => setActiveTab('master_categories')}
+                  className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition ${
+                    activeTab === 'master_categories'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <Layers className="h-4 w-4" />
+                  <span>Master Kategori</span>
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -447,149 +466,7 @@ export const BackofficeWorkspace: React.FC = () => {
       {/* Main Content Area - Fully Scrollable */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-6 pb-28 scrollbar-thin">
         <div className="mx-auto w-full max-w-7xl">
-        {/* ================= TAB 1: DASHBOARD ================= */}
-        {activeTab === 'dashboard' && (
-          <div className="space-y-6">
-            {/* Overview Stats Row */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-xs">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                  Cabang Terpilih
-                </span>
-                <div className="mt-2 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-black text-gray-900">
-                      {selectedBranch?.name || 'Senopati Utama'}
-                    </h3>
-                    <p className="text-xs text-gray-500">{selectedBranch?.code} — {selectedBranch?.city}</p>
-                  </div>
-                  {isBranchReadOnly ? (
-                    <span className="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-bold text-rose-800">
-                      Read-only
-                    </span>
-                  ) : (
-                    <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">
-                      Aktif
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-xs">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                  Total Cabang Terdaftar
-                </span>
-                <div className="mt-2 flex items-center justify-between">
-                  <span className="text-2xl font-black text-gray-900">{branches.length}</span>
-                  <div className="flex gap-1.5 text-xs">
-                    <span className="rounded-lg bg-emerald-50 px-2 py-0.5 font-bold text-emerald-700">
-                      {branches.filter((b) => b.status === 'active').length} Aktif
-                    </span>
-                    <span className="rounded-lg bg-gray-100 px-2 py-0.5 font-bold text-gray-600">
-                      {branches.filter((b) => b.status === 'inactive').length} Tutup
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-xs">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                  Pengguna Sistem (RBAC)
-                </span>
-                <div className="mt-2 flex items-center justify-between">
-                  <span className="text-2xl font-black text-gray-900">{users.length}</span>
-                  <span className="text-xs font-semibold text-gray-500">
-                    {users.filter((u) => u.status === 'active').length} Akun Aktif
-                  </span>
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-xs">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                  Pajak Default Global
-                </span>
-                <div className="mt-2 flex items-center justify-between">
-                  <span className="text-2xl font-black text-amber-900">11% PPN</span>
-                  <span className="text-[11px] font-bold text-gray-500">{STORE_INFO.taxNumber}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Quick Management Shortcuts */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-xs space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-100 text-amber-900">
-                    <Building2 className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold text-gray-900">Kelola Cabang Toko</h3>
-                    <p className="text-xs text-gray-500">Tambah cabang baru atau ubah jam operasional</p>
-                  </div>
-                </div>
-                <p className="text-xs text-gray-600">
-                  Konfigurasi alamat, supervisor yang ditugaskan, dan header struk cetak khusus tiap cabang.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('branches')}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gray-900 py-2.5 text-xs font-bold text-white hover:bg-black transition"
-                >
-                  Buka Menu Cabang
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-xs space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-100 text-blue-900">
-                    <ShieldCheck className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold text-gray-900">Pengaturan Akses (RBAC)</h3>
-                    <p className="text-xs text-gray-500">Fixed Matriks Kasir / Supervisor / Superadmin</p>
-                  </div>
-                </div>
-                <p className="text-xs text-gray-600">
-                  Atur penugasan cabang kasir (1 cabang) dan supervisor (multi-cabang), serta tinjau hak akses.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('access')}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gray-900 py-2.5 text-xs font-bold text-white hover:bg-black transition"
-                >
-                  Buka Pengaturan Akses
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-xs space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-900">
-                    <FileText className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold text-gray-900">Audit Log Terisolasi</h3>
-                    <p className="text-xs text-gray-500">Riwayat transaksi & perubahan data cabang</p>
-                  </div>
-                </div>
-                <p className="text-xs text-gray-600">
-                  Tinjau catatan audit operasional lengkap untuk cabang {selectedBranch?.name}.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('audit')}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gray-900 py-2.5 text-xs font-bold text-white hover:bg-black transition"
-                >
-                  Buka Audit Log
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ================= TAB 2: STORE BRANCHES & MASTER DATA ================= */}
+        {/* ================= TAB: STORE BRANCHES (ROWS VIEW) ================= */}
         {activeTab === 'branches' && (
           <div className="space-y-6">
             {/* Header with Add Branch Button */}
@@ -597,7 +474,7 @@ export const BackofficeWorkspace: React.FC = () => {
               <div>
                 <h2 className="text-xl font-black text-gray-900">Daftar Cabang Toko</h2>
                 <p className="text-xs text-gray-500">
-                  Superadmin dapat menambah cabang, mengubah informasi operasional, dan mengelola master data cabang.
+                  Superadmin dapat menambah cabang baru, mengubah informasi operasional, dan mengatur status cabang.
                 </p>
               </div>
               <button
@@ -611,358 +488,139 @@ export const BackofficeWorkspace: React.FC = () => {
               </button>
             </div>
 
-            {/* Branch Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {branches.map((b) => {
-                const isSelected = selectedBranchId === b.id;
-                const isInactive = b.status === 'inactive';
+            {/* Branch List in Rows / Table */}
+            <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-gray-700">
+                  <thead className="bg-[#FAF8F5] border-b border-gray-200 text-[11px] font-black uppercase tracking-wider text-gray-600">
+                    <tr>
+                      <th className="px-5 py-4">Kode & Nama Cabang</th>
+                      <th className="px-5 py-4">Alamat & Kota</th>
+                      <th className="px-5 py-4">Jam Buka & Kontak</th>
+                      <th className="px-5 py-4">Status</th>
+                      <th className="px-5 py-4 text-center">Cabang Aktif</th>
+                      <th className="px-5 py-4 text-right">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white font-medium">
+                    {branches.map((b) => {
+                      const isSelected = selectedBranchId === b.id;
+                      const isInactive = b.status === 'inactive';
 
-                return (
-                  <div
-                    key={b.id}
-                    id={`backoffice-branch-${b.id}`}
-                    className={`flex flex-col justify-between rounded-3xl border-2 p-6 transition ${
-                      isSelected
-                        ? 'border-amber-600 bg-amber-50/30 shadow-md'
-                        : isInactive
-                        ? 'border-gray-200 bg-gray-50/70'
-                        : 'border-gray-200 bg-white'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <span className="rounded-lg bg-gray-100 px-2.5 py-1 text-xs font-black text-gray-700">
-                          {b.code}
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                          {isInactive ? (
-                            <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-bold text-rose-800">
-                              Read-only (Nonaktif)
-                            </span>
-                          ) : (
-                            <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
-                              Aktif
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <h3 className="mt-3 text-lg font-bold text-gray-900">{b.name}</h3>
-
-                      <div className="mt-3 space-y-1.5 text-xs text-gray-600">
-                        <div className="flex items-start gap-2">
-                          <MapPin className="h-4 w-4 text-gray-400 shrink-0 mt-0.5" />
-                          <span>{b.address}, {b.city}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Clock className="h-4 w-4 text-gray-400 shrink-0" />
-                          <span>{b.operatingHours}</span>
-                        </div>
-                        {b.phone && (
-                          <div className="flex items-center gap-2">
-                            <Phone className="h-4 w-4 text-gray-400 shrink-0" />
-                            <span>{b.phone}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-6 border-t border-gray-100 pt-4 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleOpenBranchDrawer(b)}
-                          className="rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 active:scale-95 transition"
-                        >
-                          <Edit2 className="h-3.5 w-3.5 inline mr-1" />
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => toggleBranchStatus(b.id)}
-                          className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition active:scale-95 ${
-                            isInactive
-                              ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
-                              : 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                      return (
+                        <tr
+                          key={b.id}
+                          id={`backoffice-branch-row-${b.id}`}
+                          className={`transition hover:bg-amber-50/20 ${
+                            isSelected ? 'bg-amber-50/40' : isInactive ? 'bg-gray-50/50' : ''
                           }`}
                         >
-                          {isInactive ? 'Aktifkan' : 'Nonaktifkan'}
-                        </button>
-                      </div>
-
-                      {!isSelected ? (
-                        <button
-                          type="button"
-                          onClick={() => selectBranch(b.id)}
-                          className="rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700 active:scale-95 transition"
-                        >
-                          Pilih Cabang
-                        </button>
-                      ) : (
-                        <span className="text-xs font-bold text-amber-700 flex items-center gap-1">
-                          <Check className="h-4 w-4" /> Terpilih
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Branch Master Data Management Section */}
-            <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-xs space-y-6">
-              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 pb-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-black text-gray-900">
-                      Master Data Cabang: {selectedBranch?.name}
-                    </h3>
-                    {isBranchReadOnly && (
-                      <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold text-rose-800">
-                        Read-only (Cabang Nonaktif)
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    Master data terpisah per cabang. Superadmin hanya dapat menambah/mengubah master data pada cabang aktif.
-                  </p>
-                </div>
-
-                {/* Master Data Type Tabs */}
-                <div className="flex items-center gap-1.5 rounded-2xl bg-gray-100 p-1">
-                  <button
-                    type="button"
-                    onClick={() => setMasterDataType('products')}
-                    className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-                      masterDataType === 'products'
-                        ? 'bg-white text-gray-900 shadow-xs'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Produk ({products.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMasterDataType('categories')}
-                    className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-                      masterDataType === 'categories'
-                        ? 'bg-white text-gray-900 shadow-xs'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Kategori ({categories.filter((c) => c.id !== 'all').length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMasterDataType('suppliers')}
-                    className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-                      masterDataType === 'suppliers'
-                        ? 'bg-white text-gray-900 shadow-xs'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Supplier ({suppliers.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMasterDataType('customers')}
-                    className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-                      masterDataType === 'customers'
-                        ? 'bg-white text-gray-900 shadow-xs'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Pelanggan ({customers.filter((c) => c.id !== 'cust-walkin').length})
-                  </button>
-                </div>
-              </div>
-
-              {/* Read-only Alert if inactive */}
-              {isBranchReadOnly && (
-                <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-4 text-xs text-rose-900 flex items-center gap-3">
-                  <Lock className="h-5 w-5 text-rose-600 shrink-0" />
-                  <div>
-                    <strong className="font-bold">Mode Baca Saja (Read-only):</strong> Cabang ini sedang berstatus nonaktif. Seluruh penambahan dan perubahan master data dikunci demi keamanan integritas arsip data.
-                  </div>
-                </div>
-              )}
-
-              {/* Master Data Action & Table */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                    Daftar {masterDataType.toUpperCase()} Cabang {selectedBranch?.code}
-                  </span>
-                  {!isBranchReadOnly && (
-                    <button
-                      id="add-master-data-btn"
-                      type="button"
-                      onClick={() => setIsAddMasterModalOpen(true)}
-                      className="inline-flex items-center gap-2 rounded-xl bg-gray-900 px-4 py-2 text-xs font-bold text-white hover:bg-black transition active:scale-95"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      <span>+ Tambah {masterDataType === 'products' ? 'Produk (Stok 0)' : masterDataType === 'categories' ? 'Kategori' : masterDataType === 'suppliers' ? 'Supplier' : 'Pelanggan'}</span>
-                    </button>
-                  )}
-                </div>
-
-                {/* Table for Products */}
-                {masterDataType === 'products' && (
-                  <div className="overflow-x-auto rounded-2xl border border-gray-100">
-                    <table className="w-full text-left text-xs text-gray-700">
-                      <thead className="bg-gray-50 text-[11px] font-black uppercase tracking-wider text-gray-500">
-                        <tr>
-                          <th className="px-4 py-3">SKU</th>
-                          <th className="px-4 py-3">Nama Produk</th>
-                          <th className="px-4 py-3">Kategori</th>
-                          <th className="px-4 py-3">Harga Jual</th>
-                          <th className="px-4 py-3">Stok Saat Ini</th>
-                          <th className="px-4 py-3">Kepemilikan</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100 bg-white font-medium">
-                        {products.length === 0 ? (
-                          <tr>
-                            <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
-                              Belum ada master produk pada cabang ini.
-                            </td>
-                          </tr>
-                        ) : (
-                          products.map((p) => (
-                            <tr key={p.id} className="hover:bg-gray-50/50">
-                              <td className="px-4 py-3 font-bold text-gray-900">{p.sku}</td>
-                              <td className="px-4 py-3">{p.name}</td>
-                              <td className="px-4 py-3">{p.categoryLabel}</td>
-                              <td className="px-4 py-3 font-bold text-amber-900">{formatIDR(p.price)}</td>
-                              <td className="px-4 py-3">
-                                <span className={`font-bold ${p.stock <= p.lowStockThreshold ? 'text-rose-600' : 'text-gray-900'}`}>
-                                  {p.stock} Pcs
-                                </span>
-                              </td>
-                              <td className="px-4 py-3">
-                                {p.ownershipType === 'consignment' ? (
-                                  <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[10px] font-bold text-purple-700">
-                                    Konsinyasi ({p.supplierName || 'Mitra'})
-                                  </span>
-                                ) : (
-                                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
-                                    Milik Sendiri
-                                  </span>
+                          {/* Kode & Nama */}
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-3">
+                              <span className="shrink-0 rounded-xl bg-gray-100 px-2.5 py-1 font-mono font-black text-xs text-gray-800 border border-gray-200">
+                                {b.code}
+                              </span>
+                              <div>
+                                <div className="font-bold text-gray-900 text-sm">{b.name}</div>
+                                {b.receiptHeader && (
+                                  <div className="text-[11px] text-gray-400 truncate max-w-xs mt-0.5">
+                                    Struk: &ldquo;{b.receiptHeader}&rdquo;
+                                  </div>
                                 )}
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                              </div>
+                            </div>
+                          </td>
 
-                {/* Table for Categories */}
-                {masterDataType === 'categories' && (
-                  <div className="overflow-x-auto rounded-2xl border border-gray-100">
-                    <table className="w-full text-left text-xs text-gray-700">
-                      <thead className="bg-gray-50 text-[11px] font-black uppercase tracking-wider text-gray-500">
-                        <tr>
-                          <th className="px-4 py-3">ID / Kode</th>
-                          <th className="px-4 py-3">Nama Kategori</th>
-                          <th className="px-4 py-3">Deskripsi</th>
-                          <th className="px-4 py-3">Ikon</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100 bg-white font-medium">
-                        {categories
-                          .filter((c) => c.id !== 'all')
-                          .map((c) => (
-                            <tr key={c.id} className="hover:bg-gray-50/50">
-                              <td className="px-4 py-3 font-bold text-gray-900">{c.id}</td>
-                              <td className="px-4 py-3 font-bold">{c.name}</td>
-                              <td className="px-4 py-3 text-gray-500">{c.description || '-'}</td>
-                              <td className="px-4 py-3 text-base">{c.icon || '🏷️'}</td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                          {/* Alamat & Kota */}
+                          <td className="px-5 py-4">
+                            <div className="flex items-start gap-1.5 max-w-xs">
+                              <MapPin className="h-4 w-4 text-gray-400 shrink-0 mt-0.5" />
+                              <div>
+                                <span className="font-semibold text-gray-900">{b.city}</span>
+                                <div className="text-[11px] text-gray-500 leading-tight mt-0.5">{b.address}</div>
+                              </div>
+                            </div>
+                          </td>
 
-                {/* Table for Suppliers */}
-                {masterDataType === 'suppliers' && (
-                  <div className="overflow-x-auto rounded-2xl border border-gray-100">
-                    <table className="w-full text-left text-xs text-gray-700">
-                      <thead className="bg-gray-50 text-[11px] font-black uppercase tracking-wider text-gray-500">
-                        <tr>
-                          <th className="px-4 py-3">Nama Supplier</th>
-                          <th className="px-4 py-3">Kategori</th>
-                          <th className="px-4 py-3">PIC</th>
-                          <th className="px-4 py-3">Kontak / Telepon</th>
-                          <th className="px-4 py-3">Jadwal Settlement</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100 bg-white font-medium">
-                        {suppliers.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
-                              Belum ada supplier pada cabang ini.
-                            </td>
-                          </tr>
-                        ) : (
-                          suppliers.map((s) => (
-                            <tr key={s.id} className="hover:bg-gray-50/50">
-                              <td className="px-4 py-3 font-bold text-gray-900">{s.name}</td>
-                              <td className="px-4 py-3">
-                                <span className="rounded-lg bg-amber-50 px-2 py-0.5 font-bold text-amber-800">
-                                  {s.category || 'KYD'}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3">{s.picName}</td>
-                              <td className="px-4 py-3 text-gray-500">{s.phone}</td>
-                              <td className="px-4 py-3 capitalize text-gray-600">
-                                {s.scheduleType === 'weekly' ? 'Mingguan' : '2x Sebulan'}
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                          {/* Jam Buka & Telepon */}
+                          <td className="px-5 py-4">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1.5 text-gray-700">
+                                <Clock className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                                <span>{b.operatingHours}</span>
+                              </div>
+                              {b.phone && (
+                                <div className="flex items-center gap-1.5 text-gray-500">
+                                  <Phone className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                                  <span>{b.phone}</span>
+                                </div>
+                              )}
+                            </div>
+                          </td>
 
-                {/* Table for Customers */}
-                {masterDataType === 'customers' && (
-                  <div className="overflow-x-auto rounded-2xl border border-gray-100">
-                    <table className="w-full text-left text-xs text-gray-700">
-                      <thead className="bg-gray-50 text-[11px] font-black uppercase tracking-wider text-gray-500">
-                        <tr>
-                          <th className="px-4 py-3">Nama Pelanggan</th>
-                          <th className="px-4 py-3">Kategori</th>
-                          <th className="px-4 py-3">Telepon</th>
-                          <th className="px-4 py-3">Email</th>
-                          <th className="px-4 py-3">Saldo Deposit</th>
+                          {/* Status */}
+                          <td className="px-5 py-4">
+                            {isInactive ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-bold text-rose-800 border border-rose-200">
+                                <Lock className="h-3 w-3" />
+                                Nonaktif (Read-only)
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-800 border border-emerald-200">
+                                <CheckCircle2 className="h-3 w-3" />
+                                Aktif
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Cabang Terpilih */}
+                          <td className="px-5 py-4 text-center">
+                            {isSelected ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-xl bg-amber-100 px-3 py-1.5 text-xs font-black text-amber-900 border border-amber-300 shadow-2xs">
+                                <Check className="h-4 w-4 text-amber-700" />
+                                Terpilih
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => selectBranch(b.id)}
+                                className="rounded-xl border border-gray-300 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-amber-50 hover:text-amber-900 hover:border-amber-300 active:scale-95 transition"
+                              >
+                                Pilih Cabang
+                              </button>
+                            )}
+                          </td>
+
+                          {/* Aksi */}
+                          <td className="px-5 py-4 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenBranchDrawer(b)}
+                                className="inline-flex items-center gap-1 rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 active:scale-95 transition shadow-2xs"
+                              >
+                                <Edit2 className="h-3.5 w-3.5" />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => toggleBranchStatus(b.id)}
+                                className={`rounded-xl border px-3 py-1.5 text-xs font-bold transition active:scale-95 shadow-2xs ${
+                                  isInactive
+                                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                                    : 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                                }`}
+                              >
+                                {isInactive ? 'Aktifkan' : 'Nonaktifkan'}
+                              </button>
+                            </div>
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100 bg-white font-medium">
-                        {customers
-                          .filter((c) => c.id !== 'cust-walkin')
-                          .map((c) => (
-                            <tr key={c.id} className="hover:bg-gray-50/50">
-                              <td className="px-4 py-3 font-bold text-gray-900">{c.name}</td>
-                              <td className="px-4 py-3">
-                                <span className="rounded-lg bg-gray-100 px-2 py-0.5 font-bold text-gray-700">
-                                  {c.category}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-gray-500">{c.phone || '-'}</td>
-                              <td className="px-4 py-3 text-gray-500">{c.email || '-'}</td>
-                              <td className="px-4 py-3 font-bold text-emerald-800">
-                                {formatIDR(c.depositBalance)}
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
@@ -1197,6 +855,270 @@ export const BackofficeWorkspace: React.FC = () => {
           </div>
         )}
 
+        {/* ================= TAB: MASTER DATA ================= */}
+        {activeTab === 'master_data' && (
+          <div className="space-y-6">
+            <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-xs space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 pb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-black text-gray-900">
+                      Master Data Cabang: {selectedBranch?.name}
+                    </h3>
+                    <span className="rounded-lg bg-amber-100 px-2.5 py-0.5 font-mono text-xs font-bold text-amber-900 border border-amber-200">
+                      {selectedBranch?.code}
+                    </span>
+                    {isBranchReadOnly && (
+                      <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold text-rose-800">
+                        Read-only (Cabang Nonaktif)
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Master data terpisah per cabang. Superadmin hanya dapat menambah/mengubah master data pada cabang aktif.
+                  </p>
+                </div>
+
+                {/* Master Data Type Tabs */}
+                <div className="flex items-center gap-1.5 rounded-2xl bg-gray-100 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setMasterDataType('products')}
+                    className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                      masterDataType === 'products'
+                        ? 'bg-white text-gray-900 shadow-xs'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Produk ({products.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMasterDataType('categories')}
+                    className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                      masterDataType === 'categories'
+                        ? 'bg-white text-gray-900 shadow-xs'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Kategori ({categories.filter((c) => c.id !== 'all').length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMasterDataType('suppliers')}
+                    className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                      masterDataType === 'suppliers'
+                        ? 'bg-white text-gray-900 shadow-xs'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Supplier ({suppliers.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMasterDataType('customers')}
+                    className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                      masterDataType === 'customers'
+                        ? 'bg-white text-gray-900 shadow-xs'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Pelanggan ({customers.filter((c) => c.id !== 'cust-walkin').length})
+                  </button>
+                </div>
+              </div>
+
+              {/* Read-only Alert if inactive */}
+              {isBranchReadOnly && (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-4 text-xs text-rose-900 flex items-center gap-3">
+                  <Lock className="h-5 w-5 text-rose-600 shrink-0" />
+                  <div>
+                    <strong className="font-bold">Mode Baca Saja (Read-only):</strong> Cabang ini sedang berstatus nonaktif. Seluruh penambahan dan perubahan master data dikunci demi keamanan integritas arsip data.
+                  </div>
+                </div>
+              )}
+
+              {/* Master Data Action & Table */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                    Daftar {masterDataType.toUpperCase()} Cabang {selectedBranch?.code}
+                  </span>
+                  {!isBranchReadOnly && (
+                    <button
+                      id="add-master-data-btn"
+                      type="button"
+                      onClick={() => setIsAddMasterModalOpen(true)}
+                      className="inline-flex items-center gap-2 rounded-xl bg-gray-900 px-4 py-2 text-xs font-bold text-white hover:bg-black transition active:scale-95 shadow-2xs"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>+ Tambah {masterDataType === 'products' ? 'Produk (Stok 0)' : masterDataType === 'categories' ? 'Kategori' : masterDataType === 'suppliers' ? 'Supplier' : 'Pelanggan'}</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Table for Products */}
+                {masterDataType === 'products' && (
+                  <div className="overflow-x-auto rounded-2xl border border-gray-100">
+                    <table className="w-full text-left text-xs text-gray-700">
+                      <thead className="bg-[#FAF8F5] text-[11px] font-black uppercase tracking-wider text-gray-600 border-b border-gray-100">
+                        <tr>
+                          <th className="px-4 py-3">SKU</th>
+                          <th className="px-4 py-3">Nama Produk</th>
+                          <th className="px-4 py-3">Kategori</th>
+                          <th className="px-4 py-3">Harga Jual</th>
+                          <th className="px-4 py-3">Stok Saat Ini</th>
+                          <th className="px-4 py-3">Kepemilikan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 bg-white font-medium">
+                        {products.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                              Belum ada master produk pada cabang ini.
+                            </td>
+                          </tr>
+                        ) : (
+                          products.map((p) => (
+                            <tr key={p.id} className="hover:bg-gray-50/50">
+                              <td className="px-4 py-3 font-mono font-bold text-gray-900">{p.sku}</td>
+                              <td className="px-4 py-3 font-semibold text-gray-900">{p.name}</td>
+                              <td className="px-4 py-3">{p.categoryLabel}</td>
+                              <td className="px-4 py-3 font-bold text-amber-900">{formatIDR(p.price)}</td>
+                              <td className="px-4 py-3">
+                                <span className={`font-bold ${p.stock <= p.lowStockThreshold ? 'text-rose-600' : 'text-gray-900'}`}>
+                                  {p.stock} Pcs
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">
+                                {p.ownershipType === 'consignment' ? (
+                                  <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[10px] font-bold text-purple-700 border border-purple-200">
+                                    Konsinyasi ({p.supplierName || 'Mitra'})
+                                  </span>
+                                ) : (
+                                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200">
+                                    Milik Sendiri
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Table for Categories */}
+                {masterDataType === 'categories' && (
+                  <div className="overflow-x-auto rounded-2xl border border-gray-100">
+                    <table className="w-full text-left text-xs text-gray-700">
+                      <thead className="bg-[#FAF8F5] text-[11px] font-black uppercase tracking-wider text-gray-600 border-b border-gray-100">
+                        <tr>
+                          <th className="px-4 py-3">ID / Kode</th>
+                          <th className="px-4 py-3">Nama Kategori</th>
+                          <th className="px-4 py-3">Deskripsi</th>
+                          <th className="px-4 py-3">Ikon</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 bg-white font-medium">
+                        {categories
+                          .filter((c) => c.id !== 'all')
+                          .map((c) => (
+                            <tr key={c.id} className="hover:bg-gray-50/50">
+                              <td className="px-4 py-3 font-bold text-gray-900">{c.id}</td>
+                              <td className="px-4 py-3 font-bold">{c.name}</td>
+                              <td className="px-4 py-3 text-gray-500">{c.description || '-'}</td>
+                              <td className="px-4 py-3 text-base">{c.icon || '🏷️'}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Table for Suppliers */}
+                {masterDataType === 'suppliers' && (
+                  <div className="overflow-x-auto rounded-2xl border border-gray-100">
+                    <table className="w-full text-left text-xs text-gray-700">
+                      <thead className="bg-[#FAF8F5] text-[11px] font-black uppercase tracking-wider text-gray-600 border-b border-gray-100">
+                        <tr>
+                          <th className="px-4 py-3">Nama Supplier</th>
+                          <th className="px-4 py-3">Kategori</th>
+                          <th className="px-4 py-3">PIC</th>
+                          <th className="px-4 py-3">Kontak / Telepon</th>
+                          <th className="px-4 py-3">Jadwal Settlement</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 bg-white font-medium">
+                        {suppliers.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
+                              Belum ada supplier pada cabang ini.
+                            </td>
+                          </tr>
+                        ) : (
+                          suppliers.map((s) => (
+                            <tr key={s.id} className="hover:bg-gray-50/50">
+                              <td className="px-4 py-3 font-bold text-gray-900">{s.name}</td>
+                              <td className="px-4 py-3">
+                                <span className="rounded-lg bg-amber-50 px-2 py-0.5 font-bold text-amber-800">
+                                  {s.category || 'KYD'}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">{s.picName}</td>
+                              <td className="px-4 py-3 text-gray-500">{s.phone}</td>
+                              <td className="px-4 py-3 capitalize text-gray-600">
+                                {s.scheduleType === 'weekly' ? 'Mingguan' : '2x Sebulan'}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Table for Customers */}
+                {masterDataType === 'customers' && (
+                  <div className="overflow-x-auto rounded-2xl border border-gray-100">
+                    <table className="w-full text-left text-xs text-gray-700">
+                      <thead className="bg-[#FAF8F5] text-[11px] font-black uppercase tracking-wider text-gray-600 border-b border-gray-100">
+                        <tr>
+                          <th className="px-4 py-3">Nama Pelanggan</th>
+                          <th className="px-4 py-3">Kategori</th>
+                          <th className="px-4 py-3">Telepon</th>
+                          <th className="px-4 py-3">Email</th>
+                          <th className="px-4 py-3">Saldo Deposit</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 bg-white font-medium">
+                        {customers
+                          .filter((c) => c.id !== 'cust-walkin')
+                          .map((c) => (
+                            <tr key={c.id} className="hover:bg-gray-50/50">
+                              <td className="px-4 py-3 font-bold text-gray-900">{c.name}</td>
+                              <td className="px-4 py-3">
+                                <span className="rounded-lg bg-gray-100 px-2 py-0.5 font-bold text-gray-700">
+                                  {c.category}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-gray-500">{c.phone || '-'}</td>
+                              <td className="px-4 py-3 text-gray-500">{c.email || '-'}</td>
+                              <td className="px-4 py-3 font-bold text-emerald-800">
+                                {formatIDR(c.depositBalance)}
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ================= TAB 4: AUDIT LOG ================= */}
         {activeTab === 'audit' && (
           <div className="space-y-6">
@@ -1243,8 +1165,8 @@ export const BackofficeWorkspace: React.FC = () => {
                         </td>
                       </tr>
                     ) : (
-                      filteredAuditLogs.map((log) => (
-                        <tr key={log.id} className="hover:bg-gray-50/50">
+                      filteredAuditLogs.map((log, idx) => (
+                        <tr key={`${log.id}-${idx}`} className="hover:bg-gray-50/50">
                           <td className="px-6 py-4 whitespace-nowrap text-gray-500">
                             {formatDateTime(log.timestamp)}
                           </td>
@@ -1282,6 +1204,13 @@ export const BackofficeWorkspace: React.FC = () => {
         {activeTab === 'purchase_plans' && (
           <div className="rounded-3xl border-2 border-[#E5DACE] bg-white overflow-hidden shadow-xs min-h-[720px]">
             <PurchasePlanWorkspace />
+          </div>
+        )}
+
+        {/* ================= TAB 6: MASTER KATEGORI (SUPERADMIN ONLY) ================= */}
+        {activeTab === 'master_categories' && (
+          <div className="rounded-3xl border-2 border-[#E5DACE] bg-white overflow-hidden shadow-xs min-h-[720px] p-6">
+            <MasterCategoryWorkspace />
           </div>
         )}
         </div>
@@ -1683,16 +1612,27 @@ export const BackofficeWorkspace: React.FC = () => {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
-                        Kategori Supplier
+                        Kategori Supplier (Master Kategori)
                       </label>
                       <select
                         value={supCat}
                         onChange={(e) => setSupCat(e.target.value as SupplierCategory)}
                         className="w-full rounded-2xl border border-gray-200 px-4 py-2.5 text-xs font-bold text-gray-900 focus:border-amber-500 focus:outline-none"
                       >
-                        <option value="KYD">KYD (Kue Tradisional)</option>
-                        <option value="RMS">RMS (Cookies & Hampers)</option>
-                        <option value="TCC">TCC (Gourmet Pastry)</option>
+                        {masterCategories && masterCategories.length > 0 ? (
+                          masterCategories.map((mc) => (
+                            <option key={mc.id} value={mc.name}>
+                              [{mc.categoryType}] {mc.name}
+                            </option>
+                          ))
+                        ) : (
+                          <>
+                            <option value="Kue Basah Tradisional">[KONSINYASI] Kue Basah Tradisional</option>
+                            <option value="Keripik & Snack Kering UMKM">[KONSINYASI] Keripik & Snack Kering UMKM</option>
+                            <option value="Roti Manis & Roti Tawar">[PRODUKSI] Roti Manis & Roti Tawar</option>
+                            <option value="Minuman Kemasan & Botol">[BELI (RESELLER)] Minuman Kemasan & Botol</option>
+                          </>
+                        )}
                       </select>
                     </div>
                     <div className="space-y-1">

@@ -45,6 +45,7 @@ export const GoodsReceivingWorkspace: React.FC = () => {
     goodsReceipts,
     suppliers,
     products,
+    rawMaterials = [],
     currentUser,
     receivingDraft,
     setReceivingDraft,
@@ -381,14 +382,15 @@ export const GoodsReceivingWorkspace: React.FC = () => {
 
       const formattedItems = positiveItems.map((item) => {
         const prod = products.find((p) => p.id === item.productId);
+        const raw = rawMaterials.find((r) => r.id === item.productId);
         return {
           id: 'rec-it-' + Math.random().toString(36).substring(2, 9),
           productId: item.productId,
-          productSku: prod ? prod.sku : 'SKU-UNKNOWN',
-          productName: prod ? prod.name : 'Produk',
-          sellingPrice: prod ? prod.price : 0,
+          productSku: prod ? prod.sku : (raw ? raw.sku : 'SKU-UNKNOWN'),
+          productName: prod ? prod.name : (raw ? `[Bahan Baku] ${raw.name}` : 'Produk'),
+          sellingPrice: prod ? prod.price : (raw ? raw.costPrice : 0),
           quantityReceived: Number(item.quantityReceived) || 0,
-          actualBuyPrice: item.actualBuyPrice ?? (prod ? Math.round(prod.price * 0.6) : 0),
+          actualBuyPrice: item.actualBuyPrice ?? (prod ? Math.round(prod.price * 0.6) : (raw ? raw.costPrice : 0)),
         };
       });
 
@@ -1053,31 +1055,6 @@ export const GoodsReceivingWorkspace: React.FC = () => {
                       );
                     })}
                   </div>
-
-                  {/* Planned vs Actual Summary Comparison Box */}
-                  <div className="rounded-2xl border-2 border-amber-200 bg-amber-50/70 p-4 space-y-2">
-                    <h5 className="text-xs font-black uppercase tracking-wider text-amber-900">
-                      Ringkasan Perbandingan Rencana vs Realisasi Fisik
-                    </h5>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                      <div className="bg-white p-2.5 rounded-xl border border-amber-200">
-                        <span className="text-[10px] text-[#8C7B6C] block">Total Rencana Qty:</span>
-                        <span className="font-black text-blue-900">{planActualTotals.totalPlannedQty} pcs</span>
-                      </div>
-                      <div className="bg-white p-2.5 rounded-xl border border-amber-200">
-                        <span className="text-[10px] text-[#8C7B6C] block">Total Aktual Diterima:</span>
-                        <span className="font-black text-emerald-800">{planActualTotals.totalActualQty} pcs</span>
-                      </div>
-                      <div className="bg-white p-2.5 rounded-xl border border-amber-200">
-                        <span className="text-[10px] text-[#8C7B6C] block">Total Nilai Rencana:</span>
-                        <span className="font-black text-amber-900">{formatIDR(planActualTotals.totalPlannedValue)}</span>
-                      </div>
-                      <div className="bg-white p-2.5 rounded-xl border border-amber-200">
-                        <span className="text-[10px] text-[#8C7B6C] block">Total Biaya Aktual:</span>
-                        <span className="font-black text-emerald-800">{formatIDR(planActualTotals.totalActualCost)}</span>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               ) : (
                 /* STANDARD MANUAL ITEMS LIST */
@@ -1112,17 +1089,28 @@ export const GoodsReceivingWorkspace: React.FC = () => {
                           <div className="w-8 text-xs font-bold text-[#8C7B6C] text-center">#{idx + 1}</div>
 
                           <div className="flex-1 w-full space-y-1">
-                            <label className="text-[10px] font-bold text-[#8C7B6C]">Produk Master</label>
+                            <label className="text-[10px] font-bold text-[#8C7B6C]">Produk / Bahan Baku Master</label>
                             <select
                               value={item.productId}
                               onChange={(e) => handleUpdateItemRow(item.tempId, 'productId', e.target.value)}
                               className="w-full rounded-lg border border-[#E5DACE] bg-white px-3 py-1.5 text-xs font-bold text-[#2D241E] focus:outline-none"
                             >
-                              {products.map((p) => (
-                                <option key={p.id} value={p.id}>
-                                  [{p.sku}] {p.name} (Stok Saat Ini: {p.stock})
-                                </option>
-                              ))}
+                              <optgroup label="🥖 Produk Jadi (Finished Goods)">
+                                {products.map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    [{p.sku}] {p.name} (Stok Saat Ini: {p.stock} pcs)
+                                  </option>
+                                ))}
+                              </optgroup>
+                              {rawMaterials.length > 0 && (
+                                <optgroup label="🥚 Raw Material (Bahan Baku)">
+                                  {rawMaterials.map((r) => (
+                                    <option key={r.id} value={r.id}>
+                                      [{r.sku}] {r.name} (Stok Saat Ini: {r.stock} {r.unit})
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              )}
                             </select>
                           </div>
 

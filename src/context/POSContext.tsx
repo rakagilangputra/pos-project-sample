@@ -29,6 +29,9 @@ import {
   PurchasePlan,
   PurchasePlanProductLine,
   PurchasePlanStatus,
+  MasterCategory,
+  MasterCategoryType,
+  RawMaterial,
 } from '../types';
 import {
   INITIAL_BRANCHES,
@@ -49,6 +52,8 @@ import {
   INITIAL_SUPPLIER_NOTIFICATION_BATCHES,
   INITIAL_SUPPLIER_DELIVERY_LOGS,
   INITIAL_PURCHASE_PLANS,
+  INITIAL_MASTER_CATEGORIES,
+  INITIAL_RAW_MATERIALS,
 } from '../data/mockData';
 import { generateReceiptNumber, generatePONumber, posSound } from '../utils/formatters';
 
@@ -125,6 +130,12 @@ interface POSContextType {
     quantity: number,
     reason: string
   ) => { success: boolean; message: string };
+
+  // Raw Material Master (Bahan Baku)
+  rawMaterials: RawMaterial[];
+  addRawMaterial: (data: Omit<RawMaterial, 'id' | 'createdAt' | 'updatedAt'>) => { success: boolean; rawMaterial?: RawMaterial; message: string };
+  updateRawMaterial: (id: string, data: Partial<RawMaterial>) => { success: boolean; rawMaterial?: RawMaterial; message: string };
+  deleteRawMaterial: (id: string) => { success: boolean; message: string };
 
   // Category Daily Closing (POS-US-069)
   categoryClosings: CategoryClosingSession[];
@@ -312,6 +323,12 @@ interface POSContextType {
   cancelPurchasePlan: (id: string, reason?: string) => { success: boolean; message: string };
   lockPurchasePlanForReceipt: (id: string) => { success: boolean; message: string };
   unlockPurchasePlanFromReceipt: (id: string) => { success: boolean; message: string };
+
+  // Master Kategori (HQ Category Management)
+  masterCategories: MasterCategory[];
+  addMasterCategory: (data: Omit<MasterCategory, 'createdAt'>) => { success: boolean; category?: MasterCategory; message: string };
+  updateMasterCategory: (id: string, data: Partial<MasterCategory>) => { success: boolean; message: string };
+  deleteMasterCategory: (id: string) => { success: boolean; message: string };
 }
 
 const POSContext = createContext<POSContextType | undefined>(undefined);
@@ -506,6 +523,38 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     localStorage.setItem('pos_categories', JSON.stringify(categories));
   }, [categories]);
+
+  // Master Kategori - Central Category Master (POS-HQ)
+  const [masterCategories, setMasterCategories] = useState<MasterCategory[]>(() => {
+    const saved = localStorage.getItem('pos_master_categories');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return INITIAL_MASTER_CATEGORIES;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('pos_master_categories', JSON.stringify(masterCategories));
+  }, [masterCategories]);
+
+  // Raw Materials Master (Bahan Baku)
+  const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>(() => {
+    const saved = localStorage.getItem('pos_raw_materials');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return INITIAL_RAW_MATERIALS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('pos_raw_materials', JSON.stringify(rawMaterials));
+  }, [rawMaterials]);
 
   // Catalog & Products (POS-US-029)
   const [products, setProducts] = useState<Product[]>(() => {
@@ -878,7 +927,21 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
     const saved = localStorage.getItem('pos_audit_logs');
     if (saved) {
-      try { return JSON.parse(saved); } catch {}
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const seenIds = new Set<string>();
+          return parsed.map((item: AuditLog, index: number) => {
+            if (!item.id || seenIds.has(item.id)) {
+              const uniqueId = `AUD-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`;
+              seenIds.add(uniqueId);
+              return { ...item, id: uniqueId };
+            }
+            seenIds.add(item.id);
+            return item;
+          });
+        }
+      } catch {}
     }
     return [];
   });
@@ -912,7 +975,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     afterValue?: string
   ) => {
     const entry: AuditLog = {
-      id: 'AUD-' + Date.now().toString().slice(-6),
+      id: `AUD-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       timestamp: new Date().toISOString(),
       actorId: currentUser.id,
       actorName: currentUser.name,
@@ -1368,6 +1431,107 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: true, category: newCat, message: `Kategori "${trimmed}" berhasil dibuat!` };
   };
 
+  // Master Kategori Management (Central HQ Master)
+  const addMasterCategory = (data: Omit<MasterCategory, 'createdAt'>) => {
+    const trimmedId = data.id.trim().toUpperCase();
+    const trimmedName = data.name.trim();
+
+    if (!trimmedId) {
+      posSound.error();
+      return { success: false, message: 'ID Master Kategori wajib diisi!' };
+    }
+    if (!trimmedName) {
+      posSound.error();
+      return { success: false, message: 'Nama Kategori wajib diisi!' };
+    }
+    if (!data.categoryType) {
+      posSound.error();
+      return { success: false, message: 'Pilih tipe kategori (KONSINYASI/PRODUKSI/BELI (RESELLER))!' };
+    }
+    if (!data.branchIds || data.branchIds.length === 0) {
+      posSound.error();
+      return { success: false, message: 'Pilih minimal satu Cabang untuk kategori ini!' };
+    }
+
+    const isDuplicate = masterCategories.some(
+      (c) => c.id.toLowerCase() === trimmedId.toLowerCase()
+    );
+    if (isDuplicate) {
+      posSound.error();
+      return { success: false, message: `ID Kategori '${trimmedId}' sudah digunakan!` };
+    }
+
+    const newCat: MasterCategory = {
+      id: trimmedId,
+      name: trimmedName,
+      categoryType: data.categoryType,
+      branchIds: data.branchIds,
+      description: data.description?.trim() || '',
+      createdAt: new Date().toISOString(),
+    };
+
+    setMasterCategories((prev) => [newCat, ...prev]);
+    addAudit(
+      'MASTER_CATEGORY_CREATE',
+      'category',
+      trimmedId,
+      `Master Kategori baru '${newCat.name}' (${newCat.id}) tipe ${newCat.categoryType} dibuat oleh ${currentUser.name}`
+    );
+    posSound.success();
+    return {
+      success: true,
+      category: newCat,
+      message: `Master Kategori '${newCat.name}' (${newCat.id}) berhasil dibuat!`,
+    };
+  };
+
+  const updateMasterCategory = (id: string, data: Partial<MasterCategory>) => {
+    const target = masterCategories.find((c) => c.id === id);
+    if (!target) {
+      posSound.error();
+      return { success: false, message: 'Data Master Kategori tidak ditemukan!' };
+    }
+
+    setMasterCategories((prev) =>
+      prev.map((c) =>
+        c.id === id
+          ? {
+              ...c,
+              ...data,
+              updatedAt: new Date().toISOString(),
+            }
+          : c
+      )
+    );
+
+    addAudit(
+      'MASTER_CATEGORY_UPDATE',
+      'category',
+      id,
+      `Master Kategori '${target.name}' (${id}) diperbarui oleh ${currentUser.name}`
+    );
+    posSound.beep();
+    return { success: true, message: 'Master Kategori berhasil diperbarui!' };
+  };
+
+  const deleteMasterCategory = (id: string) => {
+    const target = masterCategories.find((c) => c.id === id);
+    if (!target) {
+      posSound.error();
+      return { success: false, message: 'Data Master Kategori tidak ditemukan!' };
+    }
+
+    setMasterCategories((prev) => prev.filter((c) => c.id !== id));
+    addAudit(
+      'MASTER_CATEGORY_DELETE',
+      'category',
+      id,
+      `Master Kategori '${target.name}' (${id}) dihapus oleh ${currentUser.name}`
+    );
+    posSound.beep();
+    return { success: true, message: `Master Kategori '${target.name}' berhasil dihapus!` };
+  };
+
   // Product Master (POS-US-029)
   const addProduct = (productData: Omit<Product, 'id'>) => {
     const trimmedName = productData.name.trim();
@@ -1409,6 +1573,76 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
     posSound.beep();
     return { success: true, product: newProd, message: `Produk "${newProd.name}" berhasil ditambahkan dengan stok 0!` };
+  };
+
+  // Raw Material Master (Bahan Baku)
+  const addRawMaterial = (data: Omit<RawMaterial, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const trimmedName = data.name.trim();
+    const trimmedSku = data.sku.trim().toUpperCase();
+
+    if (!trimmedName) {
+      return { success: false, message: 'Nama bahan baku wajib diisi!' };
+    }
+    if (!trimmedSku) {
+      return { success: false, message: 'Kode SKU bahan baku wajib diisi!' };
+    }
+
+    const isDuplicateSku = rawMaterials.some(
+      (r) => r.sku.toLowerCase() === trimmedSku.toLowerCase()
+    );
+    if (isDuplicateSku) {
+      return { success: false, message: `Kode SKU "${trimmedSku}" sudah terdaftar!` };
+    }
+
+    const id = 'raw-' + Date.now().toString().slice(-6);
+    const newRaw: RawMaterial = {
+      ...data,
+      id,
+      name: trimmedName,
+      sku: trimmedSku,
+      branchId: selectedBranchId,
+      stock: 0, // Strict rule: starts at 0, must be added through penerimaan barang
+      createdAt: new Date().toISOString(),
+    };
+
+    setRawMaterials((prev) => [newRaw, ...prev]);
+
+    addAudit(
+      'STOCK_ADJUSTMENT',
+      'product',
+      id,
+      `Master Bahan Baku baru: ${newRaw.name} (SKU: ${newRaw.sku}), Kategori: ${newRaw.category}, Stok: 0 (Menunggu Penerimaan Barang)`
+    );
+    posSound.beep();
+    return { success: true, rawMaterial: newRaw, message: `Bahan baku "${newRaw.name}" berhasil ditambahkan!` };
+  };
+
+  const updateRawMaterial = (id: string, data: Partial<RawMaterial>) => {
+    const exists = rawMaterials.find((r) => r.id === id);
+    if (!exists) {
+      return { success: false, message: 'Bahan baku tidak ditemukan!' };
+    }
+    if (data.sku && data.sku.trim().toUpperCase() !== exists.sku) {
+      const duplicate = rawMaterials.some(
+        (r) => r.id !== id && r.sku.toLowerCase() === data.sku?.trim().toLowerCase()
+      );
+      if (duplicate) {
+        return { success: false, message: `Kode SKU "${data.sku}" sudah digunakan!` };
+      }
+    }
+    setRawMaterials((prev) =>
+      prev.map((r) =>
+        r.id === id
+          ? { ...r, ...data, updatedAt: new Date().toISOString() }
+          : r
+      )
+    );
+    return { success: true, message: 'Data bahan baku berhasil diperbarui!' };
+  };
+
+  const deleteRawMaterial = (id: string) => {
+    setRawMaterials((prev) => prev.filter((r) => r.id !== id));
+    return { success: true, message: 'Bahan baku berhasil dihapus!' };
   };
 
   // Supplier Master (POS-US-030)
@@ -3072,8 +3306,9 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       createdAt: now.toISOString(),
     };
 
-    // 3. Update stock for each product (added exactly once) and log stock movements
+    // 3. Update stock for each product & raw material (added exactly once) and log stock movements
     const updatedProducts = [...products];
+    const updatedRawMaterials = [...rawMaterials];
     const newStockAdjustments: StockAdjustmentRecord[] = [];
 
     receiptData.items.forEach((item) => {
@@ -3100,9 +3335,34 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           timestamp: now.toISOString(),
         });
       }
+
+      const rIdx = updatedRawMaterials.findIndex((r) => r.id === item.productId);
+      if (rIdx >= 0) {
+        const prevStock = updatedRawMaterials[rIdx].stock;
+        const newStock = prevStock + item.quantityReceived;
+        updatedRawMaterials[rIdx] = {
+          ...updatedRawMaterials[rIdx],
+          stock: newStock,
+        };
+
+        newStockAdjustments.push({
+          id: `adj-rcv-raw-${Date.now()}-${item.productId}`,
+          productId: item.productId,
+          productName: item.productName || updatedRawMaterials[rIdx].name,
+          type: 'increase',
+          quantity: item.quantityReceived,
+          previousStock: prevStock,
+          resultingStock: newStock,
+          reason: `Penerimaan Bahan Baku (${receiptData.receiptType}): ${receiptNumber} [Ref: ${stockMovementRef}]`,
+          adminId: currentUser.id,
+          adminName: currentUser.name,
+          timestamp: now.toISOString(),
+        });
+      }
     });
 
     setProducts(updatedProducts);
+    setRawMaterials(updatedRawMaterials);
     setStockAdjustments((prev) => [...newStockAdjustments, ...prev]);
     setGoodsReceipts((prev) => [newRecord, ...prev]);
 
@@ -4253,6 +4513,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Branch-Filtered Data Views
   const branchProducts = products.filter((p) => !p.branchId || p.branchId === selectedBranchId);
+  const branchRawMaterials = rawMaterials.filter((r) => !r.branchId || r.branchId === selectedBranchId);
   const branchCategories = categories.filter((c) => !c.branchId || c.branchId === selectedBranchId);
   const branchSuppliers = suppliers.filter((s) => !s.branchId || s.branchId === selectedBranchId);
   const branchCustomers = [
@@ -4315,6 +4576,10 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addProduct,
         updateProductInfo,
         manualAdjustStock,
+        rawMaterials: branchRawMaterials,
+        addRawMaterial,
+        updateRawMaterial,
+        deleteRawMaterial,
         categoryClosings: branchCategoryClosings,
         submitCategoryClosing,
         saveCategoryClosingDraft,
@@ -4390,6 +4655,10 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         cancelPurchasePlan,
         lockPurchasePlanForReceipt,
         unlockPurchasePlanFromReceipt,
+        masterCategories,
+        addMasterCategory,
+        updateMasterCategory,
+        deleteMasterCategory,
       }}
     >
       {children}

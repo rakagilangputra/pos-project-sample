@@ -430,27 +430,22 @@ export const PurchasePlanWorkspace: React.FC = () => {
       {viewMode === 'list' && (
         <div className="flex flex-col h-full overflow-hidden">
           {/* Top Banner & Module Header */}
-          <div className="border-b-2 border-[#E5DACE] bg-[#FDFBF7] px-6 py-4 shrink-0">
+          <div className="border-b-2 border-[#E5DACE] bg-[#FDFBF7] px-6 py-3.5 shrink-0">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-600 text-white shadow-xs font-black">
-                  <ClipboardList className="h-6 w-6" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-600 text-white shadow-xs font-black">
+                  <ClipboardList className="h-5 w-5" />
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-base font-black text-[#2D241E]">
-                      Rencana Pembelian Barang (Purchase Plan)
-                    </h2>
-                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-black text-blue-800 border border-blue-200 uppercase">
-                      Owned Purchases Only
-                    </span>
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-800 border border-amber-200 uppercase">
-                      Superadmin Only
-                    </span>
-                  </div>
-                  <p className="text-xs text-[#8C7B6C] font-semibold mt-0.5">
-                    Modul perencanaan pengadaan barang dagang milik sendiri. Format ID: <code className="bg-amber-50 px-1 py-0.2 rounded font-mono font-bold text-amber-900">RP-BRANCHCODE-YYYYMM-NNNN</code>.
-                  </p>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-black text-[#2D241E]">
+                    Rencana Pembelian Barang (Purchase Plan)
+                  </h2>
+                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-black text-blue-800 border border-blue-200 uppercase">
+                    Owned Purchases Only
+                  </span>
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-800 border border-amber-200 uppercase">
+                    Superadmin Only
+                  </span>
                 </div>
               </div>
 
@@ -459,44 +454,12 @@ export const PurchasePlanWorkspace: React.FC = () => {
                   id="btn-buat-rencana-baru"
                   type="button"
                   onClick={handleStartCreate}
-                  className="flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-xs font-black text-white hover:bg-amber-700 active:scale-95 transition shadow-xs"
+                  className="flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-xs font-black text-white hover:bg-amber-700 active:scale-95 transition shadow-xs"
                 >
                   <Plus className="h-4 w-4" />
                   <span>Buat Rencana Baru</span>
                 </button>
               </div>
-            </div>
-
-            {/* Scope Clarification Notice */}
-            <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-[11px] text-amber-900">
-              <Info className="h-4 w-4 shrink-0 text-amber-700 mt-0.5" />
-              <span>
-                <strong>Aturan Khusus:</strong> Modul ini murni untuk perencanaan pengadaan barang toko (Dibeli Sendiri). Modul ini <strong>tidak mengubah stok fisik atau stok jual</strong>. Stok hanya akan bertambah saat barang fisik diterima dan diverifikasi di menu <em>Penerimaan Barang Baru &gt; Dibeli Sendiri</em>.
-              </span>
-            </div>
-          </div>
-
-          {/* Quick Stats Row */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 border-b-2 border-[#E5DACE] bg-white px-6 py-3 shrink-0">
-            <div className="rounded-xl border border-[#E5DACE] bg-[#FAF8F5] p-3">
-              <span className="text-[10px] font-black uppercase tracking-wider text-[#8C7B6C]">Total Rencana</span>
-              <p className="text-lg font-black text-[#2D241E] mt-0.5">{stats.total}</p>
-            </div>
-            <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3">
-              <span className="text-[10px] font-black uppercase tracking-wider text-blue-700">Direncanakan</span>
-              <p className="text-lg font-black text-blue-900 mt-0.5">{stats.direncanakan}</p>
-            </div>
-            <div className="rounded-xl border border-purple-200 bg-purple-50/60 p-3">
-              <span className="text-[10px] font-black uppercase tracking-wider text-purple-700">Terkait Penerimaan</span>
-              <p className="text-lg font-black text-purple-900 mt-0.5">{stats.terkait}</p>
-            </div>
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
-              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700">Terealisasi</span>
-              <p className="text-lg font-black text-emerald-900 mt-0.5">{stats.terealisasi}</p>
-            </div>
-            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3 col-span-2 sm:col-span-1">
-              <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">Total Nilai Rencana</span>
-              <p className="text-base font-black text-amber-900 mt-0.5 truncate">{formatIDR(stats.totalPlannedValue)}</p>
             </div>
           </div>
 

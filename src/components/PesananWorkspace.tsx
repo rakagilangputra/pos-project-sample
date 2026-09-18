@@ -29,11 +29,13 @@ import {
   X,
   Package,
   Plus,
-  LayoutGrid,
-  List,
   DollarSign,
   Layers,
   MessageSquare,
+  Eye,
+  EyeOff,
+  Building2,
+  Tag,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 import { Order, CartItem, PaymentComponent } from '../types';
@@ -50,6 +52,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
     orders,
     currentUser,
     products,
+    categories,
     customers,
     createMtoOrder,
     updatePoPickupTime,
@@ -63,10 +66,105 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
     supplierNotificationBatches,
   } = usePOS();
 
-  // Primary workspace tabs & view mode
+  // Primary workspace tabs (viewMode removed - strictly row style)
   const [activeTab, setActiveTab] = useState<'active' | 'schedule' | 'history' | 'supplier_notification'>('active');
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [isCreateMtoOpen, setIsCreateMtoOpen] = useState(false);
+  const [expandedPreviewOrderId, setExpandedPreviewOrderId] = useState<string | null>(null);
+
+  // Helper to extract Supplier names for an order
+  const getOrderSuppliers = (order: Order) => {
+    const names = new Set<string>();
+    order.items.forEach((item) => {
+      if (item.supplierName && item.supplierName.trim()) {
+        names.add(item.supplierName);
+      } else if (item.supplierId) {
+        if (item.supplierId === 'internal') {
+          names.add('Produksi Sendiri');
+        } else {
+          const found = suppliers?.find((s) => s.id === item.supplierId);
+          names.add(found ? found.name : item.supplierId);
+        }
+      } else {
+        const prod = products?.find((p) => p.id === item.productId || p.name === item.productName);
+        if (prod?.supplierName && prod.supplierName.trim()) {
+          names.add(prod.supplierName);
+        } else if (prod?.supplierId) {
+          if (prod.supplierId === 'internal') {
+            names.add('Produksi Sendiri');
+          } else {
+            const found = suppliers?.find((s) => s.id === prod.supplierId);
+            names.add(found ? found.name : prod.supplierId);
+          }
+        } else {
+          names.add('Produksi Sendiri');
+        }
+      }
+    });
+    return names.size > 0 ? Array.from(names) : ['Produksi Sendiri'];
+  };
+
+  // Helper to extract POS Product Categories (NOT Master Category)
+  const getOrderProductCategories = (order: Order) => {
+    const cats = new Set<string>();
+    order.items.forEach((item) => {
+      const prod = products?.find((p) => p.id === item.productId || p.name === item.productName);
+      if (prod?.categoryLabel) {
+        cats.add(prod.categoryLabel);
+      } else if (item.category) {
+        const found = categories?.find((c) => c.id === item.category);
+        if (found && found.name && found.id !== 'all') {
+          cats.add(found.name);
+        } else {
+          const catMap: Record<string, string> = {
+            bread: 'Roti Manis',
+            cake: 'Kue & Tart',
+            pastry: 'Pastry & Croissant',
+            beverage: 'Minuman',
+            mto: 'Made-to-Order',
+          };
+          cats.add(catMap[item.category] || item.category);
+        }
+      }
+    });
+    return cats.size > 0 ? Array.from(cats) : ['Made-to-Order'];
+  };
+
+  // Helper to get individual item's product category
+  const getItemCategoryLabel = (item: CartItem) => {
+    const prod = products?.find((p) => p.id === item.productId || p.name === item.productName);
+    if (prod?.categoryLabel) return prod.categoryLabel;
+    if (item.category) {
+      const found = categories?.find((c) => c.id === item.category);
+      if (found && found.name && found.id !== 'all') return found.name;
+      const catMap: Record<string, string> = {
+        bread: 'Roti Manis',
+        cake: 'Kue & Tart',
+        pastry: 'Pastry & Croissant',
+        beverage: 'Minuman',
+        mto: 'Made-to-Order',
+      };
+      return catMap[item.category] || item.category;
+    }
+    return 'Made-to-Order';
+  };
+
+  // Helper to get individual item's supplier
+  const getItemSupplierName = (item: CartItem) => {
+    if (item.supplierName && item.supplierName.trim()) return item.supplierName;
+    if (item.supplierId) {
+      if (item.supplierId === 'internal') return 'Produksi Sendiri';
+      const found = suppliers?.find((s) => s.id === item.supplierId);
+      return found ? found.name : item.supplierId;
+    }
+    const prod = products?.find((p) => p.id === item.productId || p.name === item.productName);
+    if (prod?.supplierName && prod.supplierName.trim()) return prod.supplierName;
+    if (prod?.supplierId) {
+      if (prod.supplierId === 'internal') return 'Produksi Sendiri';
+      const found = suppliers?.find((s) => s.id === prod.supplierId);
+      return found ? found.name : prod.supplierId;
+    }
+    return 'Produksi Sendiri';
+  };
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -687,32 +785,6 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                   </button>
                 ))}
               </div>
-
-              {/* View Mode Toggle */}
-              <div className="flex items-center rounded-xl border border-[#E5E7EB] bg-white p-0.5 shadow-2xs">
-                <button
-                  onClick={() => setViewMode('grid')}
-                  className={`p-1.5 rounded-lg transition ${
-                    viewMode === 'grid'
-                      ? 'bg-[#D97706] text-white shadow-xs'
-                      : 'text-[#6B7280] hover:text-[#1F2937]'
-                  }`}
-                  title="Tampilan Grid Kartu"
-                >
-                  <LayoutGrid className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  onClick={() => setViewMode('table')}
-                  className={`p-1.5 rounded-lg transition ${
-                    viewMode === 'table'
-                      ? 'bg-[#D97706] text-white shadow-xs'
-                      : 'text-[#6B7280] hover:text-[#1F2937]'
-                  }`}
-                  title="Tampilan Tabel Lengkap"
-                >
-                  <List className="h-3.5 w-3.5" />
-                </button>
-              </div>
             </div>
           ) : (
             <div className="flex flex-1 items-center justify-end gap-2 text-xs text-[#6B7280]">
@@ -725,7 +797,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
         </div>
       </div>
 
-      {/* Main Content Area */}
+      {/* Main Content Area: Row-Style PO Table */}
       <div className={`flex-1 min-h-0 overflow-y-auto ${activeTab === 'supplier_notification' ? 'p-3 sm:p-5' : 'p-4 sm:p-6 pb-28'} scrollbar-thin`}>
         {activeTab === 'supplier_notification' ? (
           <SupplierNotificationWorkspace onNavigateToPOS={onNavigateToPOS} />
@@ -750,203 +822,345 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
               </button>
             )}
           </div>
-        ) : viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
-            {displayedOrders.map((order) => {
-              const isOverdue = isOrderOverdue(order);
-              return (
-                <div
-                  key={order.id}
-                  onClick={() => handleOpenDetail(order)}
-                  className={`group relative flex flex-col justify-between rounded-2xl border bg-white p-4 shadow-xs transition hover:shadow-md cursor-pointer ${
-                    isOverdue
-                      ? 'border-rose-300 ring-1 ring-rose-200'
-                      : order.orderStatus === 'ready_for_pickup'
-                      ? 'border-teal-300 ring-1 ring-teal-200'
-                      : 'border-[#E5E7EB] hover:border-[#D97706]'
-                  }`}
-                >
-                  {/* Card Header */}
-                  <div>
-                    <div className="flex items-start justify-between gap-2 border-b border-[#F3F4F6] pb-2.5">
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono text-xs font-black text-[#D97706]">
-                            {order.poNumber || order.receiptNumber}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <User className="h-3.5 w-3.5 text-[#6B7280]" />
-                          <span className="text-xs font-bold text-[#1F2937]">
-                            {order.customer.name}
-                          </span>
-                          {order.customer.category && (
-                            <span className="text-[10px] text-[#6B7280]">
-                              • {order.customer.category}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-1">
-                        {renderStatusBadge(order)}
-                        {renderPaymentBadge(order)}
-                      </div>
-                    </div>
-
-                    {/* Schedule Badge */}
-                    <div className="mt-3 flex items-center justify-between rounded-xl bg-[#F7F7F5] p-2 text-xs">
-                      <div className="flex items-center gap-1.5">
-                        <Calendar className="h-3.5 w-3.5 text-[#D97706]" />
-                        <span className="font-semibold text-[#1F2937]">
-                          {order.pickupDate || 'Hari Ini'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Clock className="h-3.5 w-3.5 text-[#6B7280]" />
-                        <span className="font-bold text-[#1F2937]">
-                          Pukul {order.pickupTime || '14:00'} WIB
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Items Preview */}
-                    <div className="mt-3 space-y-1">
-                      {order.items.map((item, idx) => (
-                        <div key={idx} className="flex justify-between text-xs">
-                          <span className="text-[#374151] font-medium truncate max-w-[200px]">
-                            {item.quantity}x {item.productName}
-                          </span>
-                          <span className="font-semibold text-[#1F2937]">
-                            {formatIDR(item.unitPrice * item.quantity)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Customization notes snippet */}
-                    {order.customizationNotes && (
-                      <div className="mt-2 rounded-lg bg-amber-50/70 border border-amber-200/60 p-2 text-[11px] text-amber-900 line-clamp-2">
-                        <span className="font-bold block text-[10px] text-amber-800">Catatan Khusus:</span>
-                        {order.customizationNotes}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Card Footer Info & Detail Link */}
-                  <div className="mt-4 pt-3 border-t border-[#F3F4F6] flex items-center justify-between text-xs">
-                    <div>
-                      <span className="block text-[10px] uppercase font-bold text-[#9CA3AF]">
-                        Total Nilai PO
-                      </span>
-                      <span className="text-sm font-bold text-[#1F2937]">
-                        {formatIDR(order.total)}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1 text-[#D97706] font-bold group-hover:translate-x-0.5 transition">
-                      <span>Kelola PO</span>
-                      <ChevronRight className="h-4 w-4" />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
         ) : (
-          /* Table View: Full width presentation without dead empty space */
+          /* Row Style PO Table */
           <div className="rounded-2xl border border-[#E5E7EB] bg-white overflow-hidden shadow-xs">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-[#E5E7EB] bg-[#F7F7F5] text-[#6B7280] font-black uppercase tracking-wider text-[10px]">
-                  <th className="py-3 px-4">No. PO</th>
-                  <th className="py-3 px-4">Pelanggan</th>
-                  <th className="py-3 px-4">Jadwal Pengambilan</th>
-                  <th className="py-3 px-4">Ringkasan Item</th>
-                  <th className="py-3 px-4 text-center">Status Produksi</th>
-                  <th className="py-3 px-4 text-center">Status Bayar</th>
-                  <th className="py-3 px-4 text-right">Total Nilai</th>
-                  <th className="py-3 px-4 text-right">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E5E7EB]/70">
-                {displayedOrders.map((order) => {
-                  return (
-                    <tr
-                      key={order.id}
-                      onClick={() => handleOpenDetail(order)}
-                      className="hover:bg-[#FDFBF7] cursor-pointer transition"
-                    >
-                      {/* PO Number */}
-                      <td className="py-3 px-4">
-                        <div className="font-mono font-bold text-[#D97706] text-xs">
-                          {order.poNumber || order.receiptNumber}
-                        </div>
-                      </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-[#E5E7EB] bg-[#F7F7F5] text-[#6B7280] font-black uppercase tracking-wider text-[10px]">
+                    {/* 1. Jadwal Pengambilan */}
+                    <th className="py-3 px-4 min-w-[170px]">
+                      <div className="flex items-center gap-1.5 text-[#1F2937]">
+                        <Calendar className="h-3.5 w-3.5 text-[#D97706]" />
+                        <span>1. Jadwal Pengambilan</span>
+                      </div>
+                    </th>
 
-                      {/* Customer */}
-                      <td className="py-3 px-4">
-                        <div className="font-bold text-[#1F2937]">{order.customer.name}</div>
-                        <div className="text-[10px] text-[#6B7280]">
-                          {order.customer.phone || 'Tanpa no. telp'}
-                        </div>
-                      </td>
+                    {/* 2. Supplier */}
+                    <th className="py-3 px-4 min-w-[150px]">
+                      <div className="flex items-center gap-1.5 text-[#1F2937]">
+                        <Building2 className="h-3.5 w-3.5 text-blue-600" />
+                        <span>2. Supplier</span>
+                      </div>
+                    </th>
 
-                      {/* Schedule */}
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-[#1F2937]">
-                          {order.pickupDate || 'Hari Ini'}
-                        </div>
-                        <div className="text-[10px] text-[#6B7280]">
-                          Pukul {order.pickupTime || '14:00'} WIB
-                        </div>
-                      </td>
+                    {/* 3. Kategori Produk (not master kategori) */}
+                    <th className="py-3 px-4 min-w-[150px]">
+                      <div className="flex items-center gap-1.5 text-[#1F2937]">
+                        <Tag className="h-3.5 w-3.5 text-emerald-600" />
+                        <span>3. Kategori Produk</span>
+                      </div>
+                    </th>
 
-                      {/* Items summary */}
-                      <td className="py-3 px-4 max-w-xs">
-                        <div className="line-clamp-1 text-xs text-[#374151] font-medium">
-                          {order.items.map((i) => `${i.quantity}x ${i.productName}`).join(', ')}
-                        </div>
-                        {order.customizationNotes && (
-                          <div className="text-[10px] text-amber-800 line-clamp-1 italic">
-                            "{order.customizationNotes}"
-                          </div>
-                        )}
-                      </td>
+                    {/* 4. List product (can be shown by preview) */}
+                    <th className="py-3 px-4 min-w-[240px]">
+                      <div className="flex items-center gap-1.5 text-[#1F2937]">
+                        <Package className="h-3.5 w-3.5 text-purple-600" />
+                        <span>4. List Produk (Preview)</span>
+                      </div>
+                    </th>
 
-                      {/* Status */}
-                      <td className="py-3 px-4 text-center">
-                        {renderStatusBadge(order)}
-                      </td>
+                    {/* No. PO & Pelanggan */}
+                    <th className="py-3 px-4 min-w-[150px]">No. PO & Pelanggan</th>
 
-                      {/* Payment */}
-                      <td className="py-3 px-4 text-center">
-                        {renderPaymentBadge(order)}
-                      </td>
+                    {/* Status */}
+                    <th className="py-3 px-4 min-w-[120px] text-center">Status</th>
 
-                      {/* Total */}
-                      <td className="py-3 px-4 text-right font-bold text-[#1F2937]">
-                        {formatIDR(order.total)}
-                      </td>
+                    {/* Aksi */}
+                    <th className="py-3 px-4 text-right min-w-[90px]">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E5E7EB]/70">
+                  {displayedOrders.map((order) => {
+                    const isOverdue = isOrderOverdue(order);
+                    const isToday = order.pickupDate === todayStr;
+                    const orderSuppliers = getOrderSuppliers(order);
+                    const orderCategories = getOrderProductCategories(order);
+                    const isPreviewExpanded = expandedPreviewOrderId === order.id;
 
-                      {/* Action */}
-                      <td className="py-3 px-4 text-right">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenDetail(order);
-                          }}
-                          className="inline-flex items-center gap-1 rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1 text-xs font-bold text-[#D97706] hover:bg-amber-50 hover:border-amber-300 transition"
+                    return (
+                      <React.Fragment key={order.id}>
+                        <tr
+                          onClick={() => handleOpenDetail(order)}
+                          className={`hover:bg-[#FDFBF7] cursor-pointer transition ${
+                            isPreviewExpanded ? 'bg-amber-50/40' : ''
+                          }`}
                         >
-                          <span>Kelola</span>
-                          <ChevronRight className="h-3.5 w-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                          {/* 1. Jadwal Pengambilan */}
+                          <td className="py-3.5 px-4 align-top">
+                            <div className="flex items-start gap-2.5">
+                              <div
+                                className={`p-1.5 rounded-xl shrink-0 ${
+                                  isOverdue
+                                    ? 'bg-rose-100 text-rose-700'
+                                    : isToday
+                                    ? 'bg-emerald-100 text-emerald-700'
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}
+                              >
+                                <Calendar className="h-4 w-4" />
+                              </div>
+                              <div>
+                                <div className="font-bold text-[#1F2937] text-xs flex items-center gap-1.5 flex-wrap">
+                                  <span>{order.pickupDate || 'Hari Ini'}</span>
+                                  {isToday && (
+                                    <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black text-emerald-800">
+                                      HARI INI
+                                    </span>
+                                  )}
+                                  {isOverdue && (
+                                    <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[9px] font-black text-rose-800">
+                                      TERLAMBAT
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] font-semibold text-[#6B7280] flex items-center gap-1 mt-0.5">
+                                  <Clock className="h-3 w-3 text-[#9CA3AF]" />
+                                  <span>Pukul {order.pickupTime || '14:00'} WIB</span>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* 2. Supplier */}
+                          <td className="py-3.5 px-4 align-top">
+                            <div className="space-y-1">
+                              {orderSuppliers.map((sup, idx) => (
+                                <span
+                                  key={idx}
+                                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-bold border ${
+                                    sup === 'Produksi Sendiri'
+                                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                      : 'bg-amber-50 text-amber-900 border-amber-200'
+                                  }`}
+                                >
+                                  <Building2 className="h-3 w-3 shrink-0 text-blue-600" />
+                                  <span className="truncate max-w-[130px]">{sup}</span>
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+
+                          {/* 3. Kategori Produk (not master kategori) */}
+                          <td className="py-3.5 px-4 align-top">
+                            <div className="flex flex-wrap gap-1">
+                              {orderCategories.map((cat, idx) => (
+                                <span
+                                  key={idx}
+                                  className="inline-flex items-center gap-1 rounded-md bg-[#F3F4F6] border border-[#E5E7EB] px-2 py-0.5 text-[11px] font-bold text-[#374151]"
+                                >
+                                  <Tag className="h-2.5 w-2.5 text-[#8C7B6C]" />
+                                  <span>{cat}</span>
+                                </span>
+                              ))}
+                            </div>
+                            <p className="text-[9px] text-[#9CA3AF] mt-1 italic">
+                              Kategori Produk POS
+                            </p>
+                          </td>
+
+                          {/* 4. List product (can be shown by preview) */}
+                          <td className="py-3.5 px-4 align-top">
+                            <div className="space-y-1.5">
+                              {/* Product Items Summary */}
+                              <div className="text-xs font-semibold text-[#1F2937] line-clamp-2">
+                                {order.items
+                                  .map((it) => `${it.quantity}x ${it.productName}`)
+                                  .join(', ')}
+                              </div>
+
+                              {/* Interactive Preview Button */}
+                              <div className="flex items-center gap-2 pt-0.5">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setExpandedPreviewOrderId(
+                                      isPreviewExpanded ? null : order.id
+                                    );
+                                    posSound.beep();
+                                  }}
+                                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-bold transition shadow-2xs ${
+                                    isPreviewExpanded
+                                      ? 'bg-[#1F2937] text-white border border-[#1F2937]'
+                                      : 'bg-amber-50 text-[#D97706] border border-amber-200 hover:bg-amber-100 hover:border-amber-300'
+                                  }`}
+                                >
+                                  {isPreviewExpanded ? (
+                                    <>
+                                      <EyeOff className="h-3.5 w-3.5" />
+                                      <span>Tutup Preview</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Eye className="h-3.5 w-3.5" />
+                                      <span>Preview ({order.items.length} Produk)</span>
+                                    </>
+                                  )}
+                                </button>
+
+                                {order.customizationNotes && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                    <Sparkles className="h-2.5 w-2.5" />
+                                    Ada Catatan
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* No. PO & Pelanggan */}
+                          <td className="py-3.5 px-4 align-top">
+                            <div className="font-mono font-bold text-[#D97706] text-xs">
+                              {order.poNumber || order.receiptNumber}
+                            </div>
+                            <div className="font-bold text-[#1F2937] text-xs mt-0.5">
+                              {order.customer.name}
+                            </div>
+                            <div className="text-[10px] text-[#6B7280]">
+                              {order.customer.phone || 'Tanpa no. telp'}
+                            </div>
+                          </td>
+
+                          {/* Status */}
+                          <td className="py-3.5 px-4 align-top text-center">
+                            <div className="flex flex-col items-center gap-1.5">
+                              {renderStatusBadge(order)}
+                              {renderPaymentBadge(order)}
+                            </div>
+                          </td>
+
+                          {/* Aksi */}
+                          <td className="py-3.5 px-4 align-top text-right">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenDetail(order);
+                              }}
+                              className="inline-flex items-center gap-1 rounded-xl border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-bold text-[#D97706] hover:bg-amber-50 hover:border-amber-300 transition shadow-2xs"
+                            >
+                              <span>Kelola</span>
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+
+                        {/* Inline Preview Drawer for List Product */}
+                        {isPreviewExpanded && (
+                          <tr className="bg-[#FFFDF9] border-b-2 border-amber-300/80">
+                            <td colSpan={7} className="p-4 sm:p-5">
+                              <div className="rounded-2xl border-2 border-amber-200/80 bg-white p-4 shadow-sm space-y-3">
+                                <div className="flex items-center justify-between border-b border-[#F3F4F6] pb-2.5">
+                                  <div className="flex items-center gap-2.5">
+                                    <div className="h-8 w-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black text-xs shadow-xs">
+                                      <Package className="h-4 w-4" />
+                                    </div>
+                                    <div>
+                                      <h4 className="text-xs font-black text-[#1F2937]">
+                                        Preview Rincian Produk: {order.poNumber || order.receiptNumber}
+                                      </h4>
+                                      <p className="text-[10px] text-[#6B7280]">
+                                        {order.items.length} item produk pesanan untuk {order.customer.name}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedPreviewOrderId(null)}
+                                    className="text-[#9CA3AF] hover:text-[#1F2937] p-1 rounded-lg hover:bg-gray-100 text-xs font-bold flex items-center gap-1"
+                                  >
+                                    <X className="h-4 w-4" />
+                                    <span>Tutup Preview</span>
+                                  </button>
+                                </div>
+
+                                {/* Product Cards Grid Preview */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                  {order.items.map((item, itmIdx) => (
+                                    <div
+                                      key={itmIdx}
+                                      className="rounded-xl border border-[#E5E7EB] bg-[#FDFBF7] p-3 space-y-2"
+                                    >
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="min-w-0">
+                                          <div className="font-bold text-xs text-[#1F2937] truncate">
+                                            {item.productName}
+                                          </div>
+                                          <div className="text-[10px] text-[#8C7B6C] flex items-center gap-1 mt-0.5">
+                                            <span className="font-semibold text-[#D97706]">
+                                              {item.quantity} pcs
+                                            </span>
+                                            <span>• @{formatIDR(item.unitPrice)}</span>
+                                          </div>
+                                        </div>
+                                        <span className="font-black text-xs text-[#1F2937] shrink-0">
+                                          {formatIDR(item.unitPrice * item.quantity)}
+                                        </span>
+                                      </div>
+
+                                      <div className="flex flex-wrap items-center gap-1 text-[10px] pt-1 border-t border-[#E5DACE]/60">
+                                        <span className="rounded bg-gray-100 text-[#4B5563] px-1.5 py-0.5 font-bold">
+                                          {getItemCategoryLabel(item)}
+                                        </span>
+                                        <span className="rounded bg-blue-50 text-blue-700 px-1.5 py-0.5 font-bold">
+                                          {getItemSupplierName(item)}
+                                        </span>
+                                      </div>
+
+                                      {item.customizationNotes && (
+                                        <div className="rounded-lg bg-amber-50 border border-amber-200/80 p-2 text-[10px] text-amber-900">
+                                          <span className="font-bold block text-[9px] text-amber-800">
+                                            Catatan Item:
+                                          </span>
+                                          {item.customizationNotes}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+
+                                {order.customizationNotes && (
+                                  <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 flex items-start gap-2">
+                                    <Sparkles className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                                    <div>
+                                      <strong className="block text-[11px] text-amber-800 font-black">
+                                        Catatan Pesanan Khusus (MTO):
+                                      </strong>
+                                      <p className="text-xs mt-0.5">
+                                        {order.customizationNotes}
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div className="flex items-center justify-between pt-2 border-t border-[#F3F4F6]">
+                                  <div className="text-xs">
+                                    <span className="text-[#6B7280]">Total Nilai Item: </span>
+                                    <strong className="text-sm font-black text-[#1F2937]">
+                                      {formatIDR(order.total)}
+                                    </strong>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenDetail(order)}
+                                    className="inline-flex items-center gap-1.5 rounded-xl bg-[#D97706] px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700 shadow-xs transition"
+                                  >
+                                    <span>Buka Kelola Lengkap</span>
+                                    <ChevronRight className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>

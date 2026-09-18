@@ -1,8 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Package,
-  FolderPlus,
-  PackagePlus,
   Building2,
   History,
   Tag,
@@ -16,9 +14,10 @@ import {
   ClipboardCheck,
   AlertTriangle,
   ShieldAlert,
+  Wheat,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
-import { ProductOwnershipType, CommissionMethod, CommissionBasis } from '../types';
+import { ProductOwnershipType, CommissionMethod, CommissionBasis, MasterCategory } from '../types';
 import { AddCategoryModal } from './AddCategoryModal';
 import { GoodsReceivingWorkspace } from './GoodsReceivingWorkspace';
 import { ProductStockTable } from './stock/ProductStockTable';
@@ -26,6 +25,7 @@ import { CategoryClosingView } from './stock/CategoryClosingView';
 import { StockTransferView } from './stock/StockTransferView';
 import { BadStockView } from './stock/BadStockView';
 import { StockHistoryView } from './stock/StockHistoryView';
+import { RawMaterialWorkspace } from './stock/RawMaterialWorkspace';
 
 export type StockLocalView =
   | 'products'
@@ -33,7 +33,8 @@ export type StockLocalView =
   | 'transfers'
   | 'bad_stock'
   | 'receiving'
-  | 'history';
+  | 'history'
+  | 'raw_materials';
 
 const BAKERY_SAMPLE_IMAGES = [
   { label: 'Roti Manis', url: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&auto=format&fit=crop&q=80' },
@@ -49,12 +50,93 @@ export const StockWorkspace: React.FC = () => {
     products,
     categories,
     suppliers,
+    masterCategories,
     addProduct,
     selectedBranch,
     isBranchReadOnly,
     currentUser,
     verifySupervisorPin,
   } = usePOS();
+
+  // Master Categories for Add Product Form (Step 1)
+  const availableMasterCategories: MasterCategory[] = useMemo(() => {
+    return masterCategories && masterCategories.length > 0
+      ? masterCategories
+      : [
+          {
+            id: 'KAT-PROD-01',
+            name: 'Roti Manis & Roti Tawar',
+            categoryType: 'PRODUKSI' as const,
+            createdAt: '2026-01-15T08:00:00Z',
+          },
+          {
+            id: 'KAT-KSN-01',
+            name: 'Kue Basah Tradisional',
+            categoryType: 'KONSINYASI' as const,
+            createdAt: '2026-02-01T09:30:00Z',
+          },
+          {
+            id: 'KAT-RSL-01',
+            name: 'Minuman Kemasan & Botol',
+            categoryType: 'BELI (RESELLER)' as const,
+            createdAt: '2026-02-10T11:15:00Z',
+          },
+        ];
+  }, [masterCategories]);
+
+  const [selectedMasterCategoryId, setSelectedMasterCategoryId] = useState<string>('');
+
+  useEffect(() => {
+    if (!selectedMasterCategoryId && availableMasterCategories.length > 0) {
+      setSelectedMasterCategoryId(availableMasterCategories[0].id);
+    }
+  }, [availableMasterCategories, selectedMasterCategoryId]);
+
+  const selectedMasterCat = useMemo(() => {
+    return (
+      availableMasterCategories.find((c) => c.id === selectedMasterCategoryId) ||
+      availableMasterCategories[0]
+    );
+  }, [availableMasterCategories, selectedMasterCategoryId]);
+
+  // Dynamic Mitra Suppliers based on selected Master Kategori (Step 2)
+  const filteredSuppliers = useMemo(() => {
+    if (!selectedMasterCat) return suppliers;
+    const catNameLower = selectedMasterCat.name.toLowerCase();
+    return suppliers.filter((s) => {
+      const supCatLower = (s.category || '').toLowerCase();
+      const inCategories = s.categories?.some(
+        (c) => c.toLowerCase().includes(catNameLower) || catNameLower.includes(c.toLowerCase())
+      );
+      return supCatLower.includes(catNameLower) || catNameLower.includes(supCatLower) || inCategories;
+    });
+  }, [selectedMasterCat, suppliers]);
+
+  const handleMasterCategoryChange = (catId: string) => {
+    setSelectedMasterCategoryId(catId);
+    const cat = availableMasterCategories.find((c) => c.id === catId);
+    if (cat) {
+      if (cat.categoryType === 'PRODUKSI') {
+        setNewSupplierId('internal');
+      } else {
+        const catNameLower = cat.name.toLowerCase();
+        const matched = suppliers.find((s) => {
+          const supCatLower = (s.category || '').toLowerCase();
+          const inCategories = s.categories?.some(
+            (c) => c.toLowerCase().includes(catNameLower) || catNameLower.includes(c.toLowerCase())
+          );
+          return supCatLower.includes(catNameLower) || catNameLower.includes(supCatLower) || inCategories;
+        });
+        if (matched) {
+          setNewSupplierId(matched.id);
+        } else if (suppliers.length > 0) {
+          setNewSupplierId(suppliers[0].id);
+        } else {
+          setNewSupplierId('internal');
+        }
+      }
+    }
+  };
 
   // Local View Tab: 'products' (default), 'categories', 'transfers', 'bad_stock', 'receiving', 'history'
   const [activeView, setActiveView] = useState<StockLocalView>('products');
@@ -140,9 +222,8 @@ export const StockWorkspace: React.FC = () => {
     const trimmedName = newName.trim();
     const trimmedSku = newSku.trim().toUpperCase();
     const numPrice = parseInt(newPrice || '0', 10);
-    const numStock = parseInt(newOpeningStock || '0', 10);
-    const numLowStock = parseInt(newLowStockThreshold || '5', 10);
-    const numCommValue = parseFloat(newCommissionValue || '0');
+    const numStock = 0;
+    const numLowStock = 5;
 
     if (!trimmedName) {
       setFormError('Nama produk wajib diisi!');
@@ -152,8 +233,8 @@ export const StockWorkspace: React.FC = () => {
       setFormError('Kode SKU / barcode produk wajib diisi!');
       return;
     }
-    if (numPrice < 0) {
-      setFormError('Harga jual tidak boleh bernilai negatif!');
+    if (isNaN(numPrice) || numPrice < 0) {
+      setFormError('Harga jual wajib diisi dan tidak boleh bernilai negatif!');
       return;
     }
 
@@ -165,15 +246,8 @@ export const StockWorkspace: React.FC = () => {
       ? catItem.name
       : 'Roti & Bakery';
 
-    let selectedSup = suppliers.find((s) => s.id === newSupplierId);
-    if (newOwnershipType === 'consignment' && !selectedSup && suppliers.length > 0) {
-      selectedSup = suppliers[0];
-    }
-
-    if (newOwnershipType === 'consignment' && !selectedSup) {
-      setFormError('Pilih supplier mitra titipan konsinyasi!');
-      return;
-    }
+    const selectedSup = suppliers.find((s) => s.id === newSupplierId);
+    const isConsignment = Boolean(selectedSup && newSupplierId !== 'internal');
 
     setIsSubmittingProduct(true);
     const res = addProduct({
@@ -188,15 +262,9 @@ export const StockWorkspace: React.FC = () => {
       isMadeToOrder: isMadeToOrderCat,
       image: newImage || BAKERY_SAMPLE_IMAGES[0].url,
       description: newDescription.trim() || undefined,
-      ownershipType: newOwnershipType,
-      supplierId: newOwnershipType === 'consignment' ? selectedSup?.id : undefined,
-      supplierName: newOwnershipType === 'consignment' ? selectedSup?.name : undefined,
-      commissionMethod: newOwnershipType === 'consignment' ? newCommissionMethod : undefined,
-      commissionValue: newOwnershipType === 'consignment' ? numCommValue : undefined,
-      commissionBasis:
-        newOwnershipType === 'consignment' && newCommissionMethod === 'percentage'
-          ? newCommissionBasis
-          : undefined,
+      ownershipType: isConsignment ? 'consignment' : 'own',
+      supplierId: isConsignment ? selectedSup?.id : undefined,
+      supplierName: isConsignment ? selectedSup?.name : (newSupplierId === 'internal' ? 'Produksi Sendiri' : undefined),
     });
     setIsSubmittingProduct(false);
 
@@ -209,6 +277,7 @@ export const StockWorkspace: React.FC = () => {
     setTimeout(() => {
       setNewName('');
       setNewSku('');
+      setNewPrice('');
       setNewDescription('');
       setSupervisorPin('');
       setFormSuccess('');
@@ -285,29 +354,155 @@ export const StockWorkspace: React.FC = () => {
               </div>
             )}
 
-            {/* Section 1: Basic Information */}
-            <div className="rounded-3xl border-2 border-[#E5DACE] bg-[#FDFBF7] p-6 space-y-4">
-              <h3 className="text-sm font-black text-[#2D241E] flex items-center gap-2">
-                <Tag className="h-4 w-4 text-[#D97706]" />
-                <span>1. Identitas & Kategori Produk</span>
-              </h3>
+            {/* Form Fields: Reordered 1 to 6 */}
+            <div className="rounded-3xl border-2 border-[#E5DACE] bg-[#FDFBF7] p-6 space-y-5">
+              <div className="flex items-center justify-between border-b border-[#E5DACE] pb-3">
+                <h3 className="text-sm font-black text-[#2D241E] flex items-center gap-2">
+                  <Tag className="h-4 w-4 text-[#D97706]" />
+                  <span>Identitas & Informasi Master Produk</span>
+                </h3>
+                <span className="text-[11px] font-bold text-[#8C7B6C]">
+                  Lengkapi 6 informasi master produk berikut
+                </span>
+              </div>
 
+              {/* Row 1: 1. Add Master Kategori & 2. Add Mitra Supplier */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#2D241E]">Nama Produk *</label>
+                {/* 1. Add Master Kategori */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="product-master-category-select" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
+                      1. Master Kategori <span className="text-rose-500">*</span>
+                    </label>
+                    {selectedMasterCat && (
+                      <span className={`rounded-md px-2 py-0.5 text-[10px] font-black border ${
+                        selectedMasterCat.categoryType === 'PRODUKSI'
+                          ? 'bg-blue-50 text-blue-700 border-blue-200'
+                          : selectedMasterCat.categoryType === 'KONSINYASI'
+                          ? 'bg-amber-50 text-[#D97706] border-amber-200'
+                          : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      }`}>
+                        {selectedMasterCat.categoryType}
+                      </span>
+                    )}
+                  </div>
+                  <select
+                    id="product-master-category-select"
+                    value={selectedMasterCategoryId}
+                    onChange={(e) => handleMasterCategoryChange(e.target.value)}
+                    className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white px-3.5 py-2.5 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none shadow-xs"
+                  >
+                    {availableMasterCategories.map((mc) => (
+                      <option key={mc.id} value={mc.id}>
+                        [{mc.categoryType}] {mc.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-[#8C7B6C]">
+                    Klasifikasi master kategori pusat untuk peruntukan rantai pasok dan mitra supplier.
+                  </p>
+                </div>
+
+                {/* 2. Add Mitra Supplier (Selection appears based on Master Kategori) */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="product-supplier-select" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
+                      2. Mitra Supplier <span className="text-rose-500">*</span>
+                    </label>
+                    {selectedMasterCat && (
+                      <span className="text-[10px] font-bold text-[#D97706]">
+                        Kategori: {selectedMasterCat.name}
+                      </span>
+                    )}
+                  </div>
+                  <select
+                    id="product-supplier-select"
+                    value={newSupplierId}
+                    onChange={(e) => setNewSupplierId(e.target.value)}
+                    className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white px-3.5 py-2.5 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none shadow-xs"
+                  >
+                    {(selectedMasterCat?.categoryType === 'PRODUKSI' || filteredSuppliers.length === 0) && (
+                      <option value="internal">🏠 Produksi Sendiri (Dapur Utama Internal)</option>
+                    )}
+
+                    {filteredSuppliers.map((sup) => (
+                      <option key={sup.id} value={sup.id}>
+                        🏷️ {sup.name} ({sup.category || selectedMasterCat?.name})
+                      </option>
+                    ))}
+
+                    {filteredSuppliers.length === 0 && suppliers.map((sup) => (
+                      <option key={sup.id} value={sup.id}>
+                        🏷️ {sup.name} ({sup.category || 'Mitra Lain'})
+                      </option>
+                    ))}
+
+                    {selectedMasterCat?.categoryType !== 'PRODUKSI' && filteredSuppliers.length > 0 && (
+                      <option value="internal">🏠 Produksi Sendiri (Dapur Utama Internal)</option>
+                    )}
+                  </select>
+                  <p className="text-[10px] text-[#8C7B6C]">
+                    {filteredSuppliers.length > 0
+                      ? `✓ Menampilkan ${filteredSuppliers.length} mitra supplier terdaftar pada "${selectedMasterCat?.name}"`
+                      : selectedMasterCat?.categoryType === 'PRODUKSI'
+                      ? '✓ Kategori produksi in-house dapur utama internal'
+                      : 'ℹ️ Belum ada mitra khusus kategori ini (tersedia opsi mitra umum & produksi sendiri)'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Row 2: 3. Nama Produk & 4. Produk Kategori */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* 3. Nama Produk */}
+                <div className="space-y-1.5">
+                  <label htmlFor="product-name-input" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
+                    3. Nama Produk <span className="text-rose-500">*</span>
+                  </label>
                   <input
+                    id="product-name-input"
                     type="text"
                     required
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
-                    placeholder="Contoh: Roti Cokelat Keju Spesial"
-                    className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3.5 py-2 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none"
+                    placeholder="Contoh: Roti Manis Cokelat Keju"
+                    className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white px-3.5 py-2.5 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none shadow-xs"
                   />
                 </div>
 
-                <div className="space-y-1">
+                {/* 4. Produk Kategori */}
+                <div className="space-y-1.5">
+                  <label htmlFor="product-pos-category-select" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
+                    4. Produk Kategori <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    id="product-pos-category-select"
+                    value={newCategory}
+                    onChange={(e) => setNewCategory(e.target.value)}
+                    className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white px-3.5 py-2.5 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none shadow-xs"
+                  >
+                    {categories
+                      .filter((c) => c.id !== 'all')
+                      .map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.icon ? `${cat.icon} ` : ''}{cat.name}
+                        </option>
+                      ))}
+                    <option value="mto">🎂 Made-to-Order (Pesanan Custom / Tart)</option>
+                  </select>
+                  <p className="text-[10px] text-[#8C7B6C]">
+                    Kategori tampilan display kasir POS (Roti Manis, Pastry, Minuman, dll).
+                  </p>
+                </div>
+              </div>
+
+              {/* Row 3: 5. Kode SKU & 6. Harga Jual */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* 5. Kode SKU */}
+                <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-[#2D241E]">Kode SKU / Barcode *</label>
+                    <label htmlFor="product-sku-input" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
+                      5. Kode SKU <span className="text-rose-500">*</span>
+                    </label>
                     <button
                       type="button"
                       onClick={handleSuggestSku}
@@ -317,70 +512,35 @@ export const StockWorkspace: React.FC = () => {
                     </button>
                   </div>
                   <input
+                    id="product-sku-input"
                     type="text"
                     required
                     value={newSku}
                     onChange={(e) => setNewSku(e.target.value)}
                     placeholder="Contoh: ROT-001"
-                    className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3.5 py-2 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none uppercase"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#2D241E]">Kategori *</label>
-                  <select
-                    value={newCategory}
-                    onChange={(e) => setNewCategory(e.target.value)}
-                    className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3 py-2 text-xs font-semibold text-[#2D241E] focus:border-[#D97706] focus:outline-none"
-                  >
-                    {categories
-                      .filter((c) => c.id !== 'all')
-                      .map((cat) => (
-                        <option key={cat.id} value={cat.id}>
-                          {cat.name}
-                        </option>
-                      ))}
-                    <option value="mto">🎂 Made-to-Order (Pesanan Custom / Tart)</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#2D241E]">Harga Jual Standar (Rp) *</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="500"
-                    required
-                    value={newPrice}
-                    onChange={(e) => setNewPrice(e.target.value)}
-                    className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3.5 py-2 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#2D241E]">Stok Awal di Cabang Ini</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={newOpeningStock}
-                    onChange={(e) => setNewOpeningStock(e.target.value)}
-                    className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3.5 py-2 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none"
+                    className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white px-3.5 py-2.5 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none uppercase shadow-xs"
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#2D241E]">Batas Peringatan Stok Menipis</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={newLowStockThreshold}
-                    onChange={(e) => setNewLowStockThreshold(e.target.value)}
-                    className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3.5 py-2 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none"
-                  />
+                {/* 6. Harga Jual */}
+                <div className="space-y-1.5">
+                  <label htmlFor="product-price-input" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
+                    6. Harga Jual (Rp) <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-2.5 text-xs font-bold text-[#8C7B6C]">Rp</span>
+                    <input
+                      id="product-price-input"
+                      type="number"
+                      min="0"
+                      step="500"
+                      required
+                      value={newPrice}
+                      onChange={(e) => setNewPrice(e.target.value)}
+                      placeholder="15000"
+                      className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white pl-10 pr-3.5 py-2.5 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none shadow-xs"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -434,32 +594,6 @@ export const StockWorkspace: React.FC = () => {
           <p className="text-xs text-[#8C7B6C] mt-0.5">
             Informasi ketersediaan stok cabang, hitung fisik harian, transfer antar-cabang, dan disposisi kedaluwarsa.
           </p>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2 self-end md:self-auto">
-          {/* Tambah Kategori */}
-          <button
-            type="button"
-            onClick={() => setIsAddCategoryOpen(true)}
-            className="flex items-center gap-1.5 rounded-xl border border-[#E5DACE] bg-white px-3.5 py-2 text-xs font-bold text-[#6D5D50] hover:bg-amber-50 hover:text-[#D97706] shadow-xs active:scale-95 transition"
-          >
-            <FolderPlus className="h-4 w-4" />
-            <span>Kategori Master</span>
-          </button>
-
-          {/* Tambah Master Produk (Superadmin only) */}
-          {isSuperadmin && (
-            <button
-              type="button"
-              disabled={isInactive}
-              onClick={() => setIsFullPageAddProduct(true)}
-              className="flex items-center gap-1.5 rounded-xl bg-[#D97706] px-4 py-2 text-xs font-black text-white hover:bg-amber-700 shadow-xs active:scale-95 transition disabled:opacity-50"
-            >
-              <PackagePlus className="h-4 w-4" />
-              <span>Tambah Produk Baru</span>
-            </button>
-          )}
         </div>
       </div>
 
@@ -553,6 +687,20 @@ export const StockWorkspace: React.FC = () => {
           <History className="h-4 w-4" />
           <span>Riwayat Stok</span>
         </button>
+
+        <button
+          type="button"
+          id="stock-tab-raw-material"
+          onClick={() => setActiveView('raw_materials')}
+          className={`flex items-center gap-2 border-b-2 py-3 px-3 text-xs font-black transition whitespace-nowrap ${
+            activeView === 'raw_materials'
+              ? 'border-[#D97706] text-[#D97706]'
+              : 'border-transparent text-[#8C7B6C] hover:text-[#2D241E]'
+          }`}
+        >
+          <Wheat className="h-4 w-4" />
+          <span>Raw Material (Bahan Baku)</span>
+        </button>
       </div>
 
       {/* -------------------------------------------------------------
@@ -565,6 +713,8 @@ export const StockWorkspace: React.FC = () => {
             onNavigateToCategoryClosing={handleNavigateToCategoryClosing}
             onNavigateToTransfer={handleNavigateToTransfer}
             onNavigateToBadStock={handleNavigateToBadStock}
+            onOpenAddCategory={() => setIsAddCategoryOpen(true)}
+            onOpenAddProduct={() => setIsFullPageAddProduct(true)}
           />
         )}
 
@@ -598,6 +748,11 @@ export const StockWorkspace: React.FC = () => {
         {/* VIEW 6: RIWAYAT STOK (Unified Branch Stock History) */}
         {activeView === 'history' && (
           <StockHistoryView onBackToProducts={() => setActiveView('products')} />
+        )}
+
+        {/* VIEW 7: RAW MATERIAL (Bahan Baku Produksi) */}
+        {activeView === 'raw_materials' && (
+          <RawMaterialWorkspace onNavigateToReceiving={() => setActiveView('receiving')} />
         )}
       </div>
 
