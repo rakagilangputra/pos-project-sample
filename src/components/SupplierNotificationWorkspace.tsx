@@ -114,8 +114,9 @@ export const SupplierNotificationWorkspace: React.FC<SupplierNotificationWorkspa
     return order.items.filter((item) => {
       const prod = products.find((p) => p.id === item.productId);
       const itemSupplierId = item.supplierId || prod?.supplierId;
-      const isConsignment = item.ownershipType === 'consignment' || prod?.ownershipType === 'consignment';
-      return isConsignment && itemSupplierId === supplierId;
+      const matchesSupplier = itemSupplierId === supplierId && supplierId !== 'internal';
+      const isConsignment = item.ownershipType === 'consignment' || prod?.ownershipType === 'consignment' || Boolean(item.supplierId || prod?.supplierId);
+      return matchesSupplier && isConsignment;
     });
   };
 
@@ -169,6 +170,14 @@ export const SupplierNotificationWorkspace: React.FC<SupplierNotificationWorkspa
   const activeSupplierGroups = useMemo(() => {
     return supplierGroups.filter((g) => g.eligibleOrders.length > 0 || g.batches.length > 0);
   }, [supplierGroups]);
+
+  // Track active orders that are in-house (Produksi Sendiri)
+  const inHouseOrders = useMemo(() => {
+    return orders.filter((o) => {
+      if (o.orderStatus === 'voided') return false;
+      return o.items.some((i) => !i.supplierId || i.supplierId === 'internal' || i.ownershipType === 'own');
+    });
+  }, [orders]);
 
   // Filtered supplier groups in Queue view
   const filteredQueueGroups = useMemo(() => {
@@ -558,18 +567,41 @@ export const SupplierNotificationWorkspace: React.FC<SupplierNotificationWorkspa
               </div>
             </div>
 
+            {/* Informative Note regarding In-House vs Supplier orders */}
+            {inHouseOrders.length > 0 && activeSupplierGroups.length > 0 && (
+              <div className="rounded-xl border border-amber-200/80 bg-amber-50/50 p-3 flex items-start gap-2.5 text-xs text-stone-700">
+                <span className="text-amber-600 text-sm shrink-0 mt-0.5">ℹ️</span>
+                <div className="leading-relaxed">
+                  <span className="font-bold text-amber-900">Catatan Pesanan Produksi Sendiri:</span> Terdapat {inHouseOrders.length} pesanan internal (seperti Croissant / Pastry dapur in-house) yang berstatus <em>Produksi Sendiri</em>. Pesanan tersebut dikerjakan oleh tim dapur internal dan jadwalnya dapat dipantau di tab <strong>Aktif & Jadwal Ambil</strong> (tidak memerlukan WhatsApp ke vendor luar).
+                </div>
+              </div>
+            )}
+
             {/* Empty State: No consignment orders today */}
             {activeSupplierGroups.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-stone-200 p-12 text-center max-w-lg mx-auto shadow-sm my-8">
+              <div className="bg-white rounded-2xl border border-stone-200 p-10 text-center max-w-lg mx-auto shadow-sm my-6">
                 <div className="mx-auto w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mb-4 border border-amber-200">
                   <ShoppingBag className="h-8 w-8" />
                 </div>
                 <h3 className="text-base font-bold text-stone-900">
-                  Tidak Ada Pesanan Konsinyasi Hari Ini
+                  Belum Ada Pesanan untuk Mitra Supplier
                 </h3>
                 <p className="text-xs text-stone-500 mt-2 leading-relaxed">
-                  Belum ada pesanan pelanggan yang memuat produk kue titipan (konsinyasi) pada hari ini ({todayStr}). Notifikasi akan otomatis muncul ketika kasir mencatat penjualan produk konsinyasi.
+                  WhatsApp Gateway ini khusus memproses pesanan kue titipan / produk yang bersumber dari <strong>Mitra Supplier Eksternal</strong> yang memerlukan konfirmasi via WhatsApp.
                 </p>
+                {inHouseOrders.length > 0 && (
+                  <div className="mt-4 p-3 rounded-xl bg-amber-50 text-amber-900 text-xs text-left border border-amber-200 space-y-1">
+                    <p className="font-bold flex items-center gap-1.5 text-amber-900">
+                      <span>💡</span> Mengapa pesanan MTO (misal: Croissant) tidak ada di sini?
+                    </p>
+                    <p className="text-[11px] text-amber-800 leading-relaxed">
+                      Produk Croissant dibuat secara internal oleh dapur toko (<strong>Produksi Sendiri</strong>), bukan dipesan ke mitra vendor titipan. Jadwal produksinya dapat Anda pantau langsung di tab <strong>Aktif & Jadwal Ambil</strong>.
+                    </p>
+                    <p className="text-[11px] text-amber-700 pt-1">
+                      <em>Tips: Saat membuat PO MTO, Anda kini dapat memilih opsi <strong>Mitra Supplier</strong> jika produk memang dipesan dari vendor luar agar langsung masuk ke gateway WhatsApp ini.</em>
+                    </p>
+                  </div>
+                )}
                 {onNavigateToPOS && (
                   <button
                     onClick={onNavigateToPOS}

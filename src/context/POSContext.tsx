@@ -29,6 +29,7 @@ import {
   PurchasePlan,
   PurchasePlanProductLine,
   PurchasePlanStatus,
+  PurchasePlanItemType,
   MasterCategory,
   MasterCategoryType,
   RawMaterial,
@@ -307,17 +308,39 @@ interface POSContextType {
   addPurchasePlan: (data: {
     namaRencana: string;
     branchId: string;
-    supplierId: string;
-    lines: { productId: string; plannedQuantity: number; plannedBuyPrice: number }[];
+    supplierId?: string;
+    lines: {
+      productId: string;
+      plannedQuantity: number;
+      plannedBuyPrice: number;
+      itemType?: PurchasePlanItemType;
+      sourcePoRef?: string;
+      supplierId?: string;
+      supplierName?: string;
+      notes?: string;
+    }[];
     notes?: string;
+    sourceOrderIds?: string[];
+    attachedPoNumbers?: string[];
   }) => { success: boolean; plan?: PurchasePlan; message: string };
   updatePurchasePlan: (
     id: string,
     data: {
       namaRencana?: string;
       supplierId?: string;
-      lines?: { productId: string; plannedQuantity: number; plannedBuyPrice: number }[];
+      lines?: {
+        productId: string;
+        plannedQuantity: number;
+        plannedBuyPrice: number;
+        itemType?: PurchasePlanItemType;
+        sourcePoRef?: string;
+        supplierId?: string;
+        supplierName?: string;
+        notes?: string;
+      }[];
       notes?: string;
+      sourceOrderIds?: string[];
+      attachedPoNumbers?: string[];
     }
   ) => { success: boolean; plan?: PurchasePlan; message: string };
   cancelPurchasePlan: (id: string, reason?: string) => { success: boolean; message: string };
@@ -2387,9 +2410,9 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         image: product.image,
         isMadeToOrder: true,
         stockAvailable: product.stock,
-        ownershipType: product.ownershipType || 'own',
-        supplierId: product.supplierId,
-        supplierName: product.supplierName,
+        ownershipType: itemInput.ownershipType || (itemInput.supplierId && itemInput.supplierId !== 'internal' ? 'consignment' : (product.ownershipType || 'own')),
+        supplierId: itemInput.supplierId !== undefined ? (itemInput.supplierId === 'internal' ? undefined : itemInput.supplierId) : product.supplierId,
+        supplierName: itemInput.supplierName !== undefined ? itemInput.supplierName : product.supplierName,
         commissionMethod: product.commissionMethod,
         commissionValue: product.commissionValue,
         commissionBasis: product.commissionBasis,
@@ -3420,9 +3443,20 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const addPurchasePlan = (data: {
     namaRencana: string;
     branchId: string;
-    supplierId: string;
-    lines: { productId: string; plannedQuantity: number; plannedBuyPrice: number }[];
+    supplierId?: string;
+    lines: {
+      productId: string;
+      plannedQuantity: number;
+      plannedBuyPrice: number;
+      itemType?: PurchasePlanItemType;
+      sourcePoRef?: string;
+      supplierId?: string;
+      supplierName?: string;
+      notes?: string;
+    }[];
     notes?: string;
+    sourceOrderIds?: string[];
+    attachedPoNumbers?: string[];
   }) => {
     // 1. Permission check
     if (currentUser.role !== 'admin') {
@@ -3443,12 +3477,14 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, message: 'Nama Rencana Pembelian wajib diisi!' };
     }
 
-    // 4. Validate Supplier
-    const targetSupplier = suppliers.find((s) => s.id === data.supplierId);
-    if (!targetSupplier) {
-      posSound.error();
-      return { success: false, message: 'Mitra Supplier wajib dipilih!' };
-    }
+    // 4. Validate Supplier (fallback to Multi-Sumber if not specified or 'multi')
+    const targetSupplier = (data.supplierId && data.supplierId !== 'multi'
+      ? suppliers.find((s) => s.id === data.supplierId)
+      : null) || {
+      id: 'multi',
+      name: 'Multi-Sumber / Terpadu',
+      category: 'Campuran (In-House, Konsinyasi & Pembelian Langsung)',
+    };
 
     // 5. Validate Product Lines
     if (!data.lines || data.lines.length === 0) {
@@ -3456,8 +3492,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, message: 'Minimal harus ada 1 baris item produk dalam rencana pembelian!' };
     }
 
-    // Check for duplicate products
-    const productIdsSeen = new Set<string>();
+    // Allow multiple lines if itemType or sourcePoRef differs, or aggregate
     const formattedLines: PurchasePlanProductLine[] = [];
 
     for (let i = 0; i < data.lines.length; i++) {
@@ -3466,26 +3501,11 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         posSound.error();
         return { success: false, message: `Baris #${i + 1} belum memilih produk!` };
       }
-      if (productIdsSeen.has(line.productId)) {
-        posSound.error();
-        return {
-          success: false,
-          message: 'Produk tidak boleh diduplikasi dalam rencana pembelian yang sama. Silakan edit kuantitas baris yang sudah ada.',
-        };
-      }
-      productIdsSeen.add(line.productId);
 
       const prod = products.find((p) => p.id === line.productId);
       if (!prod) {
         posSound.error();
         return { success: false, message: `Produk pada baris #${i + 1} tidak ditemukan!` };
-      }
-      if (prod.ownershipType === 'consignment') {
-        posSound.error();
-        return {
-          success: false,
-          message: `Produk "${prod.name}" adalah barang titipan konsinyasi. Modul Rencana Pembelian hanya berlaku untuk barang Dibeli Sendiri (Owned Goods)!`,
-        };
       }
 
       const qty = Math.floor(Number(line.plannedQuantity));
@@ -3500,6 +3520,22 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const price = Math.max(0, Number(line.plannedBuyPrice) || 0);
       const lineTotal = qty * price;
 
+      // Determine itemType fallback
+      let itemType: PurchasePlanItemType = line.itemType || 'direct_purchase';
+      if (!line.itemType) {
+        if (prod.ownershipType === 'consignment' || (prod.supplierId && prod.supplierId !== 'internal')) {
+          itemType = 'consignment';
+        } else if (prod.isMadeToOrder) {
+          itemType = 'in_house';
+        } else {
+          itemType = 'direct_purchase';
+        }
+      }
+
+      const lineSupplier = line.supplierId
+        ? suppliers.find((s) => s.id === line.supplierId)
+        : (prod.supplierId ? suppliers.find((s) => s.id === prod.supplierId) : undefined);
+
       formattedLines.push({
         id: `rpl-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
         productId: prod.id,
@@ -3509,6 +3545,11 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         plannedQuantity: qty,
         plannedBuyPrice: price,
         lineTotal,
+        itemType,
+        sourcePoRef: line.sourcePoRef,
+        supplierId: lineSupplier?.id || line.supplierId,
+        supplierName: lineSupplier?.name || line.supplierName,
+        notes: line.notes,
       });
     }
 
@@ -3548,6 +3589,8 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       totalPlannedValue,
       status: 'Direncanakan',
       notes: data.notes?.trim() || undefined,
+      sourceOrderIds: data.sourceOrderIds,
+      attachedPoNumbers: data.attachedPoNumbers,
       createdBy: currentUser.id,
       createdByName: `${currentUser.name} (${currentUser.role})`,
       createdAt: now.toISOString(),
@@ -3578,8 +3621,19 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     data: {
       namaRencana?: string;
       supplierId?: string;
-      lines?: { productId: string; plannedQuantity: number; plannedBuyPrice: number }[];
+      lines?: {
+        productId: string;
+        plannedQuantity: number;
+        plannedBuyPrice: number;
+        itemType?: PurchasePlanItemType;
+        sourcePoRef?: string;
+        supplierId?: string;
+        supplierName?: string;
+        notes?: string;
+      }[];
       notes?: string;
+      sourceOrderIds?: string[];
+      attachedPoNumbers?: string[];
     }
   ) => {
     if (currentUser.role !== 'admin') {
@@ -3606,11 +3660,17 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     let updatedSupplierCategory = targetPlan.supplierCategory;
 
     if (data.supplierId && data.supplierId !== targetPlan.supplierId) {
-      const sup = suppliers.find((s) => s.id === data.supplierId);
-      if (sup) {
-        updatedSupplierId = sup.id;
-        updatedSupplierName = sup.name;
-        updatedSupplierCategory = sup.category || 'Umum';
+      if (data.supplierId === 'multi') {
+        updatedSupplierId = 'multi';
+        updatedSupplierName = 'Multi-Sumber / Terpadu';
+        updatedSupplierCategory = 'Campuran (In-House, Konsinyasi & Pembelian Langsung)';
+      } else {
+        const sup = suppliers.find((s) => s.id === data.supplierId);
+        if (sup) {
+          updatedSupplierId = sup.id;
+          updatedSupplierName = sup.name;
+          updatedSupplierCategory = sup.category || 'Umum';
+        }
       }
     }
 
@@ -3620,31 +3680,14 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         posSound.error();
         return { success: false, message: 'Minimal harus ada 1 baris item produk dalam rencana pembelian!' };
       }
-      const productIdsSeen = new Set<string>();
       const formattedLines: PurchasePlanProductLine[] = [];
 
       for (let i = 0; i < data.lines.length; i++) {
         const line = data.lines[i];
-        if (productIdsSeen.has(line.productId)) {
-          posSound.error();
-          return {
-            success: false,
-            message: 'Produk tidak boleh diduplikasi dalam rencana pembelian yang sama. Silakan edit kuantitas baris yang sudah ada.',
-          };
-        }
-        productIdsSeen.add(line.productId);
-
         const prod = products.find((p) => p.id === line.productId);
         if (!prod) {
           posSound.error();
           return { success: false, message: `Produk pada baris #${i + 1} tidak ditemukan!` };
-        }
-        if (prod.ownershipType === 'consignment') {
-          posSound.error();
-          return {
-            success: false,
-            message: `Produk "${prod.name}" adalah barang konsinyasi. Rencana Pembelian hanya untuk barang Dibeli Sendiri!`,
-          };
         }
 
         const qty = Math.floor(Number(line.plannedQuantity));
@@ -3659,6 +3702,21 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const price = Math.max(0, Number(line.plannedBuyPrice) || 0);
         const lineTotal = qty * price;
 
+        let itemType: PurchasePlanItemType = line.itemType || 'direct_purchase';
+        if (!line.itemType) {
+          if (prod.ownershipType === 'consignment' || (prod.supplierId && prod.supplierId !== 'internal')) {
+            itemType = 'consignment';
+          } else if (prod.isMadeToOrder) {
+            itemType = 'in_house';
+          } else {
+            itemType = 'direct_purchase';
+          }
+        }
+
+        const lineSupplier = line.supplierId
+          ? suppliers.find((s) => s.id === line.supplierId)
+          : (prod.supplierId ? suppliers.find((s) => s.id === prod.supplierId) : undefined);
+
         formattedLines.push({
           id: `rpl-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
           productId: prod.id,
@@ -3668,6 +3726,11 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           plannedQuantity: qty,
           plannedBuyPrice: price,
           lineTotal,
+          itemType,
+          sourcePoRef: line.sourcePoRef,
+          supplierId: lineSupplier?.id || line.supplierId,
+          supplierName: lineSupplier?.name || line.supplierName,
+          notes: line.notes,
         });
       }
       updatedLines = formattedLines;
@@ -3685,6 +3748,8 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       lines: updatedLines,
       totalPlannedValue,
       notes: data.notes !== undefined ? data.notes.trim() : targetPlan.notes,
+      sourceOrderIds: data.sourceOrderIds !== undefined ? data.sourceOrderIds : targetPlan.sourceOrderIds,
+      attachedPoNumbers: data.attachedPoNumbers !== undefined ? data.attachedPoNumbers : targetPlan.attachedPoNumbers,
       updatedAt: now.toISOString(),
       updatedBy: currentUser.id,
       updatedByName: `${currentUser.name} (${currentUser.role})`,
@@ -4214,12 +4279,13 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const branchName = selectedBranch?.name || STORE_INFO.branch;
 
     const orderLines = ordersToInclude.map((order) => {
-      // Find consignment items belonging to this supplier
+      // Find consignment/supplier items belonging to this supplier
       const itemsForSupplier = order.items.filter((item) => {
         const prod = products.find((p) => p.id === item.productId);
         const itemSupplierId = item.supplierId || prod?.supplierId;
-        const isConsignment = (item.ownershipType === 'consignment') || (prod?.ownershipType === 'consignment');
-        return isConsignment && itemSupplierId === supplier.id;
+        const matchesSupplier = itemSupplierId === supplier.id && supplier.id !== 'internal';
+        const isConsignment = (item.ownershipType === 'consignment') || (prod?.ownershipType === 'consignment') || Boolean(item.supplierId || prod?.supplierId);
+        return matchesSupplier && isConsignment;
       });
 
       const itemDetails = itemsForSupplier
@@ -4234,8 +4300,9 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const itemsForSupplier = order.items.filter((item) => {
         const prod = products.find((p) => p.id === item.productId);
         const itemSupplierId = item.supplierId || prod?.supplierId;
-        const isConsignment = (item.ownershipType === 'consignment') || (prod?.ownershipType === 'consignment');
-        return isConsignment && itemSupplierId === supplier.id;
+        const matchesSupplier = itemSupplierId === supplier.id && supplier.id !== 'internal';
+        const isConsignment = (item.ownershipType === 'consignment') || (prod?.ownershipType === 'consignment') || Boolean(item.supplierId || prod?.supplierId);
+        return matchesSupplier && isConsignment;
       });
       return sum + itemsForSupplier.reduce((iSum, item) => iSum + item.quantity, 0);
     }, 0);

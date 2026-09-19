@@ -15,10 +15,11 @@ interface ProductRowState {
   quantity: number;
   customPrice: string;
   customizationNotes: string;
+  supplierId?: string;
 }
 
 export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
-  const { products, customers, createMtoOrder } = usePOS();
+  const { products, customers, suppliers, createMtoOrder } = usePOS();
   const mtoProducts = products.filter((p) => p.isMadeToOrder);
   const selectableProducts = mtoProducts.length > 0 ? mtoProducts : products;
 
@@ -30,6 +31,7 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
       quantity: 1,
       customPrice: defaultProduct ? String(defaultProduct.price) : '0',
       customizationNotes: '',
+      supplierId: defaultProduct?.supplierId || 'internal',
     };
   };
 
@@ -59,6 +61,7 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
       quantity: 1,
       customPrice: defaultProduct ? String(defaultProduct.price) : '0',
       customizationNotes: '',
+      supplierId: defaultProduct?.supplierId || 'internal',
     };
     setProductRows((prev) => [...prev, newRow]);
   };
@@ -77,8 +80,15 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
           ...r,
           productId: newProductId,
           customPrice: prod ? String(prod.price) : r.customPrice,
+          supplierId: prod?.supplierId || 'internal',
         };
       })
+    );
+  };
+
+  const handleSupplierChange = (rowId: string, newSupplierId: string) => {
+    setProductRows((prev) =>
+      prev.map((r) => (r.id === rowId ? { ...r, supplierId: newSupplierId } : r))
     );
   };
 
@@ -124,11 +134,17 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
     const items: MtoOrderItemInput[] = productRows.map((r) => {
       const prod = products.find((p) => p.id === r.productId);
       const unitP = parseFloat(r.customPrice) >= 0 ? parseFloat(r.customPrice) : (prod?.price || 0);
+      const chosenSup = suppliers.find((s) => s.id === r.supplierId);
+      const isInternal = !r.supplierId || r.supplierId === 'internal';
+
       return {
         productId: r.productId,
         quantity: r.quantity || 1,
         customPrice: unitP,
         customizationNotes: r.customizationNotes.trim() || undefined,
+        supplierId: isInternal ? undefined : chosenSup?.id,
+        supplierName: isInternal ? 'Produksi Sendiri' : chosenSup?.name,
+        ownershipType: isInternal ? 'own' : 'consignment',
       };
     });
 
@@ -253,20 +269,51 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
                     </div>
 
                     {/* Product Selection */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-[#6B7280] mb-1">Pilih Produk</label>
-                      <select
-                        value={row.productId}
-                        onChange={(e) => handleProductChange(row.id, e.target.value)}
-                        className="w-full rounded-xl border border-[#E5DACE] bg-white px-3 py-2 text-sm font-semibold text-[#2D241E] focus:border-amber-500 focus:outline-none"
-                      >
-                        {products.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name} {p.isMadeToOrder ? '🎂 [MTO]' : ''} — Standar {formatIDR(p.price)}
-                          </option>
-                        ))}
-                      </select>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#6B7280] mb-1">Pilih Produk</label>
+                        <select
+                          value={row.productId}
+                          onChange={(e) => handleProductChange(row.id, e.target.value)}
+                          className="w-full rounded-xl border border-[#E5DACE] bg-white px-3 py-2 text-sm font-semibold text-[#2D241E] focus:border-amber-500 focus:outline-none"
+                        >
+                          {products.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} {p.isMadeToOrder ? '🎂 [MTO]' : ''} — Standar {formatIDR(p.price)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#6B7280] mb-1">
+                          Sumber / Mitra Supplier
+                        </label>
+                        <select
+                          value={row.supplierId || 'internal'}
+                          onChange={(e) => handleSupplierChange(row.id, e.target.value)}
+                          className="w-full rounded-xl border border-[#E5DACE] bg-white px-3 py-2 text-xs font-semibold text-[#2D241E] focus:border-amber-500 focus:outline-none"
+                        >
+                          <option value="internal">🏭 Produksi Sendiri (Dapur In-House)</option>
+                          <optgroup label="Mitra Supplier (Titipan / Pesan Luar)">
+                            {suppliers.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                🤝 {s.name} ({s.phone || 'Tanpa WA'})
+                              </option>
+                            ))}
+                          </optgroup>
+                        </select>
+                      </div>
                     </div>
+
+                    {row.supplierId && row.supplierId !== 'internal' ? (
+                      <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-[11px] text-emerald-800 flex items-center gap-1.5">
+                        <span className="font-bold">✓ Mitra Supplier:</span> Pesanan item ini otomatis muncul di tab <strong>Notifikasi Supplier (WhatsApp Gateway)</strong>
+                      </div>
+                    ) : (
+                      <div className="rounded-lg bg-amber-50/60 border border-amber-200/60 px-3 py-1 text-[10px] text-amber-800">
+                        ℹ️ <strong>Produksi Sendiri:</strong> Dikerjakan tim dapur pastry internal (tidak membutuhkan WhatsApp vendor eksternal).
+                      </div>
+                    )}
 
                     {/* Quantity and Custom Price */}
                     <div className="grid grid-cols-2 gap-3">

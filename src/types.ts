@@ -175,6 +175,9 @@ export interface MtoOrderItemInput {
   quantity: number;
   customPrice?: number;
   customizationNotes?: string;
+  supplierId?: string;
+  supplierName?: string;
+  ownershipType?: ProductOwnershipType;
 }
 
 export interface Order {
@@ -465,6 +468,8 @@ export type PurchasePlanStatus =
   | 'Terealisasi'
   | 'Dibatalkan';
 
+export type PurchasePlanItemType = 'in_house' | 'consignment' | 'direct_purchase' | 'adhoc';
+
 export interface PurchasePlanProductLine {
   id: string;
   productId: string;
@@ -474,6 +479,11 @@ export interface PurchasePlanProductLine {
   plannedQuantity: number; // positive whole number >= 1
   plannedBuyPrice: number; // >= 0
   lineTotal: number; // plannedQuantity * plannedBuyPrice
+  itemType?: PurchasePlanItemType;
+  sourcePoRef?: string;
+  supplierId?: string;
+  supplierName?: string;
+  notes?: string;
 }
 
 export interface PurchasePlan {
@@ -497,6 +507,8 @@ export interface PurchasePlan {
   updatedBy?: string;
   updatedByName?: string;
   updatedAt: string;
+  sourceOrderIds?: string[];
+  attachedPoNumbers?: string[];
 }
 
 export interface ReceivingDraft {
