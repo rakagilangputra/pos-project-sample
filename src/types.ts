@@ -412,6 +412,14 @@ export interface SupplierSettlementCycle {
 export type ReceiptType = 'Dibeli Sendiri' | 'Konsinyasi';
 export type GoodsReceiptStatus = 'draft' | 'submitted';
 
+export interface GoodsReceiptItemBatch {
+  id?: string;
+  batchNumber?: string;
+  expiryDate: string; // YYYY-MM-DD
+  quantity: number;
+  notes?: string;
+}
+
 export interface GoodsReceiptItem {
   id: string;
   productId: string;
@@ -426,6 +434,7 @@ export interface GoodsReceiptItem {
   plannedBuyPrice?: number;
   plannedLineTotal?: number;
   condition?: 'Sesuai Rencana' | 'Berbeda' | 'Tidak Direncanakan' | 'Tidak Diterima';
+  expiryBatches?: GoodsReceiptItemBatch[];
 }
 
 export interface GoodsReceiptRecord {
@@ -551,6 +560,34 @@ export interface CategoryClosingSession {
   rows: CategoryClosingRow[];
   submittedBy?: string;
   submittedAt?: string;
+  createdAt: string;
+}
+
+// Product Expiry Batch Tracking & Daily Closing Reconciliation
+export interface ProductExpiryBatch {
+  id: string; // e.g. BATCH-20260920-001
+  batchNumber?: string;
+  productId: string;
+  productName: string;
+  sku: string;
+  branchId: string;
+  branchName?: string;
+  expiryDate: string; // YYYY-MM-DD
+  initialQuantity: number;
+  remainingQuantity: number;
+  goodsReceiptId?: string;
+  goodsReceiptNumber?: string;
+  receivedDate: string; // YYYY-MM-DD
+  unitCost?: number;
+  ownershipType?: 'owned' | 'consignment';
+  supplierId?: string;
+  supplierName?: string;
+  category?: string;
+  status: 'active' | 'exhausted' | 'destroyed';
+  destroyedAt?: string;
+  destroyedBy?: string;
+  destructionRecordNo?: string;
+  notes?: string;
   createdAt: string;
 }
 

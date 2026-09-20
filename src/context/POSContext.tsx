@@ -33,6 +33,8 @@ import {
   MasterCategory,
   MasterCategoryType,
   RawMaterial,
+  ProductExpiryBatch,
+  GoodsReceiptItemBatch,
 } from '../types';
 import {
   INITIAL_BRANCHES,
@@ -55,6 +57,7 @@ import {
   INITIAL_PURCHASE_PLANS,
   INITIAL_MASTER_CATEGORIES,
   INITIAL_RAW_MATERIALS,
+  INITIAL_EXPIRY_BATCHES,
 } from '../data/mockData';
 import { generateReceiptNumber, generatePONumber, posSound } from '../utils/formatters';
 
@@ -138,10 +141,19 @@ interface POSContextType {
   updateRawMaterial: (id: string, data: Partial<RawMaterial>) => { success: boolean; rawMaterial?: RawMaterial; message: string };
   deleteRawMaterial: (id: string) => { success: boolean; message: string };
 
-  // Category Daily Closing (POS-US-069)
+  // Category Daily Closing (POS-US-069) & Expiry Batch Reconciliation
   categoryClosings: CategoryClosingSession[];
   submitCategoryClosing: (session: CategoryClosingSession) => { success: boolean; message: string };
   saveCategoryClosingDraft: (session: CategoryClosingSession) => { success: boolean; message: string };
+  expiryBatches: ProductExpiryBatch[];
+  allExpiryBatches: ProductExpiryBatch[];
+  destroyExpiredBatches: (batchIds: string[], reasonNote?: string) => {
+    success: boolean;
+    recordNo?: string;
+    totalPcs?: number;
+    totalBatches?: number;
+    message: string;
+  };
 
   // Stock Transfer Between Branches (POS-US-070)
   stockTransfers: StockTransferRecord[];
@@ -797,6 +809,24 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     localStorage.setItem('pos_category_closings', JSON.stringify(categoryClosings));
   }, [categoryClosings]);
+
+  // Expiry Batches Tracking (FEFO & Daily Closing Expiry Reconciliation)
+  const [expiryBatches, setExpiryBatches] = useState<ProductExpiryBatch[]>(() => {
+    const saved = localStorage.getItem('pos_expiry_batches');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {
+        console.error('Failed to parse pos_expiry_batches', e);
+      }
+    }
+    return INITIAL_EXPIRY_BATCHES;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('pos_expiry_batches', JSON.stringify(expiryBatches));
+  }, [expiryBatches]);
 
   // POS-US-070: Stock Transfers
   const [stockTransfers, setStockTransfers] = useState<StockTransferRecord[]>(() => {
@@ -2221,6 +2251,43 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           return prod;
         })
       );
+
+      // FEFO (First Expired, First Out) batch deduction:
+      // Deducts automatically from active batches with the earliest expiry date first
+      setExpiryBatches((prevBatches) => {
+        let updatedBatches = [...prevBatches];
+        nonMtoItems.forEach((cartItem) => {
+          let needed = cartItem.quantity;
+          const matchingBatches = updatedBatches
+            .filter(
+              (b) =>
+                b.productId === cartItem.productId &&
+                (!b.branchId || b.branchId === selectedBranchId) &&
+                b.status === 'active' &&
+                b.remainingQuantity > 0
+            )
+            .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
+
+          for (const b of matchingBatches) {
+            if (needed <= 0) break;
+            const deduct = Math.min(b.remainingQuantity, needed);
+            const newRemaining = b.remainingQuantity - deduct;
+            needed -= deduct;
+
+            updatedBatches = updatedBatches.map((orig) => {
+              if (orig.id === b.id) {
+                return {
+                  ...orig,
+                  remainingQuantity: newRemaining,
+                  status: newRemaining === 0 ? 'exhausted' : 'active',
+                };
+              }
+              return orig;
+            });
+          }
+        });
+        return updatedBatches;
+      });
     }
 
     // Update customer deposit balance if paid by deposit account
@@ -3389,6 +3456,48 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setStockAdjustments((prev) => [...newStockAdjustments, ...prev]);
     setGoodsReceipts((prev) => [newRecord, ...prev]);
 
+    // Generate and register Expiry Batches for saleable products
+    const newBatches: ProductExpiryBatch[] = [];
+    receiptData.items.forEach((item) => {
+      const prod = updatedProducts.find((p) => p.id === item.productId);
+      if (prod) {
+        if (item.expiryBatches && item.expiryBatches.length > 0) {
+          item.expiryBatches.forEach((b, bIdx) => {
+            const batchQty = Number(b.quantity) || 0;
+            if (batchQty > 0) {
+              newBatches.push({
+                id: `batch-${Date.now()}-${item.productId}-${bIdx}-${Math.random().toString(36).slice(2, 6)}`,
+                batchNumber: b.batchNumber || `BCH-${receiptNumber}-${bIdx + 1}`,
+                productId: item.productId,
+                productName: item.productName || prod.name,
+                sku: item.productSku || prod.sku,
+                branchId: selectedBranchId,
+                branchName: selectedBranch.name,
+                expiryDate: b.expiryDate || now.toISOString().slice(0, 10),
+                initialQuantity: batchQty,
+                remainingQuantity: batchQty,
+                goodsReceiptId: id,
+                goodsReceiptNumber: receiptNumber,
+                receivedDate: receiptData.arrivalDate || now.toISOString().slice(0, 10),
+                unitCost: item.actualBuyPrice || item.buyPrice || 0,
+                ownershipType: prod.ownershipType || (receiptData.receiptType === 'Konsinyasi' ? 'consignment' : 'owned'),
+                supplierId: receiptData.supplierId,
+                supplierName: receiptData.supplierName,
+                category: prod.category,
+                status: 'active',
+                notes: b.notes,
+                createdAt: now.toISOString(),
+              });
+            }
+          });
+        }
+      }
+    });
+
+    if (newBatches.length > 0) {
+      setExpiryBatches((prev) => [...newBatches, ...prev]);
+    }
+
     // 4. Atomically realize linked purchase plan (POS-US-075)
     if (receiptData.purchasePlanId) {
       setPurchasePlans((prevPlans) =>
@@ -4147,6 +4256,125 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: true, message: `Stok buruk ${recordNo} (${data.quantity} pcs) berhasil dicatat dan dipotong dari stok jual.` };
   };
 
+  // Expiry Reconciliation & Stock Destruction Trigger (Requirement: Superadmin Only with Audit Log)
+  const destroyExpiredBatches = (batchIds: string[], reasonNote?: string) => {
+    if (currentUser.role !== 'superadmin') {
+      posSound.error();
+      return {
+        success: false,
+        message: 'Akses Ditolak: Otorisasi pemusnahan stok kadaluwarsa hanya dapat dilakukan oleh Superadmin.',
+      };
+    }
+
+    if (isBranchReadOnly || selectedBranch.status === 'inactive') {
+      posSound.error();
+      return { success: false, message: 'Cabang nonaktif tidak dapat melakukan pemusnahan stok!' };
+    }
+
+    const targetBatches = expiryBatches.filter(
+      (b) => batchIds.includes(b.id) && b.status === 'active' && b.remainingQuantity > 0
+    );
+
+    if (targetBatches.length === 0) {
+      posSound.error();
+      return { success: false, message: 'Tidak ada batch stok aktif yang dipilih untuk dimusnahkan.' };
+    }
+
+    const now = new Date();
+    const nowStr = now.toISOString();
+    const dateCode = nowStr.slice(0, 10).replace(/-/g, '');
+    const destructionRecordNo = `DST-EXP-${dateCode}-${Date.now().toString().slice(-4)}`;
+
+    const updatedProducts = [...products];
+    const newBadStockRecords: BadStockRecord[] = [];
+    const newAdjustments: StockAdjustmentRecord[] = [];
+    let totalPcs = 0;
+
+    targetBatches.forEach((batch) => {
+      const qty = batch.remainingQuantity;
+      totalPcs += qty;
+
+      const pIdx = updatedProducts.findIndex((p) => p.id === batch.productId);
+      if (pIdx >= 0) {
+        const prevStock = updatedProducts[pIdx].stock;
+        const newStock = Math.max(0, prevStock - qty);
+        updatedProducts[pIdx] = {
+          ...updatedProducts[pIdx],
+          stock: newStock,
+          badStock: (updatedProducts[pIdx].badStock || 0) + qty,
+        };
+
+        newAdjustments.push({
+          id: `adj-dst-${Date.now()}-${batch.id}`,
+          productId: batch.productId,
+          productName: batch.productName,
+          type: 'decrease',
+          quantity: qty,
+          previousStock: prevStock,
+          resultingStock: newStock,
+          reason: `Pemusnahan Kadaluwarsa [${destructionRecordNo}] - Batch No: ${batch.batchNumber || batch.id} (Exp: ${batch.expiryDate})`,
+          adminId: currentUser.id,
+          adminName: currentUser.name,
+          timestamp: nowStr,
+        });
+      }
+
+      newBadStockRecords.push({
+        id: `bad-${Date.now()}-${batch.id}`,
+        recordNo: `${destructionRecordNo}-${batch.id.slice(-4)}`,
+        branchId: batch.branchId || selectedBranchId,
+        productId: batch.productId,
+        productName: batch.productName,
+        sku: batch.sku,
+        quantity: qty,
+        reason: 'expired',
+        disposition: 'disposed',
+        notes: reasonNote || `Pemusnahan stok kadaluwarsa (Batch Exp: ${batch.expiryDate}) pada Closing Harian. Asal Penerimaan: ${batch.goodsReceiptNumber || '-'}`,
+        recordedBy: `${currentUser.name} (Superadmin)`,
+        createdAt: nowStr,
+      });
+    });
+
+    // Mark batches as destroyed
+    setExpiryBatches((prev) =>
+      prev.map((b) => {
+        if (batchIds.includes(b.id)) {
+          return {
+            ...b,
+            status: 'destroyed',
+            remainingQuantity: 0,
+            destroyedAt: nowStr,
+            destroyedBy: `${currentUser.name} (Superadmin)`,
+            destructionRecordNo,
+            notes: reasonNote ? `${b.notes ? b.notes + ' | ' : ''}${reasonNote}` : b.notes,
+          };
+        }
+        return b;
+      })
+    );
+
+    setProducts(updatedProducts);
+    setBadStocks((prev) => [...newBadStockRecords, ...prev]);
+    setStockAdjustments((prev) => [...newAdjustments, ...prev]);
+
+    // Requirement 6: Audit log
+    addAudit(
+      'STOCK_DESTROY_EXPIRED',
+      'stock',
+      destructionRecordNo,
+      `Pemusnahan Stok Kadaluwarsa Berita Acara ${destructionRecordNo}: ${totalPcs} pcs (${targetBatches.length} batch) dieksekusi oleh Superadmin ${currentUser.name} pada cabang ${selectedBranch.name}.`
+    );
+
+    posSound.beep();
+    return {
+      success: true,
+      recordNo: destructionRecordNo,
+      totalPcs,
+      totalBatches: targetBatches.length,
+      message: `Pemusnahan ${totalPcs} pcs stok kadaluwarsa (${targetBatches.length} batch) berhasil dieksekusi oleh Superadmin dan dicatat ke Audit Log & Waste History (${destructionRecordNo}).`,
+    };
+  };
+
   // POS-US-072: Consolidated Stock History (Penerimaan, Daily Closing, Transfers, Bad Stock)
   const getStockHistory = (productId?: string, branchId?: string): StockHistoryItem[] => {
     const targetBranchId = branchId || selectedBranchId;
@@ -4595,6 +4823,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const branchStockAdjustments = stockAdjustments.filter((a) => !a.branchId || a.branchId === selectedBranchId);
   const branchSetAsideOrders = setAsideOrders.filter((s) => !s.branchId || s.branchId === selectedBranchId);
   const branchCategoryClosings = categoryClosings.filter((c) => !c.branchId || c.branchId === selectedBranchId);
+  const branchExpiryBatches = expiryBatches.filter((b) => !b.branchId || b.branchId === selectedBranchId);
   const branchStockTransfers = stockTransfers.filter(
     (t) => t.fromBranchId === selectedBranchId || t.toBranchId === selectedBranchId
   );
@@ -4650,6 +4879,9 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         categoryClosings: branchCategoryClosings,
         submitCategoryClosing,
         saveCategoryClosingDraft,
+        expiryBatches: branchExpiryBatches,
+        allExpiryBatches: expiryBatches,
+        destroyExpiredBatches,
         stockTransfers: branchStockTransfers,
         createStockTransfer,
         receiveStockTransfer,

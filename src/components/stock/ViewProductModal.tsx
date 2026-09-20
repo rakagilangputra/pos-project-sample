@@ -248,8 +248,8 @@ export const ViewProductModal: React.FC<ViewProductModalProps> = ({
                   className="flex items-center justify-between rounded-xl bg-white border border-[#E5DACE] p-2.5 text-left hover:border-[#D97706] hover:bg-amber-50/50 transition disabled:opacity-50"
                 >
                   <div>
-                    <div className="text-xs font-black text-[#2D241E]">Closing Kategori</div>
-                    <div className="text-[10px] text-[#8C7B6C]">Hitung fisik harian</div>
+                    <div className="text-xs font-black text-[#2D241E]">Rekonsiliasi Kadaluwarsa</div>
+                    <div className="text-[10px] text-[#8C7B6C]">Cek batch & FEFO</div>
                   </div>
                   <ArrowRight className="h-4 w-4 text-[#8C7B6C]" />
                 </button>

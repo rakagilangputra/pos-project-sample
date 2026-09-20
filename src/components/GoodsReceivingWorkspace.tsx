@@ -21,7 +21,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
-import { GoodsReceiptRecord, ReceiptType, Product } from '../types';
+import { GoodsReceiptRecord, ReceiptType, Product, GoodsReceiptItemBatch } from '../types';
 import { formatIDR, formatDateTime } from '../utils/formatters';
 
 interface ReceiptItemRowState {
@@ -38,6 +38,8 @@ interface ReceiptItemRowState {
   plannedQuantity?: number;
   plannedBuyPrice?: number;
   plannedLineTotal?: number;
+  // Sub-batch multi expiry dates (Option A)
+  expiryBatches?: GoodsReceiptItemBatch[];
 }
 
 export const GoodsReceivingWorkspace: React.FC = () => {
@@ -175,6 +177,7 @@ export const GoodsReceivingWorkspace: React.FC = () => {
       setSupplierId(plan.supplierId);
 
       // Pre-fill lines with planned values and actual quantity initially 0
+      const defaultExp = arrivalDate || new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
       const lines: ReceiptItemRowState[] = plan.lines.map((l, idx) => ({
         tempId: `plan-line-${l.id}-${idx}`,
         productId: l.productId,
@@ -188,6 +191,13 @@ export const GoodsReceivingWorkspace: React.FC = () => {
         plannedQuantity: l.plannedQuantity,
         plannedBuyPrice: l.plannedBuyPrice,
         plannedLineTotal: l.lineTotal,
+        expiryBatches: [
+          {
+            batchNumber: 'BCH-01',
+            expiryDate: defaultExp,
+            quantity: 0,
+          },
+        ],
       }));
 
       setReceiptItems(lines);
@@ -198,6 +208,7 @@ export const GoodsReceivingWorkspace: React.FC = () => {
   // Quick fill all planned items with planned quantities (convenience action)
   const handleFillAllPlannedQuantities = () => {
     setFormError('');
+    const defaultExp = arrivalDate || new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
     setReceiptItems((prev) =>
       prev.map((item) => {
         if (item.plannedQuantity !== undefined) {
@@ -205,6 +216,13 @@ export const GoodsReceivingWorkspace: React.FC = () => {
             ...item,
             quantityReceived: item.plannedQuantity,
             actualBuyPrice: item.plannedBuyPrice ?? item.actualBuyPrice,
+            expiryBatches: [
+              {
+                batchNumber: 'BCH-01',
+                expiryDate: defaultExp,
+                quantity: item.plannedQuantity,
+              },
+            ],
           };
         }
         return item;
@@ -218,14 +236,23 @@ export const GoodsReceivingWorkspace: React.FC = () => {
     const unselectedProd = listToChoose.find((p) => !receiptItems.some((i) => i.productId === p.id));
     const defaultProdId = unselectedProd ? unselectedProd.id : listToChoose[0]?.id || '';
     const defaultProd = listToChoose.find((p) => p.id === defaultProdId);
+    const defaultExp = arrivalDate || new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
+    const initialQty = sumberPenerimaan === 'Dari Rencana Pembelian' ? 0 : 10;
 
     setReceiptItems((prev) => [
       ...prev,
       {
         tempId: 'item-' + Date.now(),
         productId: defaultProdId,
-        quantityReceived: sumberPenerimaan === 'Dari Rencana Pembelian' ? 0 : 10,
+        quantityReceived: initialQty,
         actualBuyPrice: defaultProd ? Math.round(defaultProd.price * 0.6) : 0,
+        expiryBatches: [
+          {
+            batchNumber: 'BCH-01',
+            expiryDate: defaultExp,
+            quantity: initialQty,
+          },
+        ],
       },
     ]);
   };
@@ -237,6 +264,85 @@ export const GoodsReceivingWorkspace: React.FC = () => {
       return;
     }
     setReceiptItems((prev) => prev.filter((i) => i.tempId !== tempId));
+  };
+
+  // Multi-Batch (Option A): Add Sub-batch to item
+  const handleAddBatch = (itemTempId: string) => {
+    setReceiptItems((prev) =>
+      prev.map((item) => {
+        if (item.tempId !== itemTempId) return item;
+        const currentBatches =
+          item.expiryBatches && item.expiryBatches.length > 0
+            ? [...item.expiryBatches]
+            : [
+                {
+                  batchNumber: 'BCH-01',
+                  expiryDate: arrivalDate || new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10),
+                  quantity: item.quantityReceived || 0,
+                },
+              ];
+        const nextBatchNum = currentBatches.length + 1;
+        const nextExp = new Date(Date.now() + (4 + nextBatchNum) * 86400000).toISOString().slice(0, 10);
+        const newBatch: GoodsReceiptItemBatch = {
+          batchNumber: `BCH-${String(nextBatchNum).padStart(2, '0')}`,
+          expiryDate: nextExp,
+          quantity: 0,
+        };
+        return {
+          ...item,
+          expiryBatches: [...currentBatches, newBatch],
+        };
+      })
+    );
+  };
+
+  // Multi-Batch: Update batch field
+  const handleUpdateBatchField = (
+    itemTempId: string,
+    batchIndex: number,
+    field: keyof GoodsReceiptItemBatch,
+    val: any
+  ) => {
+    setReceiptItems((prev) =>
+      prev.map((item) => {
+        if (item.tempId !== itemTempId) return item;
+        const currentBatches =
+          item.expiryBatches && item.expiryBatches.length > 0
+            ? [...item.expiryBatches]
+            : [
+                {
+                  batchNumber: 'BCH-01',
+                  expiryDate: arrivalDate || new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10),
+                  quantity: item.quantityReceived || 0,
+                },
+              ];
+        const updatedBatches = currentBatches.map((b, i) =>
+          i === batchIndex ? { ...b, [field]: val } : b
+        );
+        const sumQty = updatedBatches.reduce((sum, b) => sum + (Number(b.quantity) || 0), 0);
+        return {
+          ...item,
+          expiryBatches: updatedBatches,
+          quantityReceived: sumQty > 0 ? sumQty : item.quantityReceived,
+        };
+      })
+    );
+  };
+
+  // Multi-Batch: Remove batch
+  const handleRemoveBatch = (itemTempId: string, batchIndex: number) => {
+    setReceiptItems((prev) =>
+      prev.map((item) => {
+        if (item.tempId !== itemTempId) return item;
+        const batches = (item.expiryBatches || []).filter((_, i) => i !== batchIndex);
+        const sumQty = batches.reduce((sum, b) => sum + (Number(b.quantity) || 0), 0);
+        return {
+          ...item,
+          expiryBatches: batches,
+          quantityReceived: sumQty > 0 ? sumQty : item.quantityReceived,
+        };
+      })
+    );
   };
 
   // Update item row
@@ -254,6 +360,23 @@ export const GoodsReceivingWorkspace: React.FC = () => {
             const prod = products.find((p) => p.id === value);
             if (prod && !item.plannedLineId) {
               updated.actualBuyPrice = Math.round(prod.price * 0.6);
+            }
+          }
+          // If quantity received changed and single batch, sync the batch quantity
+          if (field === 'quantityReceived') {
+            const qty = Number(value) || 0;
+            if (!updated.expiryBatches || updated.expiryBatches.length <= 1) {
+              const exp =
+                updated.expiryBatches?.[0]?.expiryDate ||
+                arrivalDate ||
+                new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
+              updated.expiryBatches = [
+                {
+                  batchNumber: updated.expiryBatches?.[0]?.batchNumber || 'BCH-01',
+                  expiryDate: exp,
+                  quantity: qty,
+                },
+              ];
             }
           }
           return updated;
@@ -325,8 +448,34 @@ export const GoodsReceivingWorkspace: React.FC = () => {
         return;
       }
 
+      // Validate expiry dates for finished products
+      for (const item of positiveItems) {
+        const prod = products.find((p) => p.id === item.productId);
+        if (prod) {
+          const batches = item.expiryBatches || [];
+          for (const b of batches) {
+            if (!b.expiryDate) {
+              setFormError(`Tanggal kadaluwarsa (Expiry Date) wajib diisi untuk produk jadi: ${prod.name}!`);
+              return;
+            }
+          }
+        }
+      }
+
       const formattedItems = positiveItems.map((item) => {
         const prod = products.find((p) => p.id === item.productId);
+        const defaultExp = arrivalDate || new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
+        let resolvedBatches = item.expiryBatches && item.expiryBatches.length > 0 ? item.expiryBatches : undefined;
+        if (prod && (!resolvedBatches || resolvedBatches.length === 0)) {
+          resolvedBatches = [
+            {
+              batchNumber: 'BCH-01',
+              expiryDate: defaultExp,
+              quantity: Number(item.quantityReceived),
+            },
+          ];
+        }
+
         return {
           id: 'rec-it-' + Math.random().toString(36).substring(2, 9),
           productId: item.productId,
@@ -337,6 +486,7 @@ export const GoodsReceivingWorkspace: React.FC = () => {
           plannedQuantity: item.plannedQuantity,
           plannedBuyPrice: item.plannedBuyPrice,
           actualBuyPrice: item.actualBuyPrice,
+          expiryBatches: resolvedBatches,
         };
       });
 
@@ -380,9 +530,35 @@ export const GoodsReceivingWorkspace: React.FC = () => {
         return;
       }
 
+      // Validate expiry dates for finished products (raw material optional per requirement 2)
+      for (const item of positiveItems) {
+        const prod = products.find((p) => p.id === item.productId);
+        if (prod) {
+          const batches = item.expiryBatches || [];
+          for (const b of batches) {
+            if (!b.expiryDate) {
+              setFormError(`Tanggal kadaluwarsa (Expiry Date) wajib diisi untuk produk jadi: ${prod.name}!`);
+              return;
+            }
+          }
+        }
+      }
+
       const formattedItems = positiveItems.map((item) => {
         const prod = products.find((p) => p.id === item.productId);
         const raw = rawMaterials.find((r) => r.id === item.productId);
+        const defaultExp = arrivalDate || new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
+        let resolvedBatches = item.expiryBatches && item.expiryBatches.length > 0 ? item.expiryBatches : undefined;
+        if (prod && (!resolvedBatches || resolvedBatches.length === 0)) {
+          resolvedBatches = [
+            {
+              batchNumber: 'BCH-01',
+              expiryDate: defaultExp,
+              quantity: Number(item.quantityReceived),
+            },
+          ];
+        }
+
         return {
           id: 'rec-it-' + Math.random().toString(36).substring(2, 9),
           productId: item.productId,
@@ -391,6 +567,7 @@ export const GoodsReceivingWorkspace: React.FC = () => {
           sellingPrice: prod ? prod.price : (raw ? raw.costPrice : 0),
           quantityReceived: Number(item.quantityReceived) || 0,
           actualBuyPrice: item.actualBuyPrice ?? (prod ? Math.round(prod.price * 0.6) : (raw ? raw.costPrice : 0)),
+          expiryBatches: resolvedBatches,
         };
       });
 
@@ -1046,6 +1223,98 @@ export const GoodsReceivingWorkspace: React.FC = () => {
                               </div>
                             </div>
 
+                            {/* Multi-Batch Expiry Dates per Item */}
+                            <div className="pt-2 border-t border-amber-200/70 space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5">
+                                  <Calendar className="h-3.5 w-3.5 text-amber-700" />
+                                  <span className="text-[10px] font-black text-amber-950 uppercase tracking-wider">
+                                    Batch & Tanggal Kadaluwarsa
+                                  </span>
+                                  <span className="rounded bg-emerald-100 border border-emerald-300 px-1 py-0.2 text-[9px] font-bold text-emerald-800">
+                                    FEFO
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddBatch(item.tempId)}
+                                  className="flex items-center gap-1 rounded-md bg-amber-200/80 hover:bg-amber-300 px-2 py-0.5 text-[10px] font-bold text-amber-900 transition"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  <span>+ Expire Lain</span>
+                                </button>
+                              </div>
+
+                              <div className="space-y-1">
+                                {(item.expiryBatches || [
+                                  {
+                                    batchNumber: 'BCH-01',
+                                    expiryDate: arrivalDate || new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10),
+                                    quantity: actualQty,
+                                  },
+                                ]).map((batch, bIdx) => (
+                                  <div
+                                    key={bIdx}
+                                    className="flex items-center gap-2 bg-white/90 rounded-lg p-1.5 border border-amber-200 text-xs"
+                                  >
+                                    <div className="w-18">
+                                      <label className="text-[8px] font-bold text-[#8C7B6C] block">Batch</label>
+                                      <input
+                                        type="text"
+                                        value={batch.batchNumber}
+                                        onChange={(e) =>
+                                          handleUpdateBatchField(item.tempId, bIdx, 'batchNumber', e.target.value)
+                                        }
+                                        className="w-full rounded border border-[#E5DACE] bg-white px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#2D241E]"
+                                      />
+                                    </div>
+                                    <div className="flex-1">
+                                      <label className="text-[8px] font-bold text-[#2D241E] block">
+                                        Tgl Kadaluwarsa <span className="text-rose-500">*</span>
+                                      </label>
+                                      <input
+                                        type="date"
+                                        value={batch.expiryDate}
+                                        onChange={(e) =>
+                                          handleUpdateBatchField(item.tempId, bIdx, 'expiryDate', e.target.value)
+                                        }
+                                        className="w-full rounded border border-amber-300 bg-white px-1.5 py-0.5 text-[11px] font-bold text-[#2D241E] focus:outline-none"
+                                      />
+                                    </div>
+                                    <div className="w-20">
+                                      <label className="text-[8px] font-bold text-emerald-800 block text-center">
+                                        Qty (pcs)
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        value={batch.quantity}
+                                        onChange={(e) =>
+                                          handleUpdateBatchField(
+                                            item.tempId,
+                                            bIdx,
+                                            'quantity',
+                                            parseInt(e.target.value) || 0
+                                          )
+                                        }
+                                        className="w-full rounded border border-amber-300 bg-white px-1.5 py-0.5 text-[11px] font-black text-emerald-800 text-center focus:outline-none"
+                                      />
+                                    </div>
+                                    {(item.expiryBatches?.length || 0) > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveBatch(item.tempId, bIdx)}
+                                        className="p-1 text-rose-500 hover:bg-rose-50 rounded self-end mb-0.5"
+                                        title="Hapus batch"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
                             <div className="flex items-center justify-between pt-1 border-t border-dashed border-amber-200 text-xs">
                               <span className="text-[#8C7B6C] text-[11px]">Subtotal Aktual:</span>
                               <span className="font-black text-emerald-800">{formatIDR(actualSubtotal)}</span>
@@ -1081,67 +1350,170 @@ export const GoodsReceivingWorkspace: React.FC = () => {
                   <div className="space-y-3">
                     {receiptItems.map((item, idx) => {
                       const selectedProd = products.find((p) => p.id === item.productId);
+                      const isRaw = rawMaterials.some((r) => r.id === item.productId);
+                      const itemBatches = item.expiryBatches || [
+                        {
+                          batchNumber: 'BCH-01',
+                          expiryDate: arrivalDate || new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10),
+                          quantity: item.quantityReceived || 0,
+                        },
+                      ];
+
                       return (
                         <div
                           key={item.tempId}
-                          className="flex flex-col sm:flex-row items-center gap-3 rounded-xl border-2 border-[#E5DACE] bg-[#FDFBF7] p-3"
+                          className="rounded-xl border-2 border-[#E5DACE] bg-[#FDFBF7] p-3.5 space-y-2.5"
                         >
-                          <div className="w-8 text-xs font-bold text-[#8C7B6C] text-center">#{idx + 1}</div>
+                          <div className="flex flex-col sm:flex-row items-center gap-3">
+                            <div className="w-8 text-xs font-bold text-[#8C7B6C] text-center">#{idx + 1}</div>
 
-                          <div className="flex-1 w-full space-y-1">
-                            <label className="text-[10px] font-bold text-[#8C7B6C]">Produk / Bahan Baku Master</label>
-                            <select
-                              value={item.productId}
-                              onChange={(e) => handleUpdateItemRow(item.tempId, 'productId', e.target.value)}
-                              className="w-full rounded-lg border border-[#E5DACE] bg-white px-3 py-1.5 text-xs font-bold text-[#2D241E] focus:outline-none"
-                            >
-                              <optgroup label="🥖 Produk Jadi (Finished Goods)">
-                                {products.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    [{p.sku}] {p.name} (Stok Saat Ini: {p.stock} pcs)
-                                  </option>
-                                ))}
-                              </optgroup>
-                              {rawMaterials.length > 0 && (
-                                <optgroup label="🥚 Raw Material (Bahan Baku)">
-                                  {rawMaterials.map((r) => (
-                                    <option key={r.id} value={r.id}>
-                                      [{r.sku}] {r.name} (Stok Saat Ini: {r.stock} {r.unit})
+                            <div className="flex-1 w-full space-y-1">
+                              <label className="text-[10px] font-bold text-[#8C7B6C]">Produk / Bahan Baku Master</label>
+                              <select
+                                value={item.productId}
+                                onChange={(e) => handleUpdateItemRow(item.tempId, 'productId', e.target.value)}
+                                className="w-full rounded-lg border border-[#E5DACE] bg-white px-3 py-1.5 text-xs font-bold text-[#2D241E] focus:outline-none"
+                              >
+                                <optgroup label="🥖 Produk Jadi (Finished Goods)">
+                                  {products.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      [{p.sku}] {p.name} (Stok Saat Ini: {p.stock} pcs)
                                     </option>
                                   ))}
                                 </optgroup>
-                              )}
-                            </select>
-                          </div>
-
-                          <div className="w-full sm:w-40 space-y-1">
-                            <label className="text-[10px] font-bold text-[#2D241E]">Jumlah Diterima (Pcs)</label>
-                            <input
-                              type="number"
-                              min={1}
-                              value={item.quantityReceived}
-                              onChange={(e) =>
-                                handleUpdateItemRow(item.tempId, 'quantityReceived', parseInt(e.target.value) || 0)
-                              }
-                              className="w-full rounded-lg border border-[#E5DACE] bg-white px-3 py-1.5 text-xs font-bold text-[#2D241E] focus:outline-none"
-                            />
-                          </div>
-
-                          {selectedProd && (
-                            <div className="hidden sm:block w-32 text-right">
-                              <span className="text-[10px] text-[#8C7B6C] block">Harga Jual</span>
-                              <span className="text-xs font-bold text-[#2D241E]">{formatIDR(selectedProd.price)}</span>
+                                {rawMaterials.length > 0 && (
+                                  <optgroup label="🥚 Raw Material (Bahan Baku)">
+                                    {rawMaterials.map((r) => (
+                                      <option key={r.id} value={r.id}>
+                                        [{r.sku}] {r.name} (Stok Saat Ini: {r.stock} {r.unit})
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                )}
+                              </select>
                             </div>
-                          )}
 
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveItemRow(item.tempId)}
-                            className="rounded-lg p-2 text-rose-600 hover:bg-rose-50 transition self-end sm:self-center"
-                            title="Hapus baris"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                            <div className="w-full sm:w-40 space-y-1">
+                              <label className="text-[10px] font-bold text-[#2D241E]">Jumlah Diterima (Pcs)</label>
+                              <input
+                                type="number"
+                                min={1}
+                                value={item.quantityReceived}
+                                onChange={(e) =>
+                                  handleUpdateItemRow(item.tempId, 'quantityReceived', parseInt(e.target.value) || 0)
+                                }
+                                className="w-full rounded-lg border border-[#E5DACE] bg-white px-3 py-1.5 text-xs font-bold text-[#2D241E] focus:outline-none"
+                              />
+                            </div>
+
+                            {selectedProd && (
+                              <div className="hidden sm:block w-32 text-right">
+                                <span className="text-[10px] text-[#8C7B6C] block">Harga Jual</span>
+                                <span className="text-xs font-bold text-[#2D241E]">{formatIDR(selectedProd.price)}</span>
+                              </div>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveItemRow(item.tempId)}
+                              className="rounded-lg p-2 text-rose-600 hover:bg-rose-50 transition self-end sm:self-center"
+                              title="Hapus baris"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+
+                          {/* Multi-Batch Expiry Dates per Item */}
+                          <div className="pt-2 border-t border-amber-200/70 bg-amber-50/50 rounded-lg p-2.5 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <Calendar className="h-3.5 w-3.5 text-amber-700" />
+                                <span className="text-[10px] font-black text-amber-950 uppercase tracking-wider">
+                                  Batch & Tanggal Kadaluwarsa
+                                </span>
+                                {isRaw ? (
+                                  <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-medium text-gray-600">
+                                    Opsional Bahan Baku
+                                  </span>
+                                ) : (
+                                  <span className="rounded bg-emerald-100 border border-emerald-300 px-1 py-0.2 text-[9px] font-bold text-emerald-800">
+                                    Wajib FEFO
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleAddBatch(item.tempId)}
+                                className="flex items-center gap-1 rounded-md bg-amber-200/80 hover:bg-amber-300 px-2 py-0.5 text-[10px] font-bold text-amber-900 transition"
+                              >
+                                <Plus className="h-3 w-3" />
+                                <span>+ Expire Lain</span>
+                              </button>
+                            </div>
+
+                            <div className="space-y-1">
+                              {itemBatches.map((batch, bIdx) => (
+                                <div
+                                  key={bIdx}
+                                  className="flex items-center gap-2 bg-white rounded-lg p-1.5 border border-amber-200 text-xs"
+                                >
+                                  <div className="w-18">
+                                    <label className="text-[8px] font-bold text-[#8C7B6C] block">Batch</label>
+                                    <input
+                                      type="text"
+                                      value={batch.batchNumber}
+                                      onChange={(e) =>
+                                        handleUpdateBatchField(item.tempId, bIdx, 'batchNumber', e.target.value)
+                                      }
+                                      className="w-full rounded border border-[#E5DACE] bg-white px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#2D241E]"
+                                    />
+                                  </div>
+                                  <div className="flex-1">
+                                    <label className="text-[8px] font-bold text-[#2D241E] block">
+                                      Tgl Kadaluwarsa <span className={isRaw ? 'text-gray-400' : 'text-rose-500'}>*</span>
+                                    </label>
+                                    <input
+                                      type="date"
+                                      value={batch.expiryDate}
+                                      onChange={(e) =>
+                                        handleUpdateBatchField(item.tempId, bIdx, 'expiryDate', e.target.value)
+                                      }
+                                      className="w-full rounded border border-amber-300 bg-white px-1.5 py-0.5 text-[11px] font-bold text-[#2D241E] focus:outline-none"
+                                    />
+                                  </div>
+                                  <div className="w-20">
+                                    <label className="text-[8px] font-bold text-emerald-800 block text-center">
+                                      Qty (pcs)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      value={batch.quantity}
+                                      onChange={(e) =>
+                                        handleUpdateBatchField(
+                                          item.tempId,
+                                          bIdx,
+                                          'quantity',
+                                          parseInt(e.target.value) || 0
+                                        )
+                                      }
+                                      className="w-full rounded border border-amber-300 bg-white px-1.5 py-0.5 text-[11px] font-black text-emerald-800 text-center focus:outline-none"
+                                    />
+                                  </div>
+                                  {itemBatches.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveBatch(item.tempId, bIdx)}
+                                      className="p-1 text-rose-500 hover:bg-rose-50 rounded self-end mb-0.5"
+                                      title="Hapus batch"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         </div>
                       );
                     })}
@@ -1321,7 +1693,22 @@ export const GoodsReceivingWorkspace: React.FC = () => {
                       {selectedReceipt.items.map((it) => (
                         <tr key={it.id} className="border-b border-[#E5DACE]/60 hover:bg-[#FDFBF7]/50">
                           <td className="p-3 font-mono font-bold text-[#D97706]">{it.productSku}</td>
-                          <td className="p-3 font-bold text-[#2D241E]">{it.productName}</td>
+                          <td className="p-3 font-bold text-[#2D241E]">
+                            <div>{it.productName}</div>
+                            {it.expiryBatches && it.expiryBatches.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {it.expiryBatches.map((b, bi) => (
+                                  <span
+                                    key={bi}
+                                    className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-900 border border-amber-200"
+                                  >
+                                    <Calendar className="h-2.5 w-2.5 text-amber-700" />
+                                    <span>{b.batchNumber}: Exp {b.expiryDate} ({b.quantity} pcs)</span>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </td>
                           {selectedReceipt.purchasePlanId && (
                             <td className="p-3 text-right font-bold text-blue-900">
                               {it.plannedQuantity !== undefined ? `${it.plannedQuantity} pcs` : '-'}

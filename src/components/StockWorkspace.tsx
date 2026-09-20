@@ -12,6 +12,7 @@ import {
   Layers,
   Truck,
   ClipboardCheck,
+  Calendar,
   AlertTriangle,
   ShieldAlert,
   Wheat,
@@ -626,8 +627,8 @@ export const StockWorkspace: React.FC = () => {
               : 'border-transparent text-[#8C7B6C] hover:text-[#2D241E]'
           }`}
         >
-          <ClipboardCheck className="h-4 w-4" />
-          <span>Kategori (Closing Harian)</span>
+          <Calendar className="h-4 w-4" />
+          <span>Rekonsiliasi Kadaluwarsa (Closing)</span>
         </button>
 
         <button
