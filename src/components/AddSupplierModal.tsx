@@ -255,11 +255,11 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
             </div>
           )}
 
-          {/* 1. Master Kategori (Single selection from Master Kategori Backoffice - 1:1 Rule) */}
+          {/* Master Kategori (Single selection from Master Kategori Backoffice - 1:1 Rule) */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label htmlFor="supplier-category-select" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-                1. Master Kategori <span className="text-rose-500">*</span>
+                Master Kategori <span className="text-rose-500">*</span>
               </label>
               {activeCategoryObj && (
                 <span className={`rounded-md px-2 py-0.5 text-[10px] font-black border ${getTypeBadgeStyle(activeCategoryObj.categoryType)}`}>
@@ -303,10 +303,10 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
             </div>
           </div>
 
-          {/* 2. Nama Usaha */}
+          {/* Nama Usaha */}
           <div className="space-y-1.5">
             <label className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-              2. Nama Usaha / Mitra UMKM <span className="text-rose-500">*</span>
+              Nama Usaha / Mitra UMKM <span className="text-rose-500">*</span>
             </label>
             <input
               id="supplier-name-input"
@@ -319,11 +319,11 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
             />
           </div>
 
-          {/* 3. PIC & 4. Phone */}
+          {/* PIC & Phone */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-                3. Nama PIC / Pemilik
+                Nama PIC / Pemilik
               </label>
               <input
                 id="supplier-pic-input"
@@ -336,7 +336,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-                4. No. WhatsApp / HP
+                No. WhatsApp / HP
               </label>
               <input
                 id="supplier-phone-input"
@@ -349,12 +349,12 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
             </div>
           </div>
 
-          {/* 5. Rekening Pembayaran */}
+          {/* Rekening Pembayaran */}
           <div className="rounded-2xl border-2 border-[#E5DACE] bg-white p-4 space-y-3">
             <div className="flex items-center gap-2">
               <CreditCard className="h-4 w-4 text-[#D97706]" />
               <label className="text-xs font-black uppercase tracking-wider text-[#2D241E]">
-                5. Rekening Pembayaran Settlement (Opsional)
+                Rekening Pembayaran Settlement (Opsional)
               </label>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">

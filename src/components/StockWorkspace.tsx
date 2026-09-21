@@ -16,9 +16,11 @@ import {
   AlertTriangle,
   ShieldAlert,
   Wheat,
+  Clock,
+  Zap,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
-import { ProductOwnershipType, CommissionMethod, CommissionBasis, MasterCategory } from '../types';
+import { ProductOwnershipType, CommissionMethod, CommissionBasis, MasterCategory, ProductExpiryType } from '../types';
 import { AddCategoryModal } from './AddCategoryModal';
 import { GoodsReceivingWorkspace } from './GoodsReceivingWorkspace';
 import { ProductStockTable } from './stock/ProductStockTable';
@@ -176,6 +178,10 @@ export const StockWorkspace: React.FC = () => {
   const [formSuccess, setFormSuccess] = useState('');
   const [isSubmittingProduct, setIsSubmittingProduct] = useState(false);
 
+  // Requirement 1: Tipe Kedaluwarsa Produk (Expired Harian vs Expired > 1 Hari)
+  const [newExpiryType, setNewExpiryType] = useState<ProductExpiryType>('daily');
+  const [newShelfLifeDays, setNewShelfLifeDays] = useState<string>('3');
+
   const isInactive = isBranchReadOnly || selectedBranch.status === 'inactive';
   const isSuperadmin = currentUser.role === 'admin';
 
@@ -266,6 +272,8 @@ export const StockWorkspace: React.FC = () => {
       ownershipType: isConsignment ? 'consignment' : 'own',
       supplierId: isConsignment ? selectedSup?.id : undefined,
       supplierName: isConsignment ? selectedSup?.name : (newSupplierId === 'internal' ? 'Produksi Sendiri' : undefined),
+      expiryType: newExpiryType,
+      shelfLifeDays: newExpiryType === 'daily' ? 1 : Math.max(1, parseInt(newShelfLifeDays, 10) || 3),
     });
     setIsSubmittingProduct(false);
 
@@ -367,13 +375,13 @@ export const StockWorkspace: React.FC = () => {
                 </span>
               </div>
 
-              {/* Row 1: 1. Add Master Kategori & 2. Add Mitra Supplier */}
+              {/* Row 1: Add Master Kategori & Add Mitra Supplier */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* 1. Add Master Kategori */}
+                {/* Add Master Kategori */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <label htmlFor="product-master-category-select" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-                      1. Master Kategori <span className="text-rose-500">*</span>
+                      Master Kategori <span className="text-rose-500">*</span>
                     </label>
                     {selectedMasterCat && (
                       <span className={`rounded-md px-2 py-0.5 text-[10px] font-black border ${
@@ -404,11 +412,11 @@ export const StockWorkspace: React.FC = () => {
                   </p>
                 </div>
 
-                {/* 2. Add Mitra Supplier (Selection appears based on Master Kategori) */}
+                {/* Add Mitra Supplier (Selection appears based on Master Kategori) */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <label htmlFor="product-supplier-select" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-                      2. Mitra Supplier <span className="text-rose-500">*</span>
+                      Mitra Supplier <span className="text-rose-500">*</span>
                     </label>
                     {selectedMasterCat && (
                       <span className="text-[10px] font-bold text-[#D97706]">
@@ -452,12 +460,12 @@ export const StockWorkspace: React.FC = () => {
                 </div>
               </div>
 
-              {/* Row 2: 3. Nama Produk & 4. Produk Kategori */}
+              {/* Row 2: Nama Produk & Produk Kategori */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* 3. Nama Produk */}
+                {/* Nama Produk */}
                 <div className="space-y-1.5">
                   <label htmlFor="product-name-input" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-                    3. Nama Produk <span className="text-rose-500">*</span>
+                    Nama Produk <span className="text-rose-500">*</span>
                   </label>
                   <input
                     id="product-name-input"
@@ -470,10 +478,10 @@ export const StockWorkspace: React.FC = () => {
                   />
                 </div>
 
-                {/* 4. Produk Kategori */}
+                {/* Produk Kategori */}
                 <div className="space-y-1.5">
                   <label htmlFor="product-pos-category-select" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-                    4. Produk Kategori <span className="text-rose-500">*</span>
+                    Produk Kategori <span className="text-rose-500">*</span>
                   </label>
                   <select
                     id="product-pos-category-select"
@@ -496,13 +504,13 @@ export const StockWorkspace: React.FC = () => {
                 </div>
               </div>
 
-              {/* Row 3: 5. Kode SKU & 6. Harga Jual */}
+              {/* Row 3: Kode SKU & Harga Jual */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* 5. Kode SKU */}
+                {/* Kode SKU */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <label htmlFor="product-sku-input" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-                      5. Kode SKU <span className="text-rose-500">*</span>
+                      Kode SKU <span className="text-rose-500">*</span>
                     </label>
                     <button
                       type="button"
@@ -523,10 +531,10 @@ export const StockWorkspace: React.FC = () => {
                   />
                 </div>
 
-                {/* 6. Harga Jual */}
+                {/* Harga Jual */}
                 <div className="space-y-1.5">
                   <label htmlFor="product-price-input" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-                    6. Harga Jual (Rp) <span className="text-rose-500">*</span>
+                    Harga Jual (Rp) <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
                     <span className="absolute left-3.5 top-2.5 text-xs font-bold text-[#8C7B6C]">Rp</span>
@@ -543,6 +551,142 @@ export const StockWorkspace: React.FC = () => {
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* Row 4: Tipe Masa Kedaluwarsa Produk (Requirement 1) */}
+              <div className="space-y-2.5 pt-3 border-t border-[#E5DACE]">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black uppercase tracking-wider text-[#8C7B6C] flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5 text-[#D97706]" />
+                    <span>Tipe Masa Kedaluwarsa Produk (Expiry Type)</span>
+                    <span className="text-rose-500">*</span>
+                  </label>
+                  <span className="text-[10px] font-bold text-[#8C7B6C]">
+                    Pilih salah satu dari 2 tipe kedaluwarsa
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Option A: Expired Secara Harian */}
+                  <div
+                    onClick={() => setNewExpiryType('daily')}
+                    className={`relative cursor-pointer rounded-2xl border-2 p-3.5 transition-all flex flex-col justify-between ${
+                      newExpiryType === 'daily'
+                        ? 'border-[#D97706] bg-amber-50/70 shadow-xs'
+                        : 'border-[#E5DACE] bg-white hover:border-[#D97706]/40 hover:bg-[#FDFBF7]'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          id="expiry-type-daily"
+                          name="product-expiry-type"
+                          value="daily"
+                          checked={newExpiryType === 'daily'}
+                          onChange={() => setNewExpiryType('daily')}
+                          className="h-4 w-4 text-[#D97706] focus:ring-[#D97706] cursor-pointer"
+                        />
+                        <label
+                          htmlFor="expiry-type-daily"
+                          className="text-xs font-black text-[#2D241E] cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Zap className="h-3.5 w-3.5 text-[#D97706]" />
+                          <span>Expired Secara Harian</span>
+                        </label>
+                      </div>
+                      <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-900 border border-amber-300 shrink-0">
+                        1 Hari (Fresh)
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[#8C7B6C] mt-2 leading-relaxed">
+                      Produk berumur simpan harian (roti fresh, kue basah). Sisa stok yang tidak terjual{' '}
+                      <strong className="text-[#2D241E]">dapat dimusnahkan secara otomatis</strong> pada menu closing harian bila expirynya jatuh tempo hari itu.
+                    </p>
+                  </div>
+
+                  {/* Option B: Expired di Atas dari Satu Hari */}
+                  <div
+                    onClick={() => setNewExpiryType('multi_day')}
+                    className={`relative cursor-pointer rounded-2xl border-2 p-3.5 transition-all flex flex-col justify-between ${
+                      newExpiryType === 'multi_day'
+                        ? 'border-[#D97706] bg-blue-50/70 shadow-xs'
+                        : 'border-[#E5DACE] bg-white hover:border-[#D97706]/40 hover:bg-[#FDFBF7]'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          id="expiry-type-multi"
+                          name="product-expiry-type"
+                          value="multi_day"
+                          checked={newExpiryType === 'multi_day'}
+                          onChange={() => setNewExpiryType('multi_day')}
+                          className="h-4 w-4 text-[#D97706] focus:ring-[#D97706] cursor-pointer"
+                        />
+                        <label
+                          htmlFor="expiry-type-multi"
+                          className="text-xs font-black text-[#2D241E] cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Clock className="h-3.5 w-3.5 text-blue-600" />
+                          <span>Expired di Atas dari Satu Hari</span>
+                        </label>
+                      </div>
+                      <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[10px] font-black text-blue-900 border border-blue-300 shrink-0">
+                        &gt; 1 Hari (Awet)
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[#8C7B6C] mt-2 leading-relaxed">
+                      Produk berdaya tahan lebih dari sehari (kue kering, pastry kemasan, sirup). Tanggal expiry date{' '}
+                      <strong className="text-[#2D241E]">dapat disesuaikan</strong> di menu pesanan &amp; penerimaan barang dan dipantau di closing harian.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Sub-setting when multi_day is active: Shelf Life in Days */}
+                {newExpiryType === 'multi_day' && (
+                  <div className="rounded-2xl border border-blue-200 bg-blue-50/40 p-3.5 space-y-2 mt-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <label className="text-xs font-bold text-blue-950 block">
+                          Estimasi Masa Simpan Bawaan (Shelf Life / Hari):
+                        </label>
+                        <p className="text-[10px] text-[#8C7B6C]">
+                          Akan digunakan sebagai tanggal kadaluwarsa acuan saat penerimaan atau pesanan baru.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {['3', '7', '14', '30'].map((days) => (
+                          <button
+                            key={days}
+                            type="button"
+                            onClick={() => setNewShelfLifeDays(days)}
+                            className={`rounded-lg px-2.5 py-1 text-xs font-bold transition cursor-pointer border ${
+                              newShelfLifeDays === days
+                                ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
+                                : 'bg-white text-blue-900 border-blue-200 hover:bg-blue-100'
+                            }`}
+                          >
+                            {days} Hari
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="2"
+                        max="365"
+                        value={newShelfLifeDays}
+                        onChange={(e) => setNewShelfLifeDays(e.target.value)}
+                        placeholder="Contoh: 7"
+                        className="w-24 rounded-xl border border-blue-300 bg-white px-3 py-1.5 text-xs font-bold text-[#2D241E] focus:outline-none focus:border-blue-500"
+                      />
+                      <span className="text-xs font-bold text-blue-900">Hari masa simpan setelah tanggal produksi / penerimaan</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

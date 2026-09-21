@@ -236,7 +236,11 @@ export const GoodsReceivingWorkspace: React.FC = () => {
     const unselectedProd = listToChoose.find((p) => !receiptItems.some((i) => i.productId === p.id));
     const defaultProdId = unselectedProd ? unselectedProd.id : listToChoose[0]?.id || '';
     const defaultProd = listToChoose.find((p) => p.id === defaultProdId);
-    const defaultExp = arrivalDate || new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
+    const isMultiDay = defaultProd?.expiryType === 'multi_day';
+    const shelfDays = defaultProd?.shelfLifeDays || 7;
+    const defaultExp = isMultiDay
+      ? new Date(Date.now() + shelfDays * 86400000).toISOString().slice(0, 10)
+      : (arrivalDate || new Date().toISOString().slice(0, 10));
     const initialQty = sumberPenerimaan === 'Dari Rencana Pembelian' ? 0 : 10;
 
     setReceiptItems((prev) => [
@@ -360,6 +364,20 @@ export const GoodsReceivingWorkspace: React.FC = () => {
             const prod = products.find((p) => p.id === value);
             if (prod && !item.plannedLineId) {
               updated.actualBuyPrice = Math.round(prod.price * 0.6);
+              const isMultiDay = prod.expiryType === 'multi_day';
+              const shelfDays = prod.shelfLifeDays || 7;
+              const defaultExp = isMultiDay
+                ? new Date(Date.now() + shelfDays * 86400000).toISOString().slice(0, 10)
+                : (arrivalDate || new Date().toISOString().slice(0, 10));
+              if (updated.expiryBatches && updated.expiryBatches.length <= 1) {
+                updated.expiryBatches = [
+                  {
+                    batchNumber: updated.expiryBatches?.[0]?.batchNumber || 'BCH-01',
+                    expiryDate: defaultExp,
+                    quantity: updated.quantityReceived || 0,
+                  },
+                ];
+              }
             }
           }
           // If quantity received changed and single batch, sync the batch quantity
@@ -1431,7 +1449,15 @@ export const GoodsReceivingWorkspace: React.FC = () => {
                                 <span className="text-[10px] font-black text-amber-950 uppercase tracking-wider">
                                   Batch & Tanggal Kadaluwarsa
                                 </span>
-                                {isRaw ? (
+                                {selectedProd?.expiryType === 'multi_day' ? (
+                                  <span className="rounded bg-blue-100 border border-blue-300 px-1.5 py-0.5 text-[9px] font-black text-blue-900">
+                                    ⏳ Expired &gt; 1 Hari (Closing Harian)
+                                  </span>
+                                ) : selectedProd?.expiryType === 'daily' ? (
+                                  <span className="rounded bg-amber-100 border border-amber-300 px-1.5 py-0.5 text-[9px] font-black text-amber-900">
+                                    ⚡ Expired Harian
+                                  </span>
+                                ) : isRaw ? (
                                   <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-medium text-gray-600">
                                     Opsional Bahan Baku
                                   </span>
@@ -1444,72 +1470,103 @@ export const GoodsReceivingWorkspace: React.FC = () => {
                               <button
                                 type="button"
                                 onClick={() => handleAddBatch(item.tempId)}
-                                className="flex items-center gap-1 rounded-md bg-amber-200/80 hover:bg-amber-300 px-2 py-0.5 text-[10px] font-bold text-amber-900 transition"
+                                className="flex items-center gap-1 rounded-md bg-amber-200/80 hover:bg-amber-300 px-2 py-0.5 text-[10px] font-bold text-amber-900 transition cursor-pointer"
                               >
                                 <Plus className="h-3 w-3" />
                                 <span>+ Expire Lain</span>
                               </button>
                             </div>
 
-                            <div className="space-y-1">
+                            <div className="space-y-1.5">
                               {itemBatches.map((batch, bIdx) => (
                                 <div
                                   key={bIdx}
-                                  className="flex items-center gap-2 bg-white rounded-lg p-1.5 border border-amber-200 text-xs"
+                                  className="bg-white rounded-lg p-2 border border-amber-200 text-xs space-y-1.5"
                                 >
-                                  <div className="w-18">
-                                    <label className="text-[8px] font-bold text-[#8C7B6C] block">Batch</label>
-                                    <input
-                                      type="text"
-                                      value={batch.batchNumber}
-                                      onChange={(e) =>
-                                        handleUpdateBatchField(item.tempId, bIdx, 'batchNumber', e.target.value)
-                                      }
-                                      className="w-full rounded border border-[#E5DACE] bg-white px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#2D241E]"
-                                    />
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-20">
+                                      <label className="text-[8px] font-bold text-[#8C7B6C] block">Batch</label>
+                                      <input
+                                        type="text"
+                                        value={batch.batchNumber}
+                                        onChange={(e) =>
+                                          handleUpdateBatchField(item.tempId, bIdx, 'batchNumber', e.target.value)
+                                        }
+                                        className="w-full rounded border border-[#E5DACE] bg-white px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#2D241E]"
+                                      />
+                                    </div>
+                                    <div className="flex-1">
+                                      <label className="text-[8px] font-bold text-[#2D241E] block">
+                                        Tgl Kadaluwarsa <span className={isRaw ? 'text-gray-400' : 'text-rose-500'}>*</span>
+                                      </label>
+                                      <input
+                                        type="date"
+                                        value={batch.expiryDate}
+                                        onChange={(e) =>
+                                          handleUpdateBatchField(item.tempId, bIdx, 'expiryDate', e.target.value)
+                                        }
+                                        className="w-full rounded border border-amber-300 bg-white px-1.5 py-0.5 text-[11px] font-bold text-[#2D241E] focus:outline-none"
+                                      />
+                                    </div>
+                                    <div className="w-20">
+                                      <label className="text-[8px] font-bold text-emerald-800 block text-center">
+                                        Qty (pcs)
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        value={batch.quantity}
+                                        onChange={(e) =>
+                                          handleUpdateBatchField(
+                                            item.tempId,
+                                            bIdx,
+                                            'quantity',
+                                            parseInt(e.target.value) || 0
+                                          )
+                                        }
+                                        className="w-full rounded border border-amber-300 bg-white px-1.5 py-0.5 text-[11px] font-black text-emerald-800 text-center focus:outline-none"
+                                      />
+                                    </div>
+                                    {itemBatches.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveBatch(item.tempId, bIdx)}
+                                        className="p-1 text-rose-500 hover:bg-rose-50 rounded self-end mb-0.5"
+                                        title="Hapus batch"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </button>
+                                    )}
                                   </div>
-                                  <div className="flex-1">
-                                    <label className="text-[8px] font-bold text-[#2D241E] block">
-                                      Tgl Kadaluwarsa <span className={isRaw ? 'text-gray-400' : 'text-rose-500'}>*</span>
-                                    </label>
-                                    <input
-                                      type="date"
-                                      value={batch.expiryDate}
-                                      onChange={(e) =>
-                                        handleUpdateBatchField(item.tempId, bIdx, 'expiryDate', e.target.value)
-                                      }
-                                      className="w-full rounded border border-amber-300 bg-white px-1.5 py-0.5 text-[11px] font-bold text-[#2D241E] focus:outline-none"
-                                    />
+
+                                  {/* Quick date presets for multi_day or any product */}
+                                  <div className="flex items-center justify-between pt-1 border-t border-dashed border-gray-100">
+                                    <span className="text-[9px] text-[#8C7B6C] font-medium">
+                                      {selectedProd?.expiryType === 'multi_day'
+                                        ? '⏳ Penyesuaian Expiry > 1 Hari (Masuk Closing Harian):'
+                                        : 'Shortcut Hari:'}
+                                    </span>
+                                    <div className="flex items-center gap-1">
+                                      {[
+                                        { label: '+3H', days: 3 },
+                                        { label: '+7H', days: 7 },
+                                        { label: '+14H', days: 14 },
+                                        { label: '+30H', days: 30 },
+                                      ].map((preset) => (
+                                        <button
+                                          key={preset.days}
+                                          type="button"
+                                          onClick={() => {
+                                            const d = new Date(Date.now() + preset.days * 86400000).toISOString().slice(0, 10);
+                                            handleUpdateBatchField(item.tempId, bIdx, 'expiryDate', d);
+                                          }}
+                                          className="rounded border border-amber-300 bg-amber-50 hover:bg-amber-100 px-1.5 py-0.5 text-[9px] font-black text-amber-900 transition cursor-pointer"
+                                        >
+                                          {preset.label}
+                                        </button>
+                                      ))}
+                                    </div>
                                   </div>
-                                  <div className="w-20">
-                                    <label className="text-[8px] font-bold text-emerald-800 block text-center">
-                                      Qty (pcs)
-                                    </label>
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      value={batch.quantity}
-                                      onChange={(e) =>
-                                        handleUpdateBatchField(
-                                          item.tempId,
-                                          bIdx,
-                                          'quantity',
-                                          parseInt(e.target.value) || 0
-                                        )
-                                      }
-                                      className="w-full rounded border border-amber-300 bg-white px-1.5 py-0.5 text-[11px] font-black text-emerald-800 text-center focus:outline-none"
-                                    />
-                                  </div>
-                                  {itemBatches.length > 1 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemoveBatch(item.tempId, bIdx)}
-                                      className="p-1 text-rose-500 hover:bg-rose-50 rounded self-end mb-0.5"
-                                      title="Hapus batch"
-                                    >
-                                      <Trash2 className="h-3 w-3" />
-                                    </button>
-                                  )}
                                 </div>
                               ))}
                             </div>

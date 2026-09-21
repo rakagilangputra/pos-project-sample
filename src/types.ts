@@ -81,6 +81,7 @@ export interface ProductCategoryItem {
 export type ProductOwnershipType = 'own' | 'consignment';
 export type CommissionMethod = 'fixed' | 'percentage';
 export type CommissionBasis = 'gross' | 'net';
+export type ProductExpiryType = 'daily' | 'multi_day';
 
 export interface Product {
   id: string;
@@ -101,6 +102,10 @@ export interface Product {
   description?: string;
   popular?: boolean;
   
+  // Expiry classification: 'daily' (Harian / 1 Hari) vs 'multi_day' (> 1 Hari)
+  expiryType?: ProductExpiryType;
+  shelfLifeDays?: number;
+
   // Ownership & Consignment fields (POS-US-029)
   ownershipType: ProductOwnershipType; // 'own' | 'consignment'
   supplierId?: string;
@@ -136,6 +141,10 @@ export interface CartItem {
   commissionMethod?: CommissionMethod;
   commissionValue?: number;
   commissionBasis?: CommissionBasis;
+
+  // Expiry configuration
+  expiryType?: ProductExpiryType;
+  expiryDate?: string;
 }
 
 export type PaymentMethod = 'cash' | 'qris' | 'deposit' | 'pay_tomorrow' | 'transfer';
@@ -178,6 +187,8 @@ export interface MtoOrderItemInput {
   supplierId?: string;
   supplierName?: string;
   ownershipType?: ProductOwnershipType;
+  expiryType?: ProductExpiryType;
+  expiryDate?: string;
 }
 
 export interface Order {
@@ -572,6 +583,7 @@ export interface ProductExpiryBatch {
   sku: string;
   branchId: string;
   branchName?: string;
+  expiryType?: ProductExpiryType; // 'daily' | 'multi_day'
   expiryDate: string; // YYYY-MM-DD
   initialQuantity: number;
   remainingQuantity: number;

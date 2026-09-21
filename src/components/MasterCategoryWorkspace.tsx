@@ -140,13 +140,13 @@ export const AddMasterCategoryModal: React.FC<AddMasterCategoryModalProps> = ({
             </div>
           )}
 
-          {/* 1. ID Kategori */}
+          {/* ID Kategori */}
           <div>
             <label
               htmlFor="master-category-id-input"
               className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5"
             >
-              1. ID Kategori <span className="text-rose-500">*</span>
+              ID Kategori <span className="text-rose-500">*</span>
             </label>
             <input
               id="master-category-id-input"
@@ -159,13 +159,13 @@ export const AddMasterCategoryModal: React.FC<AddMasterCategoryModalProps> = ({
             />
           </div>
 
-          {/* 2. Nama Kategori */}
+          {/* Master Kategori */}
           <div>
             <label
               htmlFor="master-category-name-input"
               className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5"
             >
-              2. Nama Kategori <span className="text-rose-500">*</span>
+              Master Kategori <span className="text-rose-500">*</span>
             </label>
             <input
               id="master-category-name-input"
@@ -178,13 +178,13 @@ export const AddMasterCategoryModal: React.FC<AddMasterCategoryModalProps> = ({
             />
           </div>
 
-          {/* 3. Tipe Kategori */}
+          {/* Tipe Kategori */}
           <div>
             <label
               htmlFor="master-category-type-select"
               className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5"
             >
-              3. Tipe Kategori <span className="text-rose-500">*</span>
+              Tipe Kategori <span className="text-rose-500">*</span>
             </label>
             <div className="grid grid-cols-3 gap-2">
               {(
@@ -211,11 +211,11 @@ export const AddMasterCategoryModal: React.FC<AddMasterCategoryModalProps> = ({
             </div>
           </div>
 
-          {/* 4. Cabang ID */}
+          {/* Cabang ID */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                4. Cabang Toko <span className="text-rose-500">*</span>
+                Cabang Toko <span className="text-rose-500">*</span>
               </label>
               <button
                 type="button"

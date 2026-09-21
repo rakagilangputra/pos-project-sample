@@ -11,6 +11,12 @@ import {
   Flame,
   ShieldAlert,
   Clock,
+  Building2,
+  Tag,
+  RotateCcw,
+  X,
+  Zap,
+  Trash2,
 } from 'lucide-react';
 import { Category, Product, ProductExpiryBatch } from '../../types';
 import { formatIDR } from '../../utils/formatters';
@@ -21,7 +27,7 @@ interface CategoryClosingViewProps {
   onBackToProducts: () => void;
 }
 
-type ExpiryFilterTab = 'all' | 'expired' | 'today' | 'tomorrow' | 'h3';
+type ExpiryFilterTab = 'all' | 'closing_3days' | 'today' | 'tomorrow' | 'h2' | 'h3' | 'expired' | 'custom';
 
 export const CategoryClosingView: React.FC<CategoryClosingViewProps> = ({
   initialCategoryId,
@@ -35,12 +41,19 @@ export const CategoryClosingView: React.FC<CategoryClosingViewProps> = ({
     currentUser,
     expiryBatches,
     destroyExpiredBatches,
+    masterCategories,
+    suppliers,
   } = usePOS();
 
-  // Expiry Reconciliation Filters & States
-  const [expiryFilter, setExpiryFilter] = useState<ExpiryFilterTab>('expired');
+  // Expiry Reconciliation Filters & States (4-Dimension Filter Mechanism)
+  // Default to 'closing_3days' so user immediately sees all batches closing within the next 3 days
+  const [expiryFilter, setExpiryFilter] = useState<ExpiryFilterTab>('closing_3days');
+  const [customDate, setCustomDate] = useState<string>('');
+  const [filterMasterCategory, setFilterMasterCategory] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>(initialCategoryId || 'all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchBatchQuery, setSearchBatchQuery] = useState<string>('');
+
   const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
   const [destructionReason, setDestructionReason] = useState<string>(
     'Pemusnahan stok kadaluwarsa pada Closing Harian'
@@ -56,6 +69,11 @@ export const CategoryClosingView: React.FC<CategoryClosingViewProps> = ({
   const tomorrowStr = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }, []);
+  const h2Str = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 2);
     return d.toISOString().slice(0, 10);
   }, []);
   const h3Str = useMemo(() => {
@@ -87,37 +105,119 @@ export const CategoryClosingView: React.FC<CategoryClosingViewProps> = ({
     return branchActiveBatches.filter((b) => b.expiryDate === tomorrowStr);
   }, [branchActiveBatches, tomorrowStr]);
 
-  const h3Batches = useMemo(() => {
-    return branchActiveBatches.filter((b) => b.expiryDate > tomorrowStr && b.expiryDate <= h3Str);
-  }, [branchActiveBatches, tomorrowStr, h3Str]);
+  const h2Batches = useMemo(() => {
+    return branchActiveBatches.filter((b) => b.expiryDate === h2Str);
+  }, [branchActiveBatches, h2Str]);
 
-  // Filtered batches according to active filter, category, and search text
+  const h3Batches = useMemo(() => {
+    return branchActiveBatches.filter((b) => b.expiryDate === h3Str);
+  }, [branchActiveBatches, h3Str]);
+
+  const closing3DaysBatches = useMemo(() => {
+    return branchActiveBatches.filter((b) => b.expiryDate <= h3Str);
+  }, [branchActiveBatches, h3Str]);
+
+  // Active Filter Counter
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (expiryFilter !== 'closing_3days' && expiryFilter !== 'all') count++;
+    if (customDate !== '') count++;
+    if (filterMasterCategory !== 'all') count++;
+    if (filterCategory !== 'all') count++;
+    if (filterStatus !== 'all') count++;
+    if (searchBatchQuery.trim() !== '') count++;
+    return count;
+  }, [expiryFilter, customDate, filterMasterCategory, filterCategory, filterStatus, searchBatchQuery]);
+
+  const handleResetFilters = () => {
+    setExpiryFilter('all');
+    setCustomDate('');
+    setFilterMasterCategory('all');
+    setFilterCategory('all');
+    setFilterStatus('all');
+    setSearchBatchQuery('');
+  };
+
+  // Filtered batches according to 4 filter dimensions & search query
   const filteredBatches = useMemo(() => {
-    return branchActiveBatches.filter((b) => {
-      // 1. Expiry Tab Filter
+    return expiryBatches.filter((b) => {
+      // Branch check
+      if (b.branchId && b.branchId !== selectedBranch.id) return false;
+
+      // 1. Tanggal Expiry Date Filter
+      if (expiryFilter === 'closing_3days' && b.expiryDate > h3Str) return false;
       if (expiryFilter === 'expired' && b.expiryDate >= todayStr) return false;
       if (expiryFilter === 'today' && b.expiryDate !== todayStr) return false;
       if (expiryFilter === 'tomorrow' && b.expiryDate !== tomorrowStr) return false;
-      if (expiryFilter === 'h3' && (b.expiryDate <= tomorrowStr || b.expiryDate > h3Str)) return false;
+      if (expiryFilter === 'h2' && b.expiryDate !== h2Str) return false;
+      if (expiryFilter === 'h3' && b.expiryDate !== h3Str) return false;
+      if (expiryFilter === 'custom' && customDate && b.expiryDate !== customDate) return false;
 
-      // 2. Category Filter
-      if (filterCategory !== 'all') {
+      // 2. Master Kategori Filter
+      if (filterMasterCategory !== 'all') {
         const prod = products.find((p) => p.id === b.productId);
-        if (prod && prod.category !== filterCategory) return false;
+        const sup = suppliers.find((s) => s.id === b.supplierId || s.id === prod?.supplierId);
+        const mc = masterCategories.find((m) => m.id === filterMasterCategory);
+        if (mc) {
+          const matchSupCategory = sup?.category === mc.name || sup?.categories?.includes(mc.name);
+          const matchProdCat = prod?.categoryLabel === mc.name || prod?.category === mc.id;
+          const matchMasterId = sup?.category === mc.id;
+          if (!matchSupCategory && !matchProdCat && !matchMasterId) {
+            return false;
+          }
+        }
       }
 
-      // 3. Search Query
+      // 3. Kategori Produk Filter
+      if (filterCategory !== 'all') {
+        const prod = products.find((p) => p.id === b.productId);
+        const matchProdCategory = prod && prod.category === filterCategory;
+        const matchBatchCategory = b.category === filterCategory;
+        if (!matchProdCategory && !matchBatchCategory) return false;
+      }
+
+      // 4. Status Pesanan / Batch Filter
+      if (filterStatus !== 'all') {
+        if (filterStatus === 'active' && b.status !== 'active') return false;
+        if (filterStatus === 'destroyed' && b.status !== 'destroyed') return false;
+        if (filterStatus === 'expired' && b.expiryDate >= todayStr) return false;
+        if (filterStatus === 'near_expiry' && (b.expiryDate < todayStr || b.expiryDate > h3Str)) return false;
+      } else {
+        // By default show active batches unless destroyed/all status selected
+        if (expiryFilter !== 'all' && b.status !== 'active' && filterStatus === 'all') {
+          return false;
+        }
+      }
+
+      // 5. Search Query
       if (searchBatchQuery.trim()) {
         const q = searchBatchQuery.toLowerCase();
         const matchName = b.productName.toLowerCase().includes(q);
         const matchSku = b.sku.toLowerCase().includes(q);
-        const matchBatch = b.batchNumber.toLowerCase().includes(q);
-        if (!matchName && !matchSku && !matchBatch) return false;
+        const matchBatch = (b.batchNumber || '').toLowerCase().includes(q);
+        const matchSupplier = (b.supplierName || '').toLowerCase().includes(q);
+        if (!matchName && !matchSku && !matchBatch && !matchSupplier) return false;
       }
 
       return true;
     });
-  }, [branchActiveBatches, expiryFilter, filterCategory, searchBatchQuery, todayStr, tomorrowStr, h3Str, products]);
+  }, [
+    expiryBatches,
+    selectedBranch.id,
+    expiryFilter,
+    customDate,
+    filterMasterCategory,
+    filterCategory,
+    filterStatus,
+    searchBatchQuery,
+    todayStr,
+    tomorrowStr,
+    h2Str,
+    h3Str,
+    products,
+    suppliers,
+    masterCategories,
+  ]);
 
   // Selected batches calculation for destruction
   const selectedBatches = useMemo(() => {
@@ -258,178 +358,281 @@ export const CategoryClosingView: React.FC<CategoryClosingViewProps> = ({
           </button>
         </div>
 
-        {/* Metric Summary Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {/* 1. Expired */}
-          <div
-            onClick={() => setExpiryFilter('expired')}
-            className={`rounded-2xl p-3.5 border-2 transition cursor-pointer flex flex-col justify-between ${
-              expiryFilter === 'expired'
-                ? 'border-rose-500 bg-rose-50/70 shadow-xs'
-                : 'border-rose-200 bg-white hover:bg-rose-50/30'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black text-rose-800 uppercase tracking-wide">
-                ⚠️ Sudah Expired
-              </span>
-              <Flame className="h-4 w-4 text-rose-600" />
-            </div>
-            <div className="mt-2">
-              <div className="text-2xl font-black text-rose-900">
-                {expiredBatches.reduce((s, b) => s + b.remainingQuantity, 0)}{' '}
-                <span className="text-xs font-bold text-rose-700">pcs</span>
-              </div>
-              <div className="text-[11px] font-bold text-rose-700">
-                {expiredBatches.length} batch wajib dimusnahkan
-              </div>
-            </div>
-          </div>
+        {/* 4-Dimension Compact Filter Toolbar */}
+        <div className="bg-white p-3 rounded-2xl border-2 border-[#E5DACE] shadow-xs space-y-2.5">
+          {/* Quick Filter Timeframe Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+            <span className="text-[11px] font-black text-[#8C7B6C] shrink-0 mr-1 flex items-center gap-1">
+              <Clock className="h-3 w-3 text-[#D97706]" />
+              Filter Cepat:
+            </span>
 
-          {/* 2. Today */}
-          <div
-            onClick={() => setExpiryFilter('today')}
-            className={`rounded-2xl p-3.5 border-2 transition cursor-pointer flex flex-col justify-between ${
-              expiryFilter === 'today'
-                ? 'border-amber-500 bg-amber-50 shadow-xs'
-                : 'border-amber-200 bg-white hover:bg-amber-50/30'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black text-amber-800 uppercase tracking-wide">
-                📅 Expire Hari Ini
-              </span>
-              <Clock className="h-4 w-4 text-amber-600" />
-            </div>
-            <div className="mt-2">
-              <div className="text-2xl font-black text-amber-900">
-                {todayBatches.reduce((s, b) => s + b.remainingQuantity, 0)}{' '}
-                <span className="text-xs font-bold text-amber-700">pcs</span>
-              </div>
-              <div className="text-[11px] font-bold text-amber-700">
-                {todayBatches.length} batch ({todayStr})
-              </div>
-            </div>
-          </div>
-
-          {/* 3. Tomorrow */}
-          <div
-            onClick={() => setExpiryFilter('tomorrow')}
-            className={`rounded-2xl p-3.5 border-2 transition cursor-pointer flex flex-col justify-between ${
-              expiryFilter === 'tomorrow'
-                ? 'border-blue-500 bg-blue-50 shadow-xs'
-                : 'border-blue-200 bg-white hover:bg-blue-50/30'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black text-blue-800 uppercase tracking-wide">
-                ⏳ Expire Besok
-              </span>
-              <Calendar className="h-4 w-4 text-blue-600" />
-            </div>
-            <div className="mt-2">
-              <div className="text-2xl font-black text-blue-900">
-                {tomorrowBatches.reduce((s, b) => s + b.remainingQuantity, 0)}{' '}
-                <span className="text-xs font-bold text-blue-700">pcs</span>
-              </div>
-              <div className="text-[11px] font-bold text-blue-700">
-                {tomorrowBatches.length} batch ({tomorrowStr})
-              </div>
-            </div>
-          </div>
-
-          {/* 4. H+3 */}
-          <div
-            onClick={() => setExpiryFilter('h3')}
-            className={`rounded-2xl p-3.5 border-2 transition cursor-pointer flex flex-col justify-between ${
-              expiryFilter === 'h3'
-                ? 'border-emerald-500 bg-emerald-50 shadow-xs'
-                : 'border-emerald-200 bg-white hover:bg-emerald-50/30'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black text-emerald-800 uppercase tracking-wide">
-                🕒 Expire H+3
-              </span>
-              <Layers className="h-4 w-4 text-emerald-600" />
-            </div>
-            <div className="mt-2">
-              <div className="text-2xl font-black text-emerald-900">
-                {h3Batches.reduce((s, b) => s + b.remainingQuantity, 0)}{' '}
-                <span className="text-xs font-bold text-emerald-700">pcs</span>
-              </div>
-              <div className="text-[11px] font-bold text-emerald-700">
-                {h3Batches.length} batch menjelang tempo
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Filter Controls & Search */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3 rounded-2xl border-2 border-[#E5DACE]">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1 bg-[#FDFBF7] p-1 rounded-xl border border-[#E5DACE]">
-              {(
-                [
-                  { id: 'expired', label: 'Sudah Expired' },
-                  { id: 'today', label: 'Hari Ini' },
-                  { id: 'tomorrow', label: 'Besok' },
-                  { id: 'h3', label: 'H+3' },
-                  { id: 'all', label: 'Semua Aktif' },
-                ] as const
-              ).map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  onClick={() => setExpiryFilter(f.id)}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-black transition cursor-pointer ${
-                    expiryFilter === f.id
-                      ? 'bg-[#D97706] text-white shadow-xs'
-                      : 'text-[#8C7B6C] hover:text-[#2D241E]'
-                  }`}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-
-            <select
-              value={filterCategory}
-              onChange={(e) => setFilterCategory(e.target.value)}
-              className="rounded-xl border border-[#E5DACE] bg-white px-3 py-1.5 text-xs font-bold text-[#2D241E] focus:outline-none cursor-pointer"
+            <button
+              type="button"
+              onClick={() => setExpiryFilter('closing_3days')}
+              className={`px-2.5 py-1 rounded-xl font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer text-xs ${
+                expiryFilter === 'closing_3days'
+                  ? 'bg-[#D97706] text-white shadow-xs'
+                  : 'bg-[#FDFBF7] text-[#6D5D50] hover:bg-amber-50/50 border border-[#E5DACE]'
+              }`}
             >
-              <option value="all">Semua Kategori</option>
-              {categories
-                .filter((c) => c.id !== 'all')
-                .map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </option>
-                ))}
-            </select>
+              <Zap className="h-3 w-3" />
+              <span>Akan Closing 3 Hari</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                  expiryFilter === 'closing_3days' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-900'
+                }`}
+              >
+                {closing3DaysBatches.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setExpiryFilter('all')}
+              className={`px-2.5 py-1 rounded-xl font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer text-xs ${
+                expiryFilter === 'all'
+                  ? 'bg-[#2D241E] text-white shadow-xs'
+                  : 'bg-[#FDFBF7] text-[#6D5D50] hover:bg-gray-100 border border-[#E5DACE]'
+              }`}
+            >
+              <Calendar className="h-3 w-3" />
+              <span>Semua Batch Aktif</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                  expiryFilter === 'all' ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-800'
+                }`}
+              >
+                {branchActiveBatches.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setExpiryFilter('today')}
+              className={`px-2.5 py-1 rounded-xl font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer text-xs ${
+                expiryFilter === 'today'
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'bg-[#FDFBF7] text-[#6D5D50] hover:bg-amber-50/50 border border-[#E5DACE]'
+              }`}
+            >
+              <Clock className="h-3 w-3" />
+              <span>Hari Ini (H)</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                  expiryFilter === 'today' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-900'
+                }`}
+              >
+                {todayBatches.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setExpiryFilter('tomorrow')}
+              className={`px-2.5 py-1 rounded-xl font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer text-xs ${
+                expiryFilter === 'tomorrow'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-[#FDFBF7] text-[#6D5D50] hover:bg-blue-50/50 border border-[#E5DACE]'
+              }`}
+            >
+              <span>Besok (H+1)</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                  expiryFilter === 'tomorrow' ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-900'
+                }`}
+              >
+                {tomorrowBatches.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setExpiryFilter('h2')}
+              className={`px-2.5 py-1 rounded-xl font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer text-xs ${
+                expiryFilter === 'h2'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'bg-[#FDFBF7] text-[#6D5D50] hover:bg-indigo-50/50 border border-[#E5DACE]'
+              }`}
+            >
+              <span>Lusa (H+2)</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                  expiryFilter === 'h2' ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-900'
+                }`}
+              >
+                {h2Batches.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setExpiryFilter('h3')}
+              className={`px-2.5 py-1 rounded-xl font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer text-xs ${
+                expiryFilter === 'h3'
+                  ? 'bg-teal-600 text-white shadow-xs'
+                  : 'bg-[#FDFBF7] text-[#6D5D50] hover:bg-teal-50/50 border border-[#E5DACE]'
+              }`}
+            >
+              <span>H+3</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                  expiryFilter === 'h3' ? 'bg-white/20 text-white' : 'bg-teal-100 text-teal-900'
+                }`}
+              >
+                {h3Batches.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setExpiryFilter('expired')}
+              className={`px-2.5 py-1 rounded-xl font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer text-xs ${
+                expiryFilter === 'expired'
+                  ? 'bg-rose-600 text-white shadow-xs'
+                  : 'bg-[#FDFBF7] text-[#6D5D50] hover:bg-rose-50/50 border border-[#E5DACE]'
+              }`}
+            >
+              <Flame className="h-3 w-3 text-rose-500" />
+              <span>Expired</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                  expiryFilter === 'expired' ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-900'
+                }`}
+              >
+                {expiredBatches.length}
+              </span>
+            </button>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1 sm:w-64">
+          {/* Top Row: Search Input & Filter Counter / Reset Button */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#8C7B6C]" />
               <input
                 type="text"
-                placeholder="Cari produk / SKU / No. Batch..."
+                placeholder="Cari nama produk, SKU, No. Batch, atau Mitra Supplier..."
                 value={searchBatchQuery}
                 onChange={(e) => setSearchBatchQuery(e.target.value)}
-                className="w-full rounded-xl border border-[#E5DACE] bg-[#FDFBF7] pl-8 pr-3 py-1.5 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none"
+                className="w-full rounded-xl border border-[#E5DACE] bg-[#FDFBF7] pl-8 pr-8 py-1.5 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:bg-white focus:outline-none transition placeholder:font-normal placeholder:text-[#8C7B6C]/70"
               />
+              {searchBatchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchBatchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8C7B6C] hover:text-[#2D241E] cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
 
-            {selectedBatchIds.length > 0 && (
-              <button
-                type="button"
-                onClick={handleClearSelection}
-                className="rounded-xl border border-[#E5DACE] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#8C7B6C] hover:bg-gray-50 cursor-pointer"
+            <div className="flex items-center gap-2 shrink-0">
+              {activeFilterCount > 0 && (
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 text-xs font-black text-rose-800 transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <RotateCcw className="h-3 w-3 text-rose-600" />
+                  <span>Reset Filter ({activeFilterCount})</span>
+                </button>
+              )}
+
+              {selectedBatchIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearSelection}
+                  className="rounded-xl border border-[#E5DACE] bg-white px-3 py-1.5 text-xs font-bold text-[#8C7B6C] hover:bg-gray-50 cursor-pointer"
+                >
+                  Batal Seleksi ({selectedBatchIds.length})
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Bottom Row: 4 Filter Controls (Expiry Date, Master Kategori, Kategori Produk, Status Pesanan/Batch) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 pt-2 border-t border-[#E5DACE]/60">
+            {/* 1. Tanggal Expiry Date Filter */}
+            <div className="flex items-center gap-1.5 bg-[#FDFBF7] rounded-xl border border-[#E5DACE] px-2.5 py-1">
+              <Calendar className="h-3.5 w-3.5 text-[#D97706] shrink-0" />
+              <div className="flex-1 flex items-center gap-1 min-w-0">
+                <select
+                  value={expiryFilter}
+                  onChange={(e) => setExpiryFilter(e.target.value as any)}
+                  className="w-full bg-transparent text-xs font-bold text-[#2D241E] focus:outline-none cursor-pointer truncate"
+                >
+                  <option value="closing_3days">⏳ Akan Closing 3 Hari Ke Depan</option>
+                  <option value="all">📅 Expiry: Semua Tanggal</option>
+                  <option value="today">⚡ Expired Hari Ini</option>
+                  <option value="tomorrow">⏳ Expired Besok (H+1)</option>
+                  <option value="h2">🕒 Expired Lusa (H+2)</option>
+                  <option value="h3">🕒 Expired H+3</option>
+                  <option value="expired">🚨 Sudah Expired (&lt; Hari ini)</option>
+                  <option value="custom">📆 Tanggal Spesifik...</option>
+                </select>
+                {expiryFilter === 'custom' && (
+                  <input
+                    type="date"
+                    value={customDate}
+                    onChange={(e) => setCustomDate(e.target.value)}
+                    className="rounded-lg border border-[#E5DACE] bg-white px-1.5 py-0.5 text-[11px] font-bold text-[#2D241E] focus:outline-none shrink-0"
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* 2. Master Kategori Filter */}
+            <div className="flex items-center gap-1.5 bg-[#FDFBF7] rounded-xl border border-[#E5DACE] px-2.5 py-1">
+              <Building2 className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+              <select
+                value={filterMasterCategory}
+                onChange={(e) => setFilterMasterCategory(e.target.value)}
+                className="w-full bg-transparent text-xs font-bold text-[#2D241E] focus:outline-none cursor-pointer truncate"
               >
-                Batal ({selectedBatchIds.length})
-              </button>
-            )}
+                <option value="all">🏢 Master Kategori: Semua</option>
+                {masterCategories.map((mc) => (
+                  <option key={mc.id} value={mc.id}>
+                    {mc.name} ({mc.categoryType})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* 3. Kategori Produk Filter */}
+            <div className="flex items-center gap-1.5 bg-[#FDFBF7] rounded-xl border border-[#E5DACE] px-2.5 py-1">
+              <Tag className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+              <select
+                value={filterCategory}
+                onChange={(e) => setFilterCategory(e.target.value)}
+                className="w-full bg-transparent text-xs font-bold text-[#2D241E] focus:outline-none cursor-pointer truncate"
+              >
+                <option value="all">🏷️ Kategori Produk: Semua</option>
+                {categories
+                  .filter((c) => c.id !== 'all')
+                  .map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            {/* 4. Status Pesanan / Batch Filter */}
+            <div className="flex items-center gap-1.5 bg-[#FDFBF7] rounded-xl border border-[#E5DACE] px-2.5 py-1">
+              <CheckCircle2 className="h-3.5 w-3.5 text-purple-600 shrink-0" />
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="w-full bg-transparent text-xs font-bold text-[#2D241E] focus:outline-none cursor-pointer truncate"
+              >
+                <option value="all">📌 Status Stok: Semua</option>
+                <option value="active">✅ Stok Aktif &amp; Tersedia</option>
+                <option value="expired">🚨 Perlu Rekonsiliasi (Expired)</option>
+                <option value="near_expiry">🕒 Mendekati Expired (H+3)</option>
+                <option value="destroyed">🔥 Telah Dimusnahkan</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -493,12 +696,32 @@ export const CategoryClosingView: React.FC<CategoryClosingViewProps> = ({
         {/* Batches Table */}
         <div className="flex-1 overflow-y-auto rounded-2xl border-2 border-[#E5DACE] bg-white shadow-xs">
           {filteredBatches.length === 0 ? (
-            <div className="p-10 text-center text-xs text-[#8C7B6C] space-y-1">
-              <CheckCircle2 className="h-8 w-8 text-emerald-500 mx-auto" />
-              <p className="font-bold text-sm text-[#2D241E]">
-                Tidak ada batch stok yang sesuai dengan filter ini.
+            <div className="p-10 text-center text-xs text-[#8C7B6C] space-y-2">
+              <AlertCircle className="h-8 w-8 text-amber-500 mx-auto" />
+              <p className="font-black text-sm text-[#2D241E]">
+                Tidak ada batch stok yang sesuai dengan kriteria filter saat ini.
               </p>
-              <p>Semua produk masih dalam masa simpan yang baik.</p>
+              <p className="text-[#8C7B6C] max-w-md mx-auto">
+                Kondisi ini wajar jika tidak ada produk yang jatuh tempo pada rentang waktu yang dipilih (bukan bug sistem). Anda dapat melihat seluruh stok atau filter 3 hari ke depan dengan tombol di bawah.
+              </p>
+              <div className="pt-2 flex items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setExpiryFilter('closing_3days')}
+                  className="rounded-xl bg-[#D97706] hover:bg-amber-700 active:scale-95 text-white font-bold px-3.5 py-1.5 text-xs transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Clock className="h-3.5 w-3.5" />
+                  <span>Akan Closing 3 Hari ({closing3DaysBatches.length} batch)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="rounded-xl border border-[#E5DACE] bg-white hover:bg-gray-50 text-[#2D241E] font-bold px-3.5 py-1.5 text-xs transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <RotateCcw className="h-3.5 w-3.5 text-[#8C7B6C]" />
+                  <span>Lihat Semua Batch ({branchActiveBatches.length})</span>
+                </button>
+              </div>
             </div>
           ) : (
             <table className="w-full text-left text-xs border-collapse">
@@ -535,7 +758,8 @@ export const CategoryClosingView: React.FC<CategoryClosingViewProps> = ({
                   const isExpired = batch.expiryDate < todayStr;
                   const isToday = batch.expiryDate === todayStr;
                   const isTomorrow = batch.expiryDate === tomorrowStr;
-                  const isH3 = batch.expiryDate > tomorrowStr && batch.expiryDate <= h3Str;
+                  const isH2 = batch.expiryDate === h2Str;
+                  const isH3 = batch.expiryDate === h3Str;
                   const isSelected = selectedBatchIds.includes(batch.id);
 
                   return (
@@ -560,7 +784,20 @@ export const CategoryClosingView: React.FC<CategoryClosingViewProps> = ({
                         />
                       </td>
                       <td className="py-2.5 px-3">
-                        <div className="font-black text-[#2D241E]">{batch.productName}</div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-black text-[#2D241E]">{batch.productName}</span>
+                          {batch.expiryType === 'daily' || products.find((p) => p.id === batch.productId)?.expiryType === 'daily' ? (
+                            <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 border border-amber-300 px-1.5 py-0.2 text-[9px] font-black text-amber-900">
+                              <Zap className="h-2.5 w-2.5 text-[#D97706]" />
+                              <span>Expired Harian</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-0.5 rounded bg-blue-100 border border-blue-300 px-1.5 py-0.2 text-[9px] font-black text-blue-900">
+                              <Clock className="h-2.5 w-2.5 text-blue-600" />
+                              <span>Expired &gt; 1 Hari</span>
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[10px] text-[#8C7B6C] font-mono">{batch.sku}</div>
                       </td>
                       <td className="py-2.5 px-3 font-mono font-bold text-amber-900">
@@ -582,10 +819,14 @@ export const CategoryClosingView: React.FC<CategoryClosingViewProps> = ({
                           </span>
                         ) : isTomorrow ? (
                           <span className="inline-flex items-center gap-1 rounded-md bg-blue-100 border border-blue-200 px-2 py-0.5 text-[10px] font-bold text-blue-900">
-                            BESOK
+                            BESOK (H+1)
+                          </span>
+                        ) : isH2 ? (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-indigo-100 border border-indigo-200 px-2 py-0.5 text-[10px] font-bold text-indigo-900">
+                            LUSA (H+2)
                           </span>
                         ) : isH3 ? (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 border border-emerald-200 px-2 py-0.5 text-[10px] font-bold text-emerald-900">
+                          <span className="inline-flex items-center gap-1 rounded-md bg-teal-100 border border-teal-200 px-2 py-0.5 text-[10px] font-bold text-teal-900">
                             H+3 (Menjelang)
                           </span>
                         ) : (
@@ -610,7 +851,19 @@ export const CategoryClosingView: React.FC<CategoryClosingViewProps> = ({
                         </div>
                       </td>
                       <td className="py-2.5 px-3.5">
-                        {isExpired ? (
+                        {batch.expiryType === 'daily' || products.find((p) => p.id === batch.productId)?.expiryType === 'daily' ? (
+                          isExpired || isToday ? (
+                            <span className="text-rose-700 font-bold text-[11px] flex items-center gap-1">
+                              <Zap className="h-3.5 w-3.5 text-[#D97706] shrink-0" />
+                              Musnahkan Otomatis (Closing Harian)
+                            </span>
+                          ) : (
+                            <span className="text-amber-800 font-bold text-[11px] flex items-center gap-1">
+                              <Clock className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                              Produk Segar Harian (Fresh)
+                            </span>
+                          )
+                        ) : isExpired ? (
                           <span className="text-rose-700 font-bold text-[11px] flex items-center gap-1">
                             <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                             Wajib Dimusnahkan (Delete Stok)
@@ -622,6 +875,14 @@ export const CategoryClosingView: React.FC<CategoryClosingViewProps> = ({
                         ) : isTomorrow ? (
                           <span className="text-blue-800 font-semibold text-[11px]">
                             Posisikan di Rak Paling Depan
+                          </span>
+                        ) : isH2 ? (
+                          <span className="text-indigo-800 font-semibold text-[11px]">
+                            Pantau Stok Display (Closing 2 Hari)
+                          </span>
+                        ) : isH3 ? (
+                          <span className="text-teal-800 font-semibold text-[11px]">
+                            Cek Kesiapan Rotasi FEFO (H+3)
                           </span>
                         ) : (
                           <span className="text-emerald-700 font-medium text-[11px]">
@@ -635,17 +896,6 @@ export const CategoryClosingView: React.FC<CategoryClosingViewProps> = ({
               </tbody>
             </table>
           )}
-        </div>
-
-        {/* Bottom-Right Tutup button */}
-        <div className="flex items-center justify-end border-t border-[#E5DACE] pt-3">
-          <button
-            type="button"
-            onClick={onBackToProducts}
-            className="rounded-xl border border-[#E5DACE] bg-white px-6 py-2 text-xs font-black text-[#2D241E] hover:bg-[#E5DACE] active:scale-95 transition cursor-pointer"
-          >
-            Tutup
-          </button>
         </div>
       </div>
 

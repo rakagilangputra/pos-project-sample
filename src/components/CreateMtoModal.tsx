@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Package, Calendar, Clock, User, CreditCard } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
-import { PaymentComponent, MtoOrderItemInput } from '../types';
+import { PaymentComponent, MtoOrderItemInput, ProductExpiryType } from '../types';
 import { formatIDR, posSound } from '../utils/formatters';
 
 interface CreateMtoModalProps {
@@ -16,6 +16,8 @@ interface ProductRowState {
   customPrice: string;
   customizationNotes: string;
   supplierId?: string;
+  expiryType?: ProductExpiryType;
+  expiryDate?: string;
 }
 
 export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
@@ -25,6 +27,12 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
 
   const createInitialRow = (): ProductRowState => {
     const defaultProduct = selectableProducts[0] || products[0];
+    const isMultiDay = defaultProduct?.expiryType === 'multi_day';
+    const shelfDays = defaultProduct?.shelfLifeDays || 7;
+    const defaultExpiry = isMultiDay
+      ? new Date(Date.now() + shelfDays * 86400000).toISOString().slice(0, 10)
+      : new Date().toISOString().slice(0, 10);
+
     return {
       id: 'row-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
       productId: defaultProduct ? defaultProduct.id : '',
@@ -32,6 +40,8 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
       customPrice: defaultProduct ? String(defaultProduct.price) : '0',
       customizationNotes: '',
       supplierId: defaultProduct?.supplierId || 'internal',
+      expiryType: defaultProduct?.expiryType || 'daily',
+      expiryDate: defaultExpiry,
     };
   };
 
@@ -55,6 +65,12 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
 
   const handleAddRow = () => {
     const defaultProduct = selectableProducts[0] || products[0];
+    const isMultiDay = defaultProduct?.expiryType === 'multi_day';
+    const shelfDays = defaultProduct?.shelfLifeDays || 7;
+    const defaultExpiry = isMultiDay
+      ? new Date(Date.now() + shelfDays * 86400000).toISOString().slice(0, 10)
+      : new Date().toISOString().slice(0, 10);
+
     const newRow: ProductRowState = {
       id: 'row-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
       productId: defaultProduct ? defaultProduct.id : '',
@@ -62,6 +78,8 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
       customPrice: defaultProduct ? String(defaultProduct.price) : '0',
       customizationNotes: '',
       supplierId: defaultProduct?.supplierId || 'internal',
+      expiryType: defaultProduct?.expiryType || 'daily',
+      expiryDate: defaultExpiry,
     };
     setProductRows((prev) => [...prev, newRow]);
   };
@@ -73,6 +91,12 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
 
   const handleProductChange = (rowId: string, newProductId: string) => {
     const prod = products.find((p) => p.id === newProductId);
+    const isMultiDay = prod?.expiryType === 'multi_day';
+    const shelfDays = prod?.shelfLifeDays || 7;
+    const defaultExpiry = isMultiDay
+      ? new Date(Date.now() + shelfDays * 86400000).toISOString().slice(0, 10)
+      : new Date().toISOString().slice(0, 10);
+
     setProductRows((prev) =>
       prev.map((r) => {
         if (r.id !== rowId) return r;
@@ -81,8 +105,31 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
           productId: newProductId,
           customPrice: prod ? String(prod.price) : r.customPrice,
           supplierId: prod?.supplierId || 'internal',
+          expiryType: prod?.expiryType || 'daily',
+          expiryDate: defaultExpiry,
         };
       })
+    );
+  };
+
+  const handleExpiryTypeChange = (rowId: string, type: ProductExpiryType) => {
+    setProductRows((prev) =>
+      prev.map((r) => {
+        if (r.id !== rowId) return r;
+        const prod = products.find((p) => p.id === r.productId);
+        const shelfDays = prod?.shelfLifeDays || 7;
+        const newExpiry =
+          type === 'multi_day'
+            ? new Date(Date.now() + shelfDays * 86400000).toISOString().slice(0, 10)
+            : new Date().toISOString().slice(0, 10);
+        return { ...r, expiryType: type, expiryDate: newExpiry };
+      })
+    );
+  };
+
+  const handleExpiryDateChange = (rowId: string, date: string) => {
+    setProductRows((prev) =>
+      prev.map((r) => (r.id === rowId ? { ...r, expiryDate: date } : r))
     );
   };
 
@@ -145,6 +192,12 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
         supplierId: isInternal ? undefined : chosenSup?.id,
         supplierName: isInternal ? 'Produksi Sendiri' : chosenSup?.name,
         ownershipType: isInternal ? 'own' : 'consignment',
+        expiryType: r.expiryType || prod?.expiryType || 'daily',
+        expiryDate: r.expiryDate || (
+          (r.expiryType || prod?.expiryType) === 'multi_day'
+            ? new Date(Date.now() + (prod?.shelfLifeDays || 7) * 86400000).toISOString().slice(0, 10)
+            : new Date().toISOString().slice(0, 10)
+        ),
       };
     });
 
@@ -348,6 +401,87 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
                         />
                       </div>
                     </div>
+
+                    {/* Expiry Configuration: Multi-day Expiry Adjustment */}
+                    {row.expiryType === 'multi_day' ? (
+                      <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-2.5 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className="rounded bg-blue-600 px-1.5 py-0.5 text-[9px] font-black text-white uppercase tracking-wider">
+                              ⏳ Expired &gt; 1 Hari
+                            </span>
+                            <span className="text-xs font-bold text-[#1F2937]">
+                              Atur Tanggal Expiry Date
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleExpiryTypeChange(row.id, 'daily')}
+                            className="text-[10px] font-bold text-[#8C7B6C] hover:text-[#2D241E] hover:underline cursor-pointer"
+                          >
+                            Ubah ke Harian
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
+                          <div>
+                            <label className="block text-[10px] font-bold text-[#6B7280] mb-0.5">
+                              Tanggal Kadaluwarsa
+                            </label>
+                            <input
+                              type="date"
+                              value={row.expiryDate || ''}
+                              onChange={(e) => handleExpiryDateChange(row.id, e.target.value)}
+                              className="w-full rounded-lg border border-blue-300 bg-white px-2.5 py-1 text-xs font-bold text-[#2D241E] focus:border-blue-500 focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-[#6B7280] mb-0.5">
+                              Shortcut Hari
+                            </label>
+                            <div className="flex items-center gap-1">
+                              {[
+                                { label: '+3H', days: 3 },
+                                { label: '+7H', days: 7 },
+                                { label: '+14H', days: 14 },
+                                { label: '+30H', days: 30 },
+                              ].map((preset) => (
+                                <button
+                                  key={preset.days}
+                                  type="button"
+                                  onClick={() => {
+                                    const d = new Date(Date.now() + preset.days * 86400000).toISOString().slice(0, 10);
+                                    handleExpiryDateChange(row.id, d);
+                                  }}
+                                  className="flex-1 rounded-md border border-blue-200 bg-white py-1 text-[10px] font-bold text-blue-800 hover:bg-blue-100 transition cursor-pointer"
+                                >
+                                  {preset.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-[10px] text-blue-800 font-medium">
+                          ℹ️ Item ini akan dicatat dalam batch stok dan otomatis muncul di menu <strong>Closing Harian</strong>.
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50/50 px-2.5 py-1.5 text-[11px] text-amber-900">
+                        <div className="flex items-center gap-1.5">
+                          <span className="rounded bg-amber-500 px-1.5 py-0.5 text-[9px] font-black text-white uppercase">
+                            ⚡ Expired Harian
+                          </span>
+                          <span>Produk segar harian (habis saat closing hari H).</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleExpiryTypeChange(row.id, 'multi_day')}
+                          className="text-[10px] font-bold text-blue-700 hover:underline cursor-pointer"
+                        >
+                          Atur Expiry &gt; 1 Hari
+                        </button>
+                      </div>
+                    )}
 
                     {/* Specific Item Customization Note */}
                     <div>

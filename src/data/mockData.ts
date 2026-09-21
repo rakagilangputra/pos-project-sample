@@ -423,7 +423,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     id: 'prod-1',
     branchId: "branch-senopati",
     sku: 'RTI-001',
-    name: 'Roti Sisir Mentega Spesial',
+    name: 'Roti Sisir Mentega Spesial (Contoh Stok Expired Harian)',
     category: 'roti',
     categoryLabel: 'Roti Manis',
     price: 14000,
@@ -433,8 +433,29 @@ export const INITIAL_PRODUCTS: Product[] = [
     isMadeToOrder: false,
     popular: true,
     image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&auto=format&fit=crop&q=80',
-    description: 'Roti sisir lembut klasik dengan olesan butter premium',
+    description: 'Roti sisir lembut klasik dengan olesan butter premium. Contoh produk berumur simpan harian (1 hari).',
     supplier: 'In-House Bakery Kitchen',
+    expiryType: 'daily',
+    shelfLifeDays: 1,
+  },
+  {
+    id: 'prod-cookies-1',
+    branchId: "branch-senopati",
+    sku: 'KUE-001',
+    name: 'Kue Nastar Nanas Wijsman Toples (Contoh Stok Expired > 1 Hari)',
+    category: 'cake',
+    categoryLabel: 'Kue Kering & Hampers',
+    price: 95000,
+    isPriceCustomizable: false,
+    stock: 18,
+    lowStockThreshold: 4,
+    isMadeToOrder: false,
+    popular: true,
+    image: 'https://images.unsplash.com/photo-1590080875515-8a3a8dc5735e?w=400&auto=format&fit=crop&q=80',
+    description: 'Nastar nanas butter Wijsman toples kedap udara. Contoh produk berumur simpan lebih dari 1 hari (30 hari).',
+    supplier: 'Pastry Chef Team',
+    expiryType: 'multi_day',
+    shelfLifeDays: 30,
   },
   {
     id: 'prod-2',
@@ -1981,32 +2002,39 @@ export const INITIAL_RAW_MATERIALS: RawMaterial[] = [
 ];
 
 const tomorrowDateStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+const in2DaysDateStr = new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0];
 const in3DaysDateStr = new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0];
 const in7DaysDateStr = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+const in14DaysDateStr = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
+const in30DaysDateStr = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
 
 export const INITIAL_EXPIRY_BATCHES: ProductExpiryBatch[] = [
+  // -------------------------------------------------------------
+  // KELOMPOK 1: CLOSING HARI INI (HARI H)
+  // -------------------------------------------------------------
   {
-    id: 'batch-exp-001',
-    batchNumber: 'BCH-RCV-20260905-01',
+    id: 'batch-exp-daily-demo',
+    batchNumber: 'BCH-EXP-DAILY-01',
     productId: 'prod-1',
-    productName: 'Roti Sisir Mentega Spesial',
+    productName: 'Roti Sisir Mentega Spesial (Contoh Stok Expired Harian)',
     sku: 'RTI-001',
     branchId: 'branch-senopati',
     branchName: 'Cabang Senopati Utama',
-    expiryDate: yesterdayDateStr, // Expired (Lewat Kadaluwarsa)
-    initialQuantity: 10,
-    remainingQuantity: 4,
-    goodsReceiptId: 'rcv-001',
-    goodsReceiptNumber: 'RCV-20260905-001',
-    receivedDate: twoDaysAgoDateStr,
+    expiryType: 'daily',
+    expiryDate: todayDateStr, // Jatuh tempo HARI INI
+    initialQuantity: 12,
+    remainingQuantity: 6,
+    goodsReceiptId: 'rcv-demo-01',
+    goodsReceiptNumber: 'PO-DAILY-DEMO',
+    receivedDate: todayDateStr,
     unitCost: 8000,
     ownershipType: 'owned',
     supplierId: 'sup-1',
     supplierName: 'PT Sumber Gandum Sejahtera',
     category: 'roti',
     status: 'active',
-    notes: 'Batch roti manis display rak depan',
-    createdAt: `${twoDaysAgoDateStr}T08:30:00Z`,
+    notes: 'Contoh Stok Expired Harian: Jatuh tempo hari ini, siap dimusnahkan otomatis pada Menu Closing Harian',
+    createdAt: `${todayDateStr}T07:00:00Z`,
   },
   {
     id: 'batch-exp-002',
@@ -2016,6 +2044,7 @@ export const INITIAL_EXPIRY_BATCHES: ProductExpiryBatch[] = [
     sku: 'RTI-003',
     branchId: 'branch-senopati',
     branchName: 'Cabang Senopati Utama',
+    expiryType: 'daily',
     expiryDate: todayDateStr, // Kadaluwarsa Hari Ini
     initialQuantity: 15,
     remainingQuantity: 5,
@@ -2028,9 +2057,37 @@ export const INITIAL_EXPIRY_BATCHES: ProductExpiryBatch[] = [
     supplierName: 'PT Sumber Gandum Sejahtera',
     category: 'roti',
     status: 'active',
-    notes: 'Batch filling Belgian chocolate',
+    notes: 'Batch filling Belgian chocolate - closing hari ini',
     createdAt: `${yesterdayDateStr}T08:30:00Z`,
   },
+  {
+    id: 'batch-exp-today-sosis',
+    batchNumber: 'BCH-RCV-TODAY-02',
+    productId: 'prod-6',
+    productName: 'Sosis Roll Bratwurst Panggang',
+    sku: 'RTI-006',
+    branchId: 'branch-senopati',
+    branchName: 'Cabang Senopati Utama',
+    expiryType: 'daily',
+    expiryDate: todayDateStr, // Kadaluwarsa Hari Ini
+    initialQuantity: 10,
+    remainingQuantity: 4,
+    goodsReceiptId: 'rcv-demo-03',
+    goodsReceiptNumber: 'PO-DAILY-DEMO-2',
+    receivedDate: todayDateStr,
+    unitCost: 12000,
+    ownershipType: 'owned',
+    supplierId: 'sup-1',
+    supplierName: 'PT Sumber Gandum Sejahtera',
+    category: 'roti',
+    status: 'active',
+    notes: 'Sosis roll fresh bake hari ini',
+    createdAt: `${todayDateStr}T06:30:00Z`,
+  },
+
+  // -------------------------------------------------------------
+  // KELOMPOK 2: CLOSING BESOK (H+1)
+  // -------------------------------------------------------------
   {
     id: 'batch-exp-003',
     batchNumber: 'BCH-RCV-20260906-02',
@@ -2039,6 +2096,7 @@ export const INITIAL_EXPIRY_BATCHES: ProductExpiryBatch[] = [
     sku: 'RTI-004',
     branchId: 'branch-senopati',
     branchName: 'Cabang Senopati Utama',
+    expiryType: 'multi_day',
     expiryDate: tomorrowDateStr, // Kadaluwarsa Besok
     initialQuantity: 12,
     remainingQuantity: 4,
@@ -2051,9 +2109,89 @@ export const INITIAL_EXPIRY_BATCHES: ProductExpiryBatch[] = [
     supplierName: 'PT Sumber Gandum Sejahtera',
     category: 'roti',
     status: 'active',
-    notes: 'Coffee crust topping batch',
+    notes: 'Coffee crust topping batch - closing besok',
     createdAt: `${yesterdayDateStr}T11:00:00Z`,
   },
+  {
+    id: 'batch-exp-tmr-croissant',
+    batchNumber: 'BCH-PST-TMR-01',
+    productId: 'prod-7',
+    productName: 'French Butter Croissant',
+    sku: 'PST-001',
+    branchId: 'branch-senopati',
+    branchName: 'Cabang Senopati Utama',
+    expiryType: 'multi_day',
+    expiryDate: tomorrowDateStr, // Kadaluwarsa Besok
+    initialQuantity: 10,
+    remainingQuantity: 6,
+    goodsReceiptId: 'rcv-002',
+    goodsReceiptNumber: 'RCV-20260906-002',
+    receivedDate: yesterdayDateStr,
+    unitCost: 14000,
+    ownershipType: 'owned',
+    supplierId: 'sup-2',
+    supplierName: 'PT Fonterra Pastry Supplies',
+    category: 'pastry',
+    status: 'active',
+    notes: 'Croissant lamination Elle & Vire - masa simpan s/d besok',
+    createdAt: `${yesterdayDateStr}T09:00:00Z`,
+  },
+
+  // -------------------------------------------------------------
+  // KELOMPOK 3: CLOSING LUSA (H+2)
+  // -------------------------------------------------------------
+  {
+    id: 'batch-exp-h2-choc',
+    batchNumber: 'BCH-PST-H2-01',
+    productId: 'prod-8',
+    productName: 'Pain au Chocolat (Chocolate Croissant)',
+    sku: 'PST-002',
+    branchId: 'branch-senopati',
+    branchName: 'Cabang Senopati Utama',
+    expiryType: 'multi_day',
+    expiryDate: in2DaysDateStr, // Kadaluwarsa Lusa (H+2)
+    initialQuantity: 10,
+    remainingQuantity: 5,
+    goodsReceiptId: 'rcv-003',
+    goodsReceiptNumber: 'RCV-20260907-001',
+    receivedDate: todayDateStr,
+    unitCost: 16000,
+    ownershipType: 'owned',
+    supplierId: 'sup-2',
+    supplierName: 'PT Fonterra Pastry Supplies',
+    category: 'pastry',
+    status: 'active',
+    notes: 'Pastry batons cokelat premium - closing dalam 2 hari',
+    createdAt: `${todayDateStr}T08:00:00Z`,
+  },
+  {
+    id: 'batch-exp-h2-banana',
+    batchNumber: 'BCH-RTI-H2-02',
+    productId: 'prod-5',
+    productName: 'Roti Pisang Cokelat Keju',
+    sku: 'RTI-005',
+    branchId: 'branch-senopati',
+    branchName: 'Cabang Senopati Utama',
+    expiryType: 'multi_day',
+    expiryDate: in2DaysDateStr, // Kadaluwarsa Lusa (H+2)
+    initialQuantity: 14,
+    remainingQuantity: 6,
+    goodsReceiptId: 'rcv-003',
+    goodsReceiptNumber: 'RCV-20260907-001',
+    receivedDate: todayDateStr,
+    unitCost: 8500,
+    ownershipType: 'owned',
+    supplierId: 'sup-1',
+    supplierName: 'PT Sumber Gandum Sejahtera',
+    category: 'roti',
+    status: 'active',
+    notes: 'Roti pisang keju - closing dalam 2 hari',
+    createdAt: `${todayDateStr}T08:30:00Z`,
+  },
+
+  // -------------------------------------------------------------
+  // KELOMPOK 4: CLOSING H+3 (3 HARI KE DEPAN)
+  // -------------------------------------------------------------
   {
     id: 'batch-exp-004',
     batchNumber: 'BCH-RCV-20260907-01',
@@ -2062,6 +2200,7 @@ export const INITIAL_EXPIRY_BATCHES: ProductExpiryBatch[] = [
     sku: 'RTI-002',
     branchId: 'branch-senopati',
     branchName: 'Cabang Senopati Utama',
+    expiryType: 'multi_day',
     expiryDate: in3DaysDateStr, // Mendekati (H+3)
     initialQuantity: 20,
     remainingQuantity: 10,
@@ -2074,8 +2213,88 @@ export const INITIAL_EXPIRY_BATCHES: ProductExpiryBatch[] = [
     supplierName: 'PT Sumber Gandum Sejahtera',
     category: 'roti',
     status: 'active',
-    notes: 'Abon sapi pedas supplier lokal',
+    notes: 'Abon sapi pedas supplier lokal - closing 3 hari ke depan',
     createdAt: `${todayDateStr}T08:00:00Z`,
+  },
+  {
+    id: 'batch-exp-h3-almond',
+    batchNumber: 'BCH-PST-H3-02',
+    productId: 'prod-9',
+    productName: 'Almond Croissant Panggang',
+    sku: 'PST-003',
+    branchId: 'branch-senopati',
+    branchName: 'Cabang Senopati Utama',
+    expiryType: 'multi_day',
+    expiryDate: in3DaysDateStr, // Mendekati (H+3)
+    initialQuantity: 8,
+    remainingQuantity: 5,
+    goodsReceiptId: 'rcv-003',
+    goodsReceiptNumber: 'RCV-20260907-001',
+    receivedDate: todayDateStr,
+    unitCost: 19000,
+    ownershipType: 'owned',
+    supplierId: 'sup-2',
+    supplierName: 'PT Fonterra Pastry Supplies',
+    category: 'pastry',
+    status: 'active',
+    notes: 'Almond frangipane croissant - closing 3 hari ke depan',
+    createdAt: `${todayDateStr}T08:30:00Z`,
+  },
+
+  // -------------------------------------------------------------
+  // KELOMPOK 5: SUDAH EXPIRED (LEWAT KADALUWARSA)
+  // -------------------------------------------------------------
+  {
+    id: 'batch-exp-001',
+    batchNumber: 'BCH-RCV-20260905-01',
+    productId: 'prod-1',
+    productName: 'Roti Sisir Mentega Spesial (Batch Kemarin)',
+    sku: 'RTI-001',
+    branchId: 'branch-senopati',
+    branchName: 'Cabang Senopati Utama',
+    expiryType: 'daily',
+    expiryDate: yesterdayDateStr, // Expired (Lewat Kadaluwarsa)
+    initialQuantity: 10,
+    remainingQuantity: 4,
+    goodsReceiptId: 'rcv-001',
+    goodsReceiptNumber: 'RCV-20260905-001',
+    receivedDate: twoDaysAgoDateStr,
+    unitCost: 8000,
+    ownershipType: 'owned',
+    supplierId: 'sup-1',
+    supplierName: 'PT Sumber Gandum Sejahtera',
+    category: 'roti',
+    status: 'active',
+    notes: 'Batch roti manis display rak depan - wajib dimusnahkan',
+    createdAt: `${twoDaysAgoDateStr}T08:30:00Z`,
+  },
+
+  // -------------------------------------------------------------
+  // KELOMPOK 6: EXPIRED LEBIH DARI 1 HARI / MASA SIMPAN PANJANG
+  // -------------------------------------------------------------
+  {
+    id: 'batch-exp-multiday-demo',
+    batchNumber: 'BCH-EXP-MULTI-01',
+    productId: 'prod-cookies-1',
+    productName: 'Kue Nastar Nanas Wijsman Toples (Contoh Stok Expired > 1 Hari)',
+    sku: 'KUE-001',
+    branchId: 'branch-senopati',
+    branchName: 'Cabang Senopati Utama',
+    expiryType: 'multi_day',
+    expiryDate: in30DaysDateStr, // Masa simpan 30 hari ke depan
+    initialQuantity: 15,
+    remainingQuantity: 12,
+    goodsReceiptId: 'rcv-demo-02',
+    goodsReceiptNumber: 'PO-MULTI-DEMO',
+    receivedDate: todayDateStr,
+    unitCost: 55000,
+    ownershipType: 'owned',
+    supplierId: 'sup-1',
+    supplierName: 'PT Sumber Gandum Sejahtera',
+    category: 'cake',
+    status: 'active',
+    notes: 'Contoh Stok Expired > 1 Hari: Tanggal expiry date dapat disesuaikan pada penerimaan / pesanan dan dipantau di closing harian',
+    createdAt: `${todayDateStr}T07:30:00Z`,
   },
   {
     id: 'batch-exp-005',
@@ -2085,6 +2304,7 @@ export const INITIAL_EXPIRY_BATCHES: ProductExpiryBatch[] = [
     sku: 'RTI-001',
     branchId: 'branch-senopati',
     branchName: 'Cabang Senopati Utama',
+    expiryType: 'multi_day',
     expiryDate: in7DaysDateStr, // Masih Panjang (H+7)
     initialQuantity: 25,
     remainingQuantity: 20,
@@ -2108,6 +2328,7 @@ export const INITIAL_EXPIRY_BATCHES: ProductExpiryBatch[] = [
     sku: 'PST-001',
     branchId: 'branch-kemang',
     branchName: 'Cabang Kemang Artisan',
+    expiryType: 'daily',
     expiryDate: todayDateStr, // Expired hari ini di Kemang
     initialQuantity: 8,
     remainingQuantity: 3,

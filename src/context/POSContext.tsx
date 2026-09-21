@@ -35,6 +35,7 @@ import {
   RawMaterial,
   ProductExpiryBatch,
   GoodsReceiptItemBatch,
+  ProductExpiryType,
 } from '../types';
 import {
   INITIAL_BRANCHES,
@@ -265,6 +266,12 @@ interface POSContextType {
   orders: Order[];
   settleMadeToOrder: (orderId: string, payment: PaymentComponent) => { success: boolean; message: string };
   updatePoPickupTime: (orderId: string, newTime: string) => { success: boolean; message: string };
+  updateOrderItemExpiryAndQty: (
+    orderId: string,
+    itemId: string,
+    newQuantity: number,
+    newExpiryDate: string
+  ) => { success: boolean; message: string };
   settlePoPayment: (orderId: string, payments: PaymentComponent[]) => { success: boolean; message: string };
   markPoReadyForPickup: (orderId: string) => { success: boolean; message: string };
   confirmPoPickup: (orderId: string, collectorName: string) => { success: boolean; message: string };
@@ -816,7 +823,37 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const initMap = new Map<string, ProductExpiryBatch>();
+          for (const init of INITIAL_EXPIRY_BATCHES) {
+            initMap.set(init.id, init);
+          }
+          const seen = new Set<string>();
+          const result: ProductExpiryBatch[] = [];
+          for (const b of parsed) {
+            if (b && b.id && !seen.has(b.id)) {
+              seen.add(b.id);
+              const init = initMap.get(b.id);
+              if (init) {
+                result.push({
+                  ...init,
+                  remainingQuantity: b.status === 'destroyed' ? b.remainingQuantity : (b.remainingQuantity ?? init.remainingQuantity),
+                  status: b.status || init.status,
+                });
+              } else {
+                result.push(b);
+              }
+            }
+          }
+          // Ensure all initial demo batches (daily & multi_day) are present
+          for (const init of INITIAL_EXPIRY_BATCHES) {
+            if (!seen.has(init.id)) {
+              seen.add(init.id);
+              result.push(init);
+            }
+          }
+          return result;
+        }
       } catch (e) {
         console.error('Failed to parse pos_expiry_batches', e);
       }
@@ -2484,6 +2521,8 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         commissionValue: product.commissionValue,
         commissionBasis: product.commissionBasis,
         customizationNotes: itemInput.customizationNotes || input.customizationNotes,
+        expiryType: itemInput.expiryType || product.expiryType || 'daily',
+        expiryDate: itemInput.expiryDate || (itemInput.expiryType === 'multi_day' ? new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) : input.pickupDate || new Date().toISOString().slice(0, 10)),
       };
 
       cartItems.push(cartItem);
@@ -2544,6 +2583,40 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     setOrders((prev) => [newOrder, ...prev]);
+
+    // Register batches for order items so they appear in Daily Closing (Requirement 2 & 3)
+    const orderBatches: ProductExpiryBatch[] = [];
+    cartItems.forEach((ci, ciIdx) => {
+      const expType = ci.expiryType || 'daily';
+      const expDate = ci.expiryDate || (expType === 'daily' ? input.pickupDate || new Date().toISOString().slice(0, 10) : new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10));
+      orderBatches.push({
+        id: `batch-ord-${Date.now()}-${ci.productId}-${ciIdx}`,
+        batchNumber: `BCH-PO-${poNo}-${ciIdx + 1}`,
+        productId: ci.productId,
+        productName: ci.productName,
+        sku: ci.productId,
+        branchId: selectedBranchId,
+        branchName: branchName,
+        expiryType: expType,
+        expiryDate: expDate,
+        initialQuantity: ci.quantity,
+        remainingQuantity: ci.quantity,
+        goodsReceiptId: newOrder.id,
+        goodsReceiptNumber: poNo,
+        receivedDate: new Date().toISOString().slice(0, 10),
+        unitCost: ci.unitPrice,
+        ownershipType: ci.ownershipType === 'consignment' ? 'consignment' : 'owned',
+        supplierId: ci.supplierId,
+        supplierName: ci.supplierName,
+        category: ci.category,
+        status: 'active',
+        notes: `Batch PO ${poNo} (${expType === 'daily' ? 'Expired Harian' : 'Expired > 1 Hari: ' + expDate})`,
+        createdAt: new Date().toISOString(),
+      });
+    });
+    if (orderBatches.length > 0) {
+      setExpiryBatches((prev) => [...orderBatches, ...prev]);
+    }
 
     const cashPortion = input.payments
       .filter((p) => p.method === 'cash')
@@ -2705,6 +2778,118 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return {
       success: true,
       message: `Jam pengambilan berhasil diubah menjadi ${newTime.trim()}!`,
+    };
+  };
+
+  // Requirement 3: Penyesuaian Kuantitas dan Tanggal Expiry Date Item Pesanan
+  const updateOrderItemExpiryAndQty = (
+    orderId: string,
+    itemId: string,
+    newQuantity: number,
+    newExpiryDate: string
+  ) => {
+    const target = orders.find((o) => o.id === orderId);
+    if (!target) {
+      posSound.error();
+      return { success: false, message: 'Pesanan tidak ditemukan!' };
+    }
+    const targetItem = target.items.find((it) => it.id === itemId || it.productId === itemId);
+    if (!targetItem) {
+      posSound.error();
+      return { success: false, message: 'Item produk pesanan tidak ditemukan!' };
+    }
+
+    const qty = Math.max(1, newQuantity);
+    const updatedItems = target.items.map((it) => {
+      if (it.id === targetItem.id) {
+        return {
+          ...it,
+          quantity: qty,
+          expiryType: 'multi_day' as ProductExpiryType,
+          expiryDate: newExpiryDate,
+        };
+      }
+      return it;
+    });
+
+    const newSubtotal = updatedItems.reduce((sum, it) => sum + it.unitPrice * it.quantity, 0);
+    const taxAmt = target.taxApplied ? Math.round(newSubtotal * (target.taxRate || 0.11)) : 0;
+    const newTotal = newSubtotal + taxAmt;
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              items: updatedItems,
+              subtotal: newSubtotal,
+              taxAmount: taxAmt,
+              total: newTotal,
+              remainingBalance: Math.max(0, newTotal - o.paidAmount),
+            }
+          : o
+      )
+    );
+
+    // Sync or register batch in ProductExpiryBatch so it appears in Closing Harian!
+    const batchId = `batch-po-${target.id}-${targetItem.productId}`;
+    const nowStr = new Date().toISOString();
+    setExpiryBatches((prev) => {
+      const existingIdx = prev.findIndex(
+        (b) => b.id === batchId || (b.goodsReceiptId === target.id && b.productId === targetItem.productId)
+      );
+      if (existingIdx >= 0) {
+        const copy = [...prev];
+        copy[existingIdx] = {
+          ...copy[existingIdx],
+          expiryType: 'multi_day',
+          expiryDate: newExpiryDate,
+          initialQuantity: qty,
+          remainingQuantity: qty,
+          status: 'active',
+          notes: `Penyesuaian kuantitas (${qty} pcs) & Tanggal Expiry (${newExpiryDate})`,
+        };
+        return copy;
+      } else {
+        const newBatch: ProductExpiryBatch = {
+          id: batchId,
+          batchNumber: `BCH-PO-${target.poNumber || target.receiptNumber}`,
+          productId: targetItem.productId,
+          productName: targetItem.productName,
+          sku: targetItem.productId,
+          branchId: selectedBranchId,
+          branchName: selectedBranch.name,
+          expiryType: 'multi_day',
+          expiryDate: newExpiryDate,
+          initialQuantity: qty,
+          remainingQuantity: qty,
+          goodsReceiptId: target.id,
+          goodsReceiptNumber: target.poNumber || target.receiptNumber,
+          receivedDate: nowStr.slice(0, 10),
+          unitCost: targetItem.unitPrice,
+          ownershipType: targetItem.ownershipType === 'consignment' ? 'consignment' : 'owned',
+          supplierId: targetItem.supplierId,
+          supplierName: targetItem.supplierName,
+          category: targetItem.category,
+          status: 'active',
+          notes: `Batch Penyesuaian Pesanan (${target.poNumber || target.receiptNumber}) - Exp: ${newExpiryDate}`,
+          createdAt: nowStr,
+        };
+        return [newBatch, ...prev];
+      }
+    });
+
+    addAudit(
+      'PO_ITEM_EXPIRY_UPDATE',
+      'order',
+      orderId,
+      `Penyesuaian item PO ${target.poNumber || target.receiptNumber}: ${targetItem.productName}, Kuantitas: ${qty} pcs, Expiry Date: ${newExpiryDate} oleh ${currentUser.name}`
+    );
+
+    posSound.beep();
+    return {
+      success: true,
+      message: `Kuantitas (${qty} pcs) & Tanggal Expiry (${newExpiryDate}) untuk ${targetItem.productName} berhasil diperbarui dan muncul di Closing Harian!`,
     };
   };
 
@@ -3465,6 +3650,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           item.expiryBatches.forEach((b, bIdx) => {
             const batchQty = Number(b.quantity) || 0;
             if (batchQty > 0) {
+              const expType = prod.expiryType || (b.expiryDate === (receiptData.arrivalDate || now.toISOString().slice(0, 10)) ? 'daily' : 'multi_day');
               newBatches.push({
                 id: `batch-${Date.now()}-${item.productId}-${bIdx}-${Math.random().toString(36).slice(2, 6)}`,
                 batchNumber: b.batchNumber || `BCH-${receiptNumber}-${bIdx + 1}`,
@@ -3473,6 +3659,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 sku: item.productSku || prod.sku,
                 branchId: selectedBranchId,
                 branchName: selectedBranch.name,
+                expiryType: expType,
                 expiryDate: b.expiryDate || now.toISOString().slice(0, 10),
                 initialQuantity: batchQty,
                 remainingQuantity: batchQty,
@@ -3485,10 +3672,39 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 supplierName: receiptData.supplierName,
                 category: prod.category,
                 status: 'active',
-                notes: b.notes,
+                notes: b.notes || (expType === 'daily' ? 'Batch Expired Harian' : 'Batch Expired Multi-Hari'),
                 createdAt: now.toISOString(),
               });
             }
+          });
+        } else if (item.quantityReceived > 0) {
+          const expType = prod.expiryType || 'daily';
+          const defaultExp = expType === 'daily'
+            ? (receiptData.arrivalDate || now.toISOString().slice(0, 10))
+            : new Date(Date.now() + (prod.shelfLifeDays || 7) * 86400000).toISOString().slice(0, 10);
+          newBatches.push({
+            id: `batch-${Date.now()}-${item.productId}-0-${Math.random().toString(36).slice(2, 6)}`,
+            batchNumber: `BCH-${receiptNumber}-1`,
+            productId: item.productId,
+            productName: item.productName || prod.name,
+            sku: item.productSku || prod.sku,
+            branchId: selectedBranchId,
+            branchName: selectedBranch.name,
+            expiryType: expType,
+            expiryDate: defaultExp,
+            initialQuantity: item.quantityReceived,
+            remainingQuantity: item.quantityReceived,
+            goodsReceiptId: id,
+            goodsReceiptNumber: receiptNumber,
+            receivedDate: receiptData.arrivalDate || now.toISOString().slice(0, 10),
+            unitCost: item.actualBuyPrice || item.buyPrice || 0,
+            ownershipType: prod.ownershipType || (receiptData.receiptType === 'Konsinyasi' ? 'consignment' : 'owned'),
+            supplierId: receiptData.supplierId,
+            supplierName: receiptData.supplierName,
+            category: prod.category,
+            status: 'active',
+            notes: expType === 'daily' ? 'Batch Expired Harian' : 'Batch Expired Multi-Hari',
+            createdAt: now.toISOString(),
           });
         }
       }
@@ -4258,11 +4474,11 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Expiry Reconciliation & Stock Destruction Trigger (Requirement: Superadmin Only with Audit Log)
   const destroyExpiredBatches = (batchIds: string[], reasonNote?: string) => {
-    if (currentUser.role !== 'superadmin') {
+    if (currentUser.role !== 'admin' && (currentUser.role as string) !== 'superadmin') {
       posSound.error();
       return {
         success: false,
-        message: 'Akses Ditolak: Otorisasi pemusnahan stok kadaluwarsa hanya dapat dilakukan oleh Superadmin.',
+        message: 'Akses Ditolak: Otorisasi pemusnahan stok kadaluwarsa hanya dapat dilakukan oleh Admin / Superadmin.',
       };
     }
 
@@ -4927,6 +5143,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         orders: branchOrders,
         settleMadeToOrder,
         updatePoPickupTime,
+        updateOrderItemExpiryAndQty,
         settlePoPayment,
         markPoReadyForPickup,
         confirmPoPickup,

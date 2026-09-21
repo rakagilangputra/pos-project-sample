@@ -36,6 +36,8 @@ import {
   EyeOff,
   Building2,
   Tag,
+  RotateCcw,
+  Zap,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
 import { Order, CartItem, PaymentComponent } from '../types';
@@ -54,6 +56,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
     products,
     categories,
     customers,
+    masterCategories,
     createMtoOrder,
     updatePoPickupTime,
     settlePoPayment,
@@ -64,6 +67,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
     setActiveReceiptOrder,
     suppliers,
     supplierNotificationBatches,
+    updateOrderItemExpiryAndQty,
   } = usePOS();
 
   // Primary workspace tabs (viewMode removed - strictly row style)
@@ -166,9 +170,14 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
     return 'Produksi Sendiri';
   };
 
-  // Search & Filter
+  // Search & 4-Dimension Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [filterChip, setFilterChip] = useState<'all' | 'today' | 'unpaid' | 'ready' | 'overdue'>('all');
+  const [filterPickupDateOption, setFilterPickupDateOption] = useState<string>('all');
+  const [customPickupDate, setCustomPickupDate] = useState<string>('');
+  const [filterMasterCategory, setFilterMasterCategory] = useState<string>('all');
+  const [filterProductCategory, setFilterProductCategory] = useState<string>('all');
+  const [filterOrderStatus, setFilterOrderStatus] = useState<string>('all');
 
   // Single Overlay Selected PO Detail
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
@@ -196,6 +205,11 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
 
   // Duplicate PO item selection
   const [selectedItemIdsForDup, setSelectedItemIdsForDup] = useState<string[]>([]);
+
+  // Item Quantity & Expiry Adjustment (Requirement 3)
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editItemQty, setEditItemQty] = useState<number>(1);
+  const [editItemExpiryDate, setEditItemExpiryDate] = useState<string>('');
 
   // Action message feedback
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -225,10 +239,53 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
     return scheduled.getTime() < Date.now();
   };
 
-  // Today string YYYY-MM-DD
+  // Date strings for filters
   const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
-  // Filtered orders based on active tab and search/chips
+  const tomorrowStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }, []);
+
+  const h3Str = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 3);
+    return d.toISOString().slice(0, 10);
+  }, []);
+
+  // Filter Active Counter & Reset Handler
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filterPickupDateOption !== 'all') count++;
+    if (customPickupDate !== '') count++;
+    if (filterMasterCategory !== 'all') count++;
+    if (filterProductCategory !== 'all') count++;
+    if (filterOrderStatus !== 'all') count++;
+    if (filterChip !== 'all') count++;
+    if (searchQuery.trim() !== '') count++;
+    return count;
+  }, [
+    filterPickupDateOption,
+    customPickupDate,
+    filterMasterCategory,
+    filterProductCategory,
+    filterOrderStatus,
+    filterChip,
+    searchQuery,
+  ]);
+
+  const handleResetFilters = () => {
+    setFilterPickupDateOption('all');
+    setCustomPickupDate('');
+    setFilterMasterCategory('all');
+    setFilterProductCategory('all');
+    setFilterOrderStatus('all');
+    setFilterChip('all');
+    setSearchQuery('');
+  };
+
+  // Filtered orders based on active tab and all 4-dimension filters
   const displayedOrders = useMemo(() => {
     return mtoOrders.filter((order) => {
       // 1. Tab filtering
@@ -243,7 +300,59 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
         }
       }
 
-      // 2. Search query
+      // 2. Tanggal Expiry / Ambil Filter
+      if (filterPickupDateOption === 'today' && order.pickupDate !== todayStr) return false;
+      if (filterPickupDateOption === 'tomorrow' && order.pickupDate !== tomorrowStr) return false;
+      if (filterPickupDateOption === 'h3' && (order.pickupDate < todayStr || order.pickupDate > h3Str)) return false;
+      if (filterPickupDateOption === 'custom' && customPickupDate && order.pickupDate !== customPickupDate) return false;
+
+      // 3. Master Kategori Filter
+      if (filterMasterCategory !== 'all') {
+        const mc = masterCategories?.find((m) => m.id === filterMasterCategory);
+        if (mc) {
+          const hasMatchingItem = order.items.some((item) => {
+            const prod = products?.find((p) => p.id === item.productId || p.name === item.productName);
+            const sup = suppliers?.find((s) => s.id === item.supplierId || s.id === prod?.supplierId);
+            const matchSup = sup?.category === mc.name || sup?.categories?.includes(mc.name) || sup?.category === mc.id;
+            const matchProd = prod?.categoryLabel === mc.name || prod?.category === mc.id;
+            return matchSup || matchProd;
+          });
+          if (!hasMatchingItem) return false;
+        }
+      }
+
+      // 4. Kategori Produk Filter
+      if (filterProductCategory !== 'all') {
+        const hasMatchingCategory = order.items.some((item) => {
+          if (item.category === filterProductCategory) return true;
+          const prod = products?.find((p) => p.id === item.productId || p.name === item.productName);
+          return prod?.category === filterProductCategory;
+        });
+        if (!hasMatchingCategory) return false;
+      }
+
+      // 5. Status Pesanan Filter
+      if (filterOrderStatus !== 'all') {
+        if (filterOrderStatus === 'active' && order.orderStatus !== 'active') return false;
+        if (filterOrderStatus === 'ready' && order.orderStatus !== 'ready_for_pickup') return false;
+        if (filterOrderStatus === 'overdue' && !isOverdue) return false;
+        if (filterOrderStatus === 'unpaid' && order.remainingBalance <= 0) return false;
+        if (filterOrderStatus === 'completed' && order.orderStatus !== 'picked_up') return false;
+        if (filterOrderStatus === 'cancelled' && order.orderStatus !== 'cancelled' && order.orderStatus !== 'voided') return false;
+      }
+
+      // 6. Quick Filter Chips
+      if (filterChip === 'today') {
+        if (order.pickupDate !== todayStr) return false;
+      } else if (filterChip === 'unpaid') {
+        if (order.remainingBalance <= 0) return false;
+      } else if (filterChip === 'ready') {
+        if (order.orderStatus !== 'ready_for_pickup') return false;
+      } else if (filterChip === 'overdue') {
+        if (!isOverdue) return false;
+      }
+
+      // 7. Search Query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const poMatch = (order.poNumber || '').toLowerCase().includes(q);
@@ -256,20 +365,25 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
         }
       }
 
-      // 3. Quick Chips
-      if (filterChip === 'today') {
-        if (order.pickupDate !== todayStr) return false;
-      } else if (filterChip === 'unpaid') {
-        if (order.remainingBalance <= 0) return false;
-      } else if (filterChip === 'ready') {
-        if (order.orderStatus !== 'ready_for_pickup') return false;
-      } else if (filterChip === 'overdue') {
-        if (!isOverdue) return false;
-      }
-
       return true;
     });
-  }, [mtoOrders, activeTab, searchQuery, filterChip, todayStr]);
+  }, [
+    mtoOrders,
+    activeTab,
+    searchQuery,
+    filterChip,
+    todayStr,
+    tomorrowStr,
+    h3Str,
+    filterPickupDateOption,
+    customPickupDate,
+    filterMasterCategory,
+    filterProductCategory,
+    filterOrderStatus,
+    masterCategories,
+    products,
+    suppliers,
+  ]);
 
   // Counts for Badges & Summary KPIs
   const activeCount = useMemo(() => {
@@ -737,53 +851,152 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
             </button>
           </div>
 
-          {/* Search, Filter Chips & View Mode (Fills the right side evenly, hidden on supplier_notification) */}
+          {/* Search, 4-Dimension Filters & Quick Chips */}
           {activeTab !== 'supplier_notification' ? (
-            <div className="flex flex-1 flex-wrap items-center justify-end gap-2.5">
-              {/* Responsive Search Input */}
-              <div className="relative flex-1 min-w-[200px] max-w-md">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-[#9CA3AF]" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Cari no. PO, pelanggan, telp, atau nama roti..."
-                  className="w-full rounded-xl border border-[#E5E7EB] bg-[#F7F7F5] pl-9 pr-7 py-1.5 text-xs text-[#1F2937] placeholder-[#9CA3AF] focus:border-[#D97706] focus:bg-white focus:outline-none transition"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2.5 top-2 text-[#9CA3AF] hover:text-[#1F2937]"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
+            <div className="w-full flex flex-col gap-2.5 pt-2 border-t border-[#E5E7EB]">
+              {/* Top Row: Search Input, Quick Chips & Reset Button */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+                {/* Search Input */}
+                <div className="relative flex-1 min-w-[220px]">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#9CA3AF]" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Cari no. PO, pelanggan, telp, atau nama roti..."
+                    className="w-full rounded-xl border border-[#E5E7EB] bg-[#F7F7F5] pl-8 pr-8 py-1.5 text-xs text-[#1F2937] placeholder-[#9CA3AF] focus:border-[#D97706] focus:bg-white focus:outline-none transition font-medium"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#1F2937] cursor-pointer"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Quick Chips & Reset Button */}
+                <div className="flex items-center gap-2 shrink-0 overflow-x-auto pb-0.5">
+                  <div className="flex items-center gap-1">
+                    {[
+                      { id: 'all', label: 'Semua' },
+                      { id: 'today', label: 'Hari Ini' },
+                      { id: 'unpaid', label: 'Belum Lunas' },
+                      { id: 'ready', label: 'Siap Diambil' },
+                      { id: 'overdue', label: 'Terlambat' },
+                    ].map((chip) => (
+                      <button
+                        key={chip.id}
+                        onClick={() => {
+                          setFilterChip(chip.id as any);
+                          posSound.beep();
+                        }}
+                        className={`rounded-lg px-2.5 py-1 text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+                          filterChip === chip.id
+                            ? 'bg-[#1F2937] text-white shadow-xs'
+                            : 'bg-white border border-[#E5E7EB] text-[#6B7280] hover:text-[#1F2937]'
+                        }`}
+                      >
+                        {chip.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {activeFilterCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleResetFilters}
+                      className="rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 text-xs font-bold text-rose-800 transition cursor-pointer flex items-center gap-1 shrink-0"
+                    >
+                      <RotateCcw className="h-3 w-3 text-rose-600" />
+                      <span>Reset ({activeFilterCount})</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {/* Quick Filter Chips */}
-              <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
-                {[
-                  { id: 'all', label: 'Semua' },
-                  { id: 'today', label: 'Hari Ini' },
-                  { id: 'unpaid', label: 'Belum Lunas' },
-                  { id: 'ready', label: 'Siap Diambil' },
-                  { id: 'overdue', label: 'Terlambat' },
-                ].map((chip) => (
-                  <button
-                    key={chip.id}
-                    onClick={() => {
-                      setFilterChip(chip.id as any);
-                      posSound.beep();
-                    }}
-                    className={`rounded-lg px-2.5 py-1 text-xs font-semibold whitespace-nowrap transition ${
-                      filterChip === chip.id
-                        ? 'bg-[#1F2937] text-white shadow-xs'
-                        : 'bg-white border border-[#E5E7EB] text-[#6B7280] hover:text-[#1F2937]'
-                    }`}
+              {/* Bottom Row: 4 Compact Filter Controls */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                {/* 1. Tanggal Expiry Date / Tanggal Ambil Filter */}
+                <div className="flex items-center gap-1.5 bg-[#F7F7F5] rounded-xl border border-[#E5E7EB] px-2.5 py-1">
+                  <Calendar className="h-3.5 w-3.5 text-[#D97706] shrink-0" />
+                  <div className="flex-1 flex items-center gap-1 min-w-0">
+                    <select
+                      value={filterPickupDateOption}
+                      onChange={(e) => setFilterPickupDateOption(e.target.value)}
+                      className="w-full bg-transparent text-xs font-bold text-[#1F2937] focus:outline-none cursor-pointer truncate"
+                    >
+                      <option value="all">📅 Tanggal Ambil: Semua</option>
+                      <option value="today">⚡ Tanggal Ambil: Hari Ini</option>
+                      <option value="tomorrow">⏳ Tanggal Ambil: Besok (+1)</option>
+                      <option value="h3">🕒 Tanggal Ambil: H+3</option>
+                      <option value="custom">📆 Tanggal Spesifik...</option>
+                    </select>
+                    {filterPickupDateOption === 'custom' && (
+                      <input
+                        type="date"
+                        value={customPickupDate}
+                        onChange={(e) => setCustomPickupDate(e.target.value)}
+                        className="rounded-lg border border-[#E5E7EB] bg-white px-1.5 py-0.5 text-[11px] font-bold text-[#1F2937] focus:outline-none shrink-0"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {/* 2. Master Kategori Filter */}
+                <div className="flex items-center gap-1.5 bg-[#F7F7F5] rounded-xl border border-[#E5E7EB] px-2.5 py-1">
+                  <Building2 className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                  <select
+                    value={filterMasterCategory}
+                    onChange={(e) => setFilterMasterCategory(e.target.value)}
+                    className="w-full bg-transparent text-xs font-bold text-[#1F2937] focus:outline-none cursor-pointer truncate"
                   >
-                    {chip.label}
-                  </button>
-                ))}
+                    <option value="all">🏢 Master Kategori: Semua</option>
+                    {masterCategories?.map((mc) => (
+                      <option key={mc.id} value={mc.id}>
+                        {mc.name} ({mc.categoryType})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 3. Kategori Produk Filter */}
+                <div className="flex items-center gap-1.5 bg-[#F7F7F5] rounded-xl border border-[#E5E7EB] px-2.5 py-1">
+                  <Tag className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                  <select
+                    value={filterProductCategory}
+                    onChange={(e) => setFilterProductCategory(e.target.value)}
+                    className="w-full bg-transparent text-xs font-bold text-[#1F2937] focus:outline-none cursor-pointer truncate"
+                  >
+                    <option value="all">🏷️ Kategori Produk: Semua</option>
+                    {categories
+                      ?.filter((c) => c.id !== 'all')
+                      .map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                {/* 4. Status Pesanan Filter */}
+                <div className="flex items-center gap-1.5 bg-[#F7F7F5] rounded-xl border border-[#E5E7EB] px-2.5 py-1">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-purple-600 shrink-0" />
+                  <select
+                    value={filterOrderStatus}
+                    onChange={(e) => setFilterOrderStatus(e.target.value)}
+                    className="w-full bg-transparent text-xs font-bold text-[#1F2937] focus:outline-none cursor-pointer truncate"
+                  >
+                    <option value="all">📌 Status Pesanan: Semua</option>
+                    <option value="active">⏳ Pesanan Aktif (Dalam Proses)</option>
+                    <option value="ready">✅ Siap Diambil / Pick Up</option>
+                    <option value="overdue">🚨 Terlambat / Overdue</option>
+                    <option value="unpaid">💳 Belum Lunas (Sisa Pelunasan)</option>
+                    <option value="completed">🎉 Selesai &amp; Sudah Diambil</option>
+                    <option value="cancelled">❌ Dibatalkan / Voided</option>
+                  </select>
+                </div>
               </div>
             </div>
           ) : (
@@ -829,35 +1042,35 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-[#E5E7EB] bg-[#F7F7F5] text-[#6B7280] font-black uppercase tracking-wider text-[10px]">
-                    {/* 1. Jadwal Pengambilan */}
+                    {/* Jadwal Pengambilan */}
                     <th className="py-3 px-4 min-w-[170px]">
                       <div className="flex items-center gap-1.5 text-[#1F2937]">
                         <Calendar className="h-3.5 w-3.5 text-[#D97706]" />
-                        <span>1. Jadwal Pengambilan</span>
+                        <span>Jadwal Pengambilan</span>
                       </div>
                     </th>
 
-                    {/* 2. Supplier */}
+                    {/* Master Kategori */}
                     <th className="py-3 px-4 min-w-[150px]">
                       <div className="flex items-center gap-1.5 text-[#1F2937]">
                         <Building2 className="h-3.5 w-3.5 text-blue-600" />
-                        <span>2. Supplier</span>
+                        <span>Master Kategori</span>
                       </div>
                     </th>
 
-                    {/* 3. Kategori Produk (not master kategori) */}
+                    {/* Kategori Produk */}
                     <th className="py-3 px-4 min-w-[150px]">
                       <div className="flex items-center gap-1.5 text-[#1F2937]">
                         <Tag className="h-3.5 w-3.5 text-emerald-600" />
-                        <span>3. Kategori Produk</span>
+                        <span>Kategori Produk</span>
                       </div>
                     </th>
 
-                    {/* 4. List product (can be shown by preview) */}
+                    {/* List product */}
                     <th className="py-3 px-4 min-w-[240px]">
                       <div className="flex items-center gap-1.5 text-[#1F2937]">
                         <Package className="h-3.5 w-3.5 text-purple-600" />
-                        <span>4. List Produk (Preview)</span>
+                        <span>List Produk (Preview)</span>
                       </div>
                     </th>
 
@@ -1413,7 +1626,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                 )}
               </div>
 
-              {/* Balon 3: DAFTAR ITEM PESANAN (Collapsible List / Accordion) */}
+              {/* Balon 3: DAFTAR ITEM PESANAN & PENGATURAN EXPIRY (Requirement 3) */}
               <div className="rounded-xl border border-[#E5E7EB] bg-white overflow-hidden shadow-xs transition">
                 <button
                   type="button"
@@ -1427,7 +1640,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                     </div>
                     <div>
                       <span className="text-[10px] font-bold uppercase tracking-wider text-[#6B7280] block">
-                        Daftar Item Pesanan (Terkunci)
+                        Daftar Item Pesanan & Penyesuaian Expiry
                       </span>
                       <span className="text-xs font-bold text-[#1F2937]">
                         {selectedOrder.items.length} jenis item ({selectedOrder.items.reduce((sum, item) => sum + item.quantity, 0)} pcs)
@@ -1446,25 +1659,189 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
 
                 {isOrderItemsAccordionOpen && (
                   <div className="border-t border-[#F3F4F6] p-4 pt-3 bg-white space-y-3">
-                    <div className="space-y-2">
-                      {selectedOrder.items.map((item) => (
-                        <div key={item.id} className="flex items-center justify-between text-xs py-1 border-b border-[#F9FAFB] last:border-0">
-                          <div className="flex-1">
-                            <span className="font-bold text-[#1F2937]">{item.productName}</span>
-                            <span className="text-[#6B7280] ml-2">
-                              {item.quantity} x {formatIDR(item.unitPrice)}
-                            </span>
-                            {item.isMadeToOrder && (
-                              <span className="ml-2 rounded bg-amber-50 border border-amber-200 px-1.5 py-0.2 text-[10px] font-bold text-amber-800">
-                                Custom Cake
-                              </span>
+                    <div className="text-[11px] text-[#8C7B6C] bg-amber-50/60 border border-amber-200/70 p-2.5 rounded-xl flex items-center gap-2">
+                      <Clock className="h-3.5 w-3.5 text-[#D97706] shrink-0" />
+                      <span>
+                        Kuantitas yang disediakan dan tanggal expiry date untuk item pesanan (terutama expired &gt; 1 hari) dapat disesuaikan di bawah ini dan otomatis terdaftar di <strong>Menu Closing Harian</strong>.
+                      </span>
+                    </div>
+
+                    <div className="space-y-3">
+                      {selectedOrder.items.map((item) => {
+                        const prod = products.find((p) => p.id === item.productId);
+                        const isMultiDay = item.expiryType === 'multi_day' || prod?.expiryType === 'multi_day';
+                        const isEditingThisItem = editingItemId === item.id;
+
+                        return (
+                          <div key={item.id} className="rounded-xl border border-[#E5DACE]/80 p-3 bg-[#FDFBF7]/50 space-y-2">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-black text-xs text-[#1F2937]">{item.productName}</span>
+                                  {isMultiDay ? (
+                                    <span className="inline-flex items-center gap-1 rounded bg-blue-100 border border-blue-300 px-1.5 py-0.5 text-[10px] font-black text-blue-900">
+                                      <Clock className="h-2.5 w-2.5 text-blue-700" />
+                                      <span>Expired &gt; 1 Hari: {item.expiryDate || 'Belum diatur'}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 rounded bg-amber-100 border border-amber-300 px-1.5 py-0.5 text-[10px] font-black text-amber-900">
+                                      <Zap className="h-2.5 w-2.5 text-amber-700" />
+                                      <span>Expired Harian (Hari H)</span>
+                                    </span>
+                                  )}
+                                  {item.isMadeToOrder && (
+                                    <span className="rounded bg-amber-50 border border-amber-200 px-1.5 py-0.2 text-[10px] font-bold text-amber-800">
+                                      Custom Cake
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-[#6B7280] mt-0.5">
+                                  {item.quantity} pcs x {formatIDR(item.unitPrice)} = <strong className="text-[#1F2937]">{formatIDR(item.unitPrice * item.quantity)}</strong>
+                                </div>
+                              </div>
+
+                              {selectedOrder.status !== 'cancelled' && !isEditingThisItem && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingItemId(item.id);
+                                    setEditItemQty(item.quantity);
+                                    const initialExp = item.expiryDate || (
+                                      isMultiDay
+                                        ? new Date(Date.now() + (prod?.shelfLifeDays || 7) * 86400000).toISOString().slice(0, 10)
+                                        : new Date().toISOString().slice(0, 10)
+                                    );
+                                    setEditItemExpiryDate(initialExp);
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-[#E5DACE] bg-white px-2.5 py-1 text-[11px] font-bold text-[#8C7B6C] hover:border-amber-400 hover:text-amber-900 hover:bg-amber-50/50 transition cursor-pointer self-start sm:self-auto"
+                                >
+                                  <Pencil className="h-3 w-3 text-amber-600" />
+                                  <span>Sesuaikan Qty & Expiry</span>
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Inline adjustment form (Requirement 3) */}
+                            {isEditingThisItem && (
+                              <div className="rounded-xl border border-blue-300 bg-blue-50/80 p-3 space-y-3 mt-2">
+                                <div className="flex items-center justify-between border-b border-blue-200 pb-2">
+                                  <span className="text-xs font-black text-blue-950 flex items-center gap-1.5">
+                                    <Clock className="h-3.5 w-3.5 text-blue-700" />
+                                    Penyesuaian Kuantitas & Tanggal Expiry Date
+                                  </span>
+                                  <span className="text-[10px] font-bold text-blue-700 bg-blue-100 border border-blue-300 rounded px-1.5 py-0.5">
+                                    Sinkron Closing Harian
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  {/* Quantity Field */}
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-[#6B7280] mb-1">
+                                      Kuantitas Item Disediakan (Pcs)
+                                    </label>
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditItemQty((q) => Math.max(1, q - 1))}
+                                        className="h-8 w-8 rounded-lg border border-blue-300 bg-white font-black text-blue-900 hover:bg-blue-100 flex items-center justify-center"
+                                      >
+                                        -
+                                      </button>
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        value={editItemQty}
+                                        onChange={(e) => setEditItemQty(Math.max(1, parseInt(e.target.value) || 1))}
+                                        className="flex-1 rounded-lg border border-blue-300 bg-white py-1 px-2.5 text-center text-xs font-black text-[#1F2937] focus:outline-none focus:border-blue-600"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditItemQty((q) => q + 1)}
+                                        className="h-8 w-8 rounded-lg border border-blue-300 bg-white font-black text-blue-900 hover:bg-blue-100 flex items-center justify-center"
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Expiry Date Field */}
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-[#6B7280] mb-1">
+                                      Tanggal Expiry Date (Kadaluwarsa)
+                                    </label>
+                                    <input
+                                      type="date"
+                                      value={editItemExpiryDate}
+                                      onChange={(e) => setEditItemExpiryDate(e.target.value)}
+                                      className="w-full rounded-lg border border-blue-300 bg-white py-1 px-2.5 text-xs font-bold text-[#1F2937] focus:outline-none focus:border-blue-600"
+                                    />
+                                    {/* Presets */}
+                                    <div className="flex items-center gap-1 mt-1">
+                                      {[
+                                        { label: '+3 Hari', days: 3 },
+                                        { label: '+7 Hari', days: 7 },
+                                        { label: '+14 Hari', days: 14 },
+                                        { label: '+30 Hari', days: 30 },
+                                      ].map((preset) => (
+                                        <button
+                                          key={preset.days}
+                                          type="button"
+                                          onClick={() => {
+                                            const d = new Date(Date.now() + preset.days * 86400000).toISOString().slice(0, 10);
+                                            setEditItemExpiryDate(d);
+                                          }}
+                                          className="flex-1 rounded border border-blue-200 bg-white py-0.5 text-[9px] font-bold text-blue-800 hover:bg-blue-100 transition cursor-pointer"
+                                        >
+                                          {preset.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="text-[10px] text-blue-900/90 font-medium">
+                                  ℹ️ Penyesuaian kuantitas ({editItemQty} pcs) dan tanggal kadaluwarsa ({editItemExpiryDate || '-'}) akan dicatat sebagai batch aktif dan otomatis muncul pada tabel monitoring <strong>Closing Harian</strong>.
+                                </div>
+
+                                <div className="flex items-center justify-end gap-2 pt-1 border-t border-blue-200">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingItemId(null)}
+                                    className="rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-xs font-bold text-[#6B7280] hover:bg-gray-50 transition cursor-pointer"
+                                  >
+                                    Batal
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (!editItemExpiryDate) {
+                                        showFeedback('Pilih tanggal expiry date terlebih dahulu', 'error');
+                                        return;
+                                      }
+                                      const res = updateOrderItemExpiryAndQty(
+                                        selectedOrder.id,
+                                        item.id,
+                                        editItemQty,
+                                        editItemExpiryDate
+                                      );
+                                      if (res.success) {
+                                        showFeedback(res.message, 'success');
+                                        setEditingItemId(null);
+                                      } else {
+                                        showFeedback(res.message, 'error');
+                                      }
+                                    }}
+                                    className="rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-black text-white hover:bg-blue-700 transition shadow-xs cursor-pointer"
+                                  >
+                                    Simpan ke Closing Harian
+                                  </button>
+                                </div>
+                              </div>
                             )}
                           </div>
-                          <span className="font-bold text-[#1F2937]">
-                            {formatIDR(item.unitPrice * item.quantity)}
-                          </span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
 
                     {/* Customization Notes */}
