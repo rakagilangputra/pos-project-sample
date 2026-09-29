@@ -225,7 +225,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-black text-[#2D241E]">
-                {supplierToEdit ? 'Edit Informasi Mitra Supplier' : 'Tambah Mitra Supplier Konsinyasi'}
+                {supplierToEdit ? 'Edit Informasi Mitra Supplier' : 'Tambah Mitra Supplier'}
               </h3>
               <p className="text-xs text-[#8C7B6C] font-semibold">
                 {supplierToEdit
