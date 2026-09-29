@@ -185,8 +185,8 @@ export const ProductStockTable: React.FC<ProductStockTableProps> = ({
           />
         </div>
 
-        {/* Filter Dropdowns */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Filter Dropdowns - Hidden as requested */}
+        <div className="hidden" style={{ display: 'none' }}>
           {/* Category Filter */}
           <select
             value={selectedCategory}

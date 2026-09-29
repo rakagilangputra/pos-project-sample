@@ -745,7 +745,7 @@ export const StockWorkspace: React.FC = () => {
       {/* -------------------------------------------------------------
           TAB NAVIGATION BAR
           ------------------------------------------------------------- */}
-      <div className="flex items-center gap-1 border-b-2 border-[#E5DACE] bg-white px-6 overflow-x-auto">
+      <nav className="flex items-center gap-1 border-b-2 border-[#E5DACE] bg-white px-6 overflow-x-auto">
         <button
           type="button"
           onClick={() => setActiveView('products')}
@@ -846,7 +846,7 @@ export const StockWorkspace: React.FC = () => {
           <Wheat className="h-4 w-4" />
           <span>Raw Material (Bahan Baku)</span>
         </button>
-      </div>
+      </nav>
 
       {/* -------------------------------------------------------------
           ACTIVE VIEW CONTENT

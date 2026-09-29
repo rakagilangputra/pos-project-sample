@@ -29,10 +29,10 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Active categories from Master Kategori Backoffice
-  const availableMasterCategories: MasterCategory[] = masterCategories && masterCategories.length > 0
+  // Active categories from Master Kategori Backoffice (Filtered strictly to KONSINYASI only)
+  const availableMasterCategories: MasterCategory[] = (masterCategories && masterCategories.length > 0
     ? masterCategories
-    : [
+    : ([
         {
           id: 'KAT-PROD-01',
           name: 'Roti Manis & Roti Tawar',
@@ -73,7 +73,8 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
           description: 'Camilan kering kemasan titip jual dari pengrajin lokal',
           createdAt: '2026-03-05T10:00:00Z',
         },
-      ];
+      ] as MasterCategory[])
+  ).filter((c) => c.categoryType === 'KONSINYASI');
 
   // Helper: check if a category is already linked to another supplier (1:1 rule)
   const getAssignedSupplierForCategory = (catName: string): Supplier | undefined => {
@@ -276,7 +277,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
               onChange={(e) => handleSelectCategory(e.target.value)}
               className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white px-4 py-2.5 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none cursor-pointer shadow-2xs"
             >
-              <option value="" disabled>-- Pilih 1 Kategori dari Master Kategori --</option>
+              <option value="" disabled>-- Pilih 1 Master Kategori (Khusus Konsinyasi) --</option>
               {availableMasterCategories.map((c) => {
                 const assignedSupplier = getAssignedSupplierForCategory(c.name);
                 const isAssigned = !!assignedSupplier;
