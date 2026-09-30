@@ -708,6 +708,14 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Supplier Settlement Cycles (POS-US-032, POS-US-034, POS-US-035)
   const [settlementCycles, setSettlementCycles] = useState<SupplierSettlementCycle[]>(() => {
+    // Retired demo seeds, removed from INITIAL_SETTLEMENT_CYCLES because they carried a
+    // hard-coded 'overdue' / 'due' status (see the note in src/data/mockData.ts). An
+    // earlier build already wrote them into this localStorage cache, and the top-up loop
+    // below would happily keep them alive, so purge any stale copy on load. Runtime cycle
+    // ids look like `SET-<epoch6>-<rand3>` (see generateSettlementCycles), so this list
+    // can never match a genuine cycle.
+    const RETIRED_SEED_IDS = new Set(['SET-202608-OVERDUE', 'SET-202609-DUE-TODAY']);
+
     const saved = localStorage.getItem('pos_settlement_cycles');
     if (saved) {
       try {
@@ -716,7 +724,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           const seen = new Set<string>();
           const result: SupplierSettlementCycle[] = [];
           for (const cycle of parsed) {
-            if (cycle && cycle.id && !seen.has(cycle.id)) {
+            if (cycle && cycle.id && !seen.has(cycle.id) && !RETIRED_SEED_IDS.has(cycle.id)) {
               seen.add(cycle.id);
               result.push(cycle);
             }
