@@ -16,9 +16,11 @@ git pull
 git checkout -B fix/revision-pos-input
 ```
 
-> One-off exception already on the remote: `fix/remove-header-tab-badges`
-> (single commit `ef05b90`, header badge removal). Left as-is by agreement —
-> do not rename it.
+> History note: this work was originally pushed as `fix/remove-header-tab-badges`
+> and merged to `main` via PR #2 (`1f3685d`). That branch was then renamed on
+> the remote to `fix/revision-pos-input`. The old name is **retired — do not
+> recreate it.** If a `fix/remove-header-tab-badges` ref ever appears again it is
+> a stray duplicate; delete it rather than pushing to it.
 
 ## Verification
 
