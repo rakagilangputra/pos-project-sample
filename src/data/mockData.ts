@@ -946,39 +946,12 @@ export const INITIAL_COMMISSION_LEDGER: CommissionLedgerEntry[] = [
 ];
 
 // Pre-seeded Supplier Settlement Cycles (POS-US-032, POS-US-034, POS-US-035)
+//
+// NOTE: the `overdue` and `due` seeds were intentionally removed. Their `status` was a
+// hard-coded string, so they rendered a permanent "N Overdue" / "N Due" badge on the
+// Konsinyasi tab that no passage of time could ever clear. Cycles created at runtime by
+// `generateSettlementCycles()` derive their status from the real due date instead.
 export const INITIAL_SETTLEMENT_CYCLES: SupplierSettlementCycle[] = [
-  {
-    id: 'SET-202608-OVERDUE',
-    supplierId: 'sup-3',
-    supplierName: 'Chef Pierre Gourmet Pastry',
-    periodStart: '2026-08-22',
-    periodEnd: '2026-08-28',
-    dueDate: '2026-08-29', // Sudah lewat = Overdue!
-    grossItemSales: 1200000,
-    discounts: 50000,
-    netItemSales: 1150000,
-    commissionPayable: 207000,
-    storeNetAfterCommission: 943000,
-    status: 'overdue',
-    commissionEntryIds: ['comm-pierre-1', 'comm-pierre-2'],
-    createdAt: '2026-08-28T23:59:00Z',
-  },
-  {
-    id: 'SET-202609-DUE-TODAY',
-    supplierId: 'sup-1',
-    supplierName: 'Dapur Ibu Endang (Kue Tradisional)',
-    periodStart: '2026-08-29',
-    periodEnd: '2026-09-02',
-    dueDate: '2026-09-03', // Hari ini = Due!
-    grossItemSales: 860000,
-    discounts: 20000,
-    netItemSales: 840000,
-    commissionPayable: 145000,
-    storeNetAfterCommission: 695000,
-    status: 'due',
-    commissionEntryIds: ['comm-endang-01'],
-    createdAt: '2026-09-02T23:59:00Z',
-  },
   {
     id: 'SET-202609-UPCOMING',
     supplierId: 'sup-2',

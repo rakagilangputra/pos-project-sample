@@ -46,8 +46,6 @@ export const Header: React.FC<HeaderProps> = ({
     currentSession,
     currentUser,
     setAsideOrders,
-    settlementCycles,
-    orders,
     selectedBranch,
     branches,
     requestSwitchBranch,
@@ -69,15 +67,6 @@ export const Header: React.FC<HeaderProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const overdueCount = settlementCycles.filter((c) => c.status === 'overdue').length;
-  const dueTodayCount = settlementCycles.filter((c) => c.status === 'due').length;
-
-  const activePoCount = orders.filter(
-    (o) =>
-      (o.isMadeToOrder || o.poNumber) &&
-      (o.orderStatus === 'active' || o.orderStatus === 'ready_for_pickup' || o.orderStatus === 'overdue')
-  ).length;
-
   const isCashier = currentUser.role === 'cashier';
   const isSuperadmin = currentUser.role === 'admin';
 
@@ -86,7 +75,6 @@ export const Header: React.FC<HeaderProps> = ({
     id: MainWorkspaceTab;
     label: string;
     icon: React.ReactNode;
-    badge?: React.ReactNode;
     restrictedToManagement?: boolean;
     restrictedToSuperadmin?: boolean;
   }[] = [
@@ -100,12 +88,6 @@ export const Header: React.FC<HeaderProps> = ({
       label: 'Pesanan',
       icon: <ClipboardList className="h-3.5 w-3.5" />,
       restrictedToManagement: false,
-      badge:
-        activePoCount > 0 ? (
-          <span className="rounded-full bg-amber-500 px-1.5 py-0.2 text-[9px] font-bold text-white">
-            {activePoCount}
-          </span>
-        ) : null,
     },
     {
       id: 'dashboard',
@@ -120,20 +102,13 @@ export const Header: React.FC<HeaderProps> = ({
       restrictedToManagement: true,
     },
     {
+      // Intentionally no badge. The old "N Overdue" / "N Due" pill was driven by seeded
+      // settlement cycles whose `status` was hard-coded, so the warning could never clear
+      // as time passed. Retired seeds are purged in POSContext (RETIRED_SEED_IDS).
       id: 'konsinyasi',
       label: 'Konsinyasi',
       icon: <Building2 className="h-3.5 w-3.5" />,
       restrictedToManagement: true,
-      badge:
-        overdueCount > 0 ? (
-          <span className="rounded-full bg-rose-600 px-1.5 py-0.2 text-[9px] font-bold text-white">
-            {overdueCount} Overdue
-          </span>
-        ) : dueTodayCount > 0 ? (
-          <span className="rounded-full bg-amber-600 px-1.5 py-0.2 text-[9px] font-bold text-white">
-            {dueTodayCount} Due
-          </span>
-        ) : null,
     },
     {
       id: 'stok',
@@ -325,7 +300,6 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 {tab.icon}
                 <span>{tab.label}</span>
-                {tab.badge}
               </button>
             );
           })}
