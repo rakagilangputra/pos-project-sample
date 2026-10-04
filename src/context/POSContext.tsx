@@ -53,14 +53,16 @@ import {
   INITIAL_STOCK_TRANSFERS,
   INITIAL_BAD_STOCKS,
   INITIAL_CATEGORY_CLOSINGS,
-  INITIAL_SUPPLIER_NOTIFICATION_BATCHES,
-  INITIAL_SUPPLIER_DELIVERY_LOGS,
   INITIAL_PURCHASE_PLANS,
   INITIAL_MASTER_CATEGORIES,
   INITIAL_RAW_MATERIALS,
   INITIAL_EXPIRY_BATCHES,
 } from '../data/mockData';
 import { generateReceiptNumber, generatePONumber, posSound } from '../utils/formatters';
+import { usePreferencesSlice } from './slices/usePreferencesSlice';
+import { useCatalogSlice } from './slices/useCatalogSlice';
+import { useAuditSlice } from './slices/useAuditSlice';
+import { useSupplierNotificationSlice } from './slices/useSupplierNotificationSlice';
 
 interface POSContextType {
   // Store Branches & Multi-Branch Management
@@ -476,22 +478,8 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Superadmin has full operational access across all stores; other roles follow branch active/inactive status
   const isBranchReadOnly = currentUser?.role === 'admin' ? false : (selectedBranch?.status === "inactive");
 
-  // Locale & Sound
-  const [lang, setLang] = useState<'id' | 'en'>(() => {
-    return (localStorage.getItem('pos_lang') as 'id' | 'en') || 'id';
-  });
-  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
-    return localStorage.getItem('pos_sound') !== 'false';
-  });
-
-  useEffect(() => {
-    localStorage.setItem('pos_lang', lang);
-  }, [lang]);
-
-  useEffect(() => {
-    localStorage.setItem('pos_sound', String(soundEnabled));
-    posSound.enabled = soundEnabled;
-  }, [soundEnabled]);
+  // Locale & Sound — extracted to slice (src/context/slices/usePreferencesSlice.ts)
+  const { lang, setLang, soundEnabled, setSoundEnabled } = usePreferencesSlice();
 
   // Cashier Session
   const [currentSession, setCurrentSession] = useState<CashierSession | null>(() => {
@@ -540,63 +528,8 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     localStorage.setItem('pos_closed_sessions', JSON.stringify(closedSessions));
   }, [closedSessions]);
 
-  // Category Master (POS-US-028)
-  const [categories, setCategories] = useState<ProductCategoryItem[]>(() => {
-    const saved = localStorage.getItem('pos_categories');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const seen = new Set<string>();
-          const result: ProductCategoryItem[] = [];
-          for (const item of parsed) {
-            if (item && item.id && !seen.has(item.id)) {
-              seen.add(item.id);
-              result.push(item);
-            }
-          }
-          return result;
-        }
-      } catch {}
-    }
-    return INITIAL_CATEGORIES;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('pos_categories', JSON.stringify(categories));
-  }, [categories]);
-
-  // Master Kategori - Central Category Master (POS-HQ)
-  const [masterCategories, setMasterCategories] = useState<MasterCategory[]>(() => {
-    const saved = localStorage.getItem('pos_master_categories');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch {}
-    }
-    return INITIAL_MASTER_CATEGORIES;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('pos_master_categories', JSON.stringify(masterCategories));
-  }, [masterCategories]);
-
-  // Raw Materials Master (Bahan Baku)
-  const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>(() => {
-    const saved = localStorage.getItem('pos_raw_materials');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch {}
-    }
-    return INITIAL_RAW_MATERIALS;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('pos_raw_materials', JSON.stringify(rawMaterials));
-  }, [rawMaterials]);
+  // Category Master, Master Kategori & Raw Materials state + persistence are
+  // extracted to src/context/slices/useCatalogSlice.ts (wired in after addAudit below).
 
   // Catalog & Products (POS-US-029)
   const [products, setProducts] = useState<Product[]>(() => {
@@ -958,135 +891,28 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     localStorage.setItem('pos_orders', JSON.stringify(orders));
   }, [orders]);
 
-  // POS-US-059 to POS-US-063: Supplier Notification Batches & Delivery Logs
-  const [supplierNotificationBatches, setSupplierNotificationBatches] = useState<SupplierNotificationBatch[]>(() => {
-    const saved = localStorage.getItem('pos_supplier_batches');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const seen = new Set<string>();
-          const list: SupplierNotificationBatch[] = [];
-          for (const b of parsed) {
-            if (b && b.id) {
-              seen.add(b.id);
-              list.push(b);
-            }
-          }
-          for (const init of INITIAL_SUPPLIER_NOTIFICATION_BATCHES) {
-            if (!seen.has(init.id)) {
-              seen.add(init.id);
-              list.push(init);
-            }
-          }
-          return list;
-        }
-      } catch {}
-    }
-    return INITIAL_SUPPLIER_NOTIFICATION_BATCHES;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('pos_supplier_batches', JSON.stringify(supplierNotificationBatches));
-  }, [supplierNotificationBatches]);
-
-  const [supplierDeliveryLogs, setSupplierDeliveryLogs] = useState<SupplierDeliveryLogEntry[]>(() => {
-    const saved = localStorage.getItem('pos_supplier_delivery_logs');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const seen = new Set<string>();
-          const list: SupplierDeliveryLogEntry[] = [];
-          for (const l of parsed) {
-            if (l && l.id) {
-              seen.add(l.id);
-              list.push(l);
-            }
-          }
-          for (const init of INITIAL_SUPPLIER_DELIVERY_LOGS) {
-            if (!seen.has(init.id)) {
-              seen.add(init.id);
-              list.push(init);
-            }
-          }
-          return list;
-        }
-      } catch {}
-    }
-    return INITIAL_SUPPLIER_DELIVERY_LOGS;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('pos_supplier_delivery_logs', JSON.stringify(supplierDeliveryLogs));
-  }, [supplierDeliveryLogs]);
-
-  // Audits & Adjustments
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
-    const saved = localStorage.getItem('pos_audit_logs');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          const seenIds = new Set<string>();
-          return parsed.map((item: AuditLog, index: number) => {
-            if (!item.id || seenIds.has(item.id)) {
-              const uniqueId = `AUD-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`;
-              seenIds.add(uniqueId);
-              return { ...item, id: uniqueId };
-            }
-            seenIds.add(item.id);
-            return item;
-          });
-        }
-      } catch {}
-    }
-    return [];
-  });
-
-  const [stockAdjustments, setStockAdjustments] = useState<StockAdjustmentRecord[]>(() => {
-    const saved = localStorage.getItem('pos_stock_adjustments');
-    if (saved) {
-      try { return JSON.parse(saved); } catch {}
-    }
-    return [];
-  });
-
-  useEffect(() => {
-    localStorage.setItem('pos_audit_logs', JSON.stringify(auditLogs));
-  }, [auditLogs]);
-
-  useEffect(() => {
-    localStorage.setItem('pos_stock_adjustments', JSON.stringify(stockAdjustments));
-  }, [stockAdjustments]);
+  // Audit log & stock adjustments state — extracted to src/context/slices/useAuditSlice.ts
 
   // Receipt Modal State
   const [activeReceiptOrder, setActiveReceiptOrder] = useState<Order | null>(null);
 
-  // Helper to log an audit event
-  const addAudit = (
-    action: string,
-    entityType: AuditLog['entityType'],
-    entityId: string,
-    details: string,
-    beforeValue?: string,
-    afterValue?: string
-  ) => {
-    const entry: AuditLog = {
-      id: `AUD-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      timestamp: new Date().toISOString(),
-      actorId: currentUser.id,
-      actorName: currentUser.name,
-      actorRole: currentUser.role,
-      action,
-      entityType,
-      entityId,
-      details,
-      beforeValue,
-      afterValue,
-    };
-    setAuditLogs((prev) => [entry, ...prev]);
-  };
+  // Audit log, stock adjustments & the shared addAudit logger — extracted to slice
+  const { auditLogs, stockAdjustments, setStockAdjustments, addAudit } = useAuditSlice({ currentUser });
+
+  // Catalog master data (categories, master categories, raw materials) — extracted to slice
+  const {
+    categories,
+    masterCategories,
+    rawMaterials,
+    setRawMaterials,
+    addCategory,
+    addMasterCategory,
+    updateMasterCategory,
+    deleteMasterCategory,
+    addRawMaterial,
+    updateRawMaterial,
+    deleteRawMaterial,
+  } = useCatalogSlice({ selectedBranchId, currentUserName: currentUser.name, addAudit });
 
   // Switch User / Cashier Login (POS-US-004, POS-US-023)
   const switchUser = (userId: string, pin: string) => {
@@ -1496,139 +1322,9 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return newCust;
   };
 
-  // Product Category Master (POS-US-028)
-  const addCategory = (name: string, description?: string) => {
-    const trimmed = name.trim();
-    if (!trimmed) {
-      return { success: false, message: 'Nama kategori produk tidak boleh kosong!' };
-    }
-    const isDuplicate = categories.some(
-      (c) => c.name.toLowerCase() === trimmed.toLowerCase()
-    );
-    if (isDuplicate) {
-      return { success: false, message: `Kategori "${trimmed}" sudah ada!` };
-    }
+  // addCategory: extracted to src/context/slices/useCatalogSlice.ts
 
-    const id = trimmed.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    const newCat: ProductCategoryItem = {
-      id,
-      name: trimmed,
-      branchId: selectedBranchId,
-      description: description?.trim() || undefined,
-      icon: '🏷️',
-    };
-
-    setCategories((prev) => [...prev, newCat]);
-    addAudit(
-      'CATEGORY_CREATE',
-      'category',
-      id,
-      `Kategori produk baru dibuat: "${trimmed}" oleh ${currentUser.name}`
-    );
-    posSound.beep();
-    return { success: true, category: newCat, message: `Kategori "${trimmed}" berhasil dibuat!` };
-  };
-
-  // Master Kategori Management (Central HQ Master)
-  const addMasterCategory = (data: Omit<MasterCategory, 'createdAt'>) => {
-    const trimmedId = data.id.trim().toUpperCase();
-    const trimmedName = data.name.trim();
-
-    if (!trimmedId) {
-      posSound.error();
-      return { success: false, message: 'ID Master Kategori wajib diisi!' };
-    }
-    if (!trimmedName) {
-      posSound.error();
-      return { success: false, message: 'Nama Kategori wajib diisi!' };
-    }
-    if (!data.categoryType) {
-      posSound.error();
-      return { success: false, message: 'Pilih tipe kategori (KONSINYASI/PRODUKSI/BELI (RESELLER))!' };
-    }
-    if (!data.branchIds || data.branchIds.length === 0) {
-      posSound.error();
-      return { success: false, message: 'Pilih minimal satu Cabang untuk kategori ini!' };
-    }
-
-    const isDuplicate = masterCategories.some(
-      (c) => c.id.toLowerCase() === trimmedId.toLowerCase()
-    );
-    if (isDuplicate) {
-      posSound.error();
-      return { success: false, message: `ID Kategori '${trimmedId}' sudah digunakan!` };
-    }
-
-    const newCat: MasterCategory = {
-      id: trimmedId,
-      name: trimmedName,
-      categoryType: data.categoryType,
-      branchIds: data.branchIds,
-      description: data.description?.trim() || '',
-      createdAt: new Date().toISOString(),
-    };
-
-    setMasterCategories((prev) => [newCat, ...prev]);
-    addAudit(
-      'MASTER_CATEGORY_CREATE',
-      'category',
-      trimmedId,
-      `Master Kategori baru '${newCat.name}' (${newCat.id}) tipe ${newCat.categoryType} dibuat oleh ${currentUser.name}`
-    );
-    posSound.success();
-    return {
-      success: true,
-      category: newCat,
-      message: `Master Kategori '${newCat.name}' (${newCat.id}) berhasil dibuat!`,
-    };
-  };
-
-  const updateMasterCategory = (id: string, data: Partial<MasterCategory>) => {
-    const target = masterCategories.find((c) => c.id === id);
-    if (!target) {
-      posSound.error();
-      return { success: false, message: 'Data Master Kategori tidak ditemukan!' };
-    }
-
-    setMasterCategories((prev) =>
-      prev.map((c) =>
-        c.id === id
-          ? {
-              ...c,
-              ...data,
-              updatedAt: new Date().toISOString(),
-            }
-          : c
-      )
-    );
-
-    addAudit(
-      'MASTER_CATEGORY_UPDATE',
-      'category',
-      id,
-      `Master Kategori '${target.name}' (${id}) diperbarui oleh ${currentUser.name}`
-    );
-    posSound.beep();
-    return { success: true, message: 'Master Kategori berhasil diperbarui!' };
-  };
-
-  const deleteMasterCategory = (id: string) => {
-    const target = masterCategories.find((c) => c.id === id);
-    if (!target) {
-      posSound.error();
-      return { success: false, message: 'Data Master Kategori tidak ditemukan!' };
-    }
-
-    setMasterCategories((prev) => prev.filter((c) => c.id !== id));
-    addAudit(
-      'MASTER_CATEGORY_DELETE',
-      'category',
-      id,
-      `Master Kategori '${target.name}' (${id}) dihapus oleh ${currentUser.name}`
-    );
-    posSound.beep();
-    return { success: true, message: `Master Kategori '${target.name}' berhasil dihapus!` };
-  };
+  // Master Kategori CRUD: extracted to src/context/slices/useCatalogSlice.ts
 
   // Product Master (POS-US-029)
   const addProduct = (productData: Omit<Product, 'id'>) => {
@@ -1673,75 +1369,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: true, product: newProd, message: `Produk "${newProd.name}" berhasil ditambahkan dengan stok 0!` };
   };
 
-  // Raw Material Master (Bahan Baku)
-  const addRawMaterial = (data: Omit<RawMaterial, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const trimmedName = data.name.trim();
-    const trimmedSku = data.sku.trim().toUpperCase();
-
-    if (!trimmedName) {
-      return { success: false, message: 'Nama bahan baku wajib diisi!' };
-    }
-    if (!trimmedSku) {
-      return { success: false, message: 'Kode SKU bahan baku wajib diisi!' };
-    }
-
-    const isDuplicateSku = rawMaterials.some(
-      (r) => r.sku.toLowerCase() === trimmedSku.toLowerCase()
-    );
-    if (isDuplicateSku) {
-      return { success: false, message: `Kode SKU "${trimmedSku}" sudah terdaftar!` };
-    }
-
-    const id = 'raw-' + Date.now().toString().slice(-6);
-    const newRaw: RawMaterial = {
-      ...data,
-      id,
-      name: trimmedName,
-      sku: trimmedSku,
-      branchId: selectedBranchId,
-      stock: 0, // Strict rule: starts at 0, must be added through penerimaan barang
-      createdAt: new Date().toISOString(),
-    };
-
-    setRawMaterials((prev) => [newRaw, ...prev]);
-
-    addAudit(
-      'STOCK_ADJUSTMENT',
-      'product',
-      id,
-      `Master Bahan Baku baru: ${newRaw.name} (SKU: ${newRaw.sku}), Kategori: ${newRaw.category}, Stok: 0 (Menunggu Penerimaan Barang)`
-    );
-    posSound.beep();
-    return { success: true, rawMaterial: newRaw, message: `Bahan baku "${newRaw.name}" berhasil ditambahkan!` };
-  };
-
-  const updateRawMaterial = (id: string, data: Partial<RawMaterial>) => {
-    const exists = rawMaterials.find((r) => r.id === id);
-    if (!exists) {
-      return { success: false, message: 'Bahan baku tidak ditemukan!' };
-    }
-    if (data.sku && data.sku.trim().toUpperCase() !== exists.sku) {
-      const duplicate = rawMaterials.some(
-        (r) => r.id !== id && r.sku.toLowerCase() === data.sku?.trim().toLowerCase()
-      );
-      if (duplicate) {
-        return { success: false, message: `Kode SKU "${data.sku}" sudah digunakan!` };
-      }
-    }
-    setRawMaterials((prev) =>
-      prev.map((r) =>
-        r.id === id
-          ? { ...r, ...data, updatedAt: new Date().toISOString() }
-          : r
-      )
-    );
-    return { success: true, message: 'Data bahan baku berhasil diperbarui!' };
-  };
-
-  const deleteRawMaterial = (id: string) => {
-    setRawMaterials((prev) => prev.filter((r) => r.id !== id));
-    return { success: true, message: 'Bahan baku berhasil dihapus!' };
-  };
+  // Raw Material CRUD: extracted to src/context/slices/useCatalogSlice.ts
 
   // Supplier Master (POS-US-030)
   const addSupplier = (supplierData: Omit<Supplier, 'id' | 'createdAt'>) => {
@@ -4717,318 +4345,21 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   };
 
-  // POS-US-059 to POS-US-063: Supplier WhatsApp Order Notifications
-  const generateSupplierWhatsAppMessage = (
-    supplier: Supplier,
-    ordersToInclude: Order[]
-  ): string => {
-    const todayStr = new Date().toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
-    const storeName = STORE_INFO.name;
-    const branchName = selectedBranch?.name || STORE_INFO.branch;
-
-    const orderLines = ordersToInclude.map((order) => {
-      // Find consignment/supplier items belonging to this supplier
-      const itemsForSupplier = order.items.filter((item) => {
-        const prod = products.find((p) => p.id === item.productId);
-        const itemSupplierId = item.supplierId || prod?.supplierId;
-        const matchesSupplier = itemSupplierId === supplier.id && supplier.id !== 'internal';
-        const isConsignment = (item.ownershipType === 'consignment') || (prod?.ownershipType === 'consignment') || Boolean(item.supplierId || prod?.supplierId);
-        return matchesSupplier && isConsignment;
-      });
-
-      const itemDetails = itemsForSupplier
-        .map((i) => `  - ${i.quantity}x ${i.productName}`)
-        .join('\n');
-
-      const refNumber = order.poNumber || order.receiptNumber;
-      return `• *Nota/PO ${refNumber}* (Pelanggan: ${order.customer.name}):\n${itemDetails}`;
-    });
-
-    const totalQty = ordersToInclude.reduce((sum, order) => {
-      const itemsForSupplier = order.items.filter((item) => {
-        const prod = products.find((p) => p.id === item.productId);
-        const itemSupplierId = item.supplierId || prod?.supplierId;
-        const matchesSupplier = itemSupplierId === supplier.id && supplier.id !== 'internal';
-        const isConsignment = (item.ownershipType === 'consignment') || (prod?.ownershipType === 'consignment') || Boolean(item.supplierId || prod?.supplierId);
-        return matchesSupplier && isConsignment;
-      });
-      return sum + itemsForSupplier.reduce((iSum, item) => iSum + item.quantity, 0);
-    }, 0);
-
-    return (
-      `Halo *${supplier.name}* (PIC: ${supplier.picName || 'Bapak/Ibu'}),\n\n` +
-      `Berikut rekap pesanan produk konsinyasi (*Kue Titipan*) hari ini (${todayStr}) di *${storeName} - ${branchName}*:\n\n` +
-      `${orderLines.join('\n\n')}\n\n` +
-      `Total Produk Konsinyasi: *${totalQty} item/pcs*.\n` +
-      `Mohon segera disiapkan sesuai pesanan di atas. Terima kasih atas kerja samanya!\n\n` +
-      `— *${storeName}*`
-    );
-  };
-
-  const sendSupplierWhatsAppNotification = (
-    supplierId: string,
-    orderIds: string[],
-    simulationOutcome: NotificationDeliveryResult = 'success',
-    customErrorMessage?: string
-  ) => {
-    if (currentUser.role === 'cashier') {
-      posSound.error();
-      return {
-        success: false,
-        result: 'failed' as NotificationDeliveryResult,
-        message: 'Akses ditolak: Hanya Supervisor atau Superadmin yang dapat mengirim notifikasi WhatsApp.',
-      };
-    }
-
-    const supplier = suppliers.find((s) => s.id === supplierId);
-    if (!supplier) {
-      posSound.error();
-      return {
-        success: false,
-        result: 'failed' as NotificationDeliveryResult,
-        message: 'Data supplier tidak ditemukan.',
-      };
-    }
-
-    if (!supplier.phone || supplier.phone.trim() === '') {
-      posSound.error();
-      return {
-        success: false,
-        result: 'failed' as NotificationDeliveryResult,
-        message: `Nomor telepon WhatsApp supplier ${supplier.name} belum terdaftar. Harap lengkapi pada master supplier.`,
-      };
-    }
-
-    const matchingOrders = orders.filter((o) => orderIds.includes(o.id));
-    if (matchingOrders.length === 0) {
-      posSound.error();
-      return {
-        success: false,
-        result: 'failed' as NotificationDeliveryResult,
-        message: 'Tidak ada pesanan valid yang dipilih untuk dikirimkan.',
-      };
-    }
-
-    const messageText = generateSupplierWhatsAppMessage(supplier, matchingOrders);
-    const dateCode = new Date().toISOString().slice(2, 10).replace(/-/g, '');
-    const supplierCode = supplier.id.replace('sup-', 'SUP').toUpperCase();
-    const batchSeq = String(supplierNotificationBatches.filter((b) => b.supplierId === supplier.id).length + 1).padStart(2, '0');
-    const batchId = `BATCH-${supplierCode}-${dateCode}-${batchSeq}`;
-
-    const nowIso = new Date().toISOString();
-    const isSuccess = simulationOutcome === 'success';
-
-    let errorReason = customErrorMessage;
-    if (!isSuccess && !errorReason) {
-      if (simulationOutcome === 'no_internet') {
-        errorReason = 'Gangguan koneksi internet gateway WhatsApp (Connection Timeout 504)';
-      } else if (simulationOutcome === 'failed') {
-        errorReason = 'Gagal mengirim pesan WhatsApp: Layanan gateway sibuk atau nomor tujuan tidak terjangkau (HTTP 400)';
-      } else {
-        errorReason = 'WhatsApp Gateway Response: Unrecognized status code / temporary rejection';
-      }
-    }
-
-    const newBatch: SupplierNotificationBatch = {
-      id: batchId,
-      supplierId: supplier.id,
-      supplierName: supplier.name,
-      supplierPhone: supplier.phone,
-      orderIds,
-      status: simulationOutcome,
-      createdAt: nowIso,
-      sentAt: isSuccess ? nowIso : undefined,
-      sentBy: `${currentUser.name} (${currentUser.role === 'admin' ? 'Superadmin' : 'Supervisor'})`,
-      attemptsCount: 1,
-      lastAttemptResult: simulationOutcome,
-      lastAttemptAt: nowIso,
-      lastErrorMessage: errorReason,
-    };
-
-    const newLog: SupplierDeliveryLogEntry = {
-      id: 'LOG-' + Date.now().toString().slice(-7),
-      batchId,
-      supplierId: supplier.id,
-      supplierName: supplier.name,
-      supplierPhone: supplier.phone,
-      orderIds,
-      orderReceipts: matchingOrders.map((o) => o.poNumber || o.receiptNumber),
-      attemptType: 'send',
-      result: simulationOutcome,
-      messageText,
-      actorName: currentUser.name,
-      actorRole: currentUser.role,
-      timestamp: nowIso,
-      errorMessage: errorReason,
-      rawResponse: simulationOutcome === 'no_internet'
-        ? 'HTTP 504 GATEWAY_TIMEOUT: Route to api.whatsapp.com unreachable'
-        : simulationOutcome === 'failed'
-        ? 'HTTP 400 BAD_REQUEST: Delivery failed at recipient gateway'
-        : simulationOutcome === 'other'
-        ? 'HTTP 429 TOO_MANY_REQUESTS: Rate limit exceeded on provider'
-        : 'HTTP 200 OK: message_id=wamid.HBgM...',
-    };
-
-    setSupplierNotificationBatches((prev) => [newBatch, ...prev]);
-    setSupplierDeliveryLogs((prev) => [newLog, ...prev]);
-
-    // Record Audit
-    addAudit(
-      'NOTIFICATION_SEND',
-      'supplier',
-      supplier.id,
-      `Kirim notifikasi WhatsApp ke ${supplier.name} (${matchingOrders.length} pesanan, Batch: ${batchId}) - Hasil: ${simulationOutcome.toUpperCase()}`
-    );
-
-    if (isSuccess) {
-      posSound.success();
-      return {
-        success: true,
-        result: 'success',
-        batchId,
-        message: `Pesan WhatsApp berhasil dikirim ke ${supplier.name} (${supplier.phone}) untuk ${matchingOrders.length} pesanan.`,
-      };
-    } else {
-      posSound.error();
-      return {
-        success: false,
-        result: simulationOutcome,
-        batchId,
-        message: `Pengiriman WhatsApp ke ${supplier.name} tidak berhasil: ${errorReason}. Pesanan tetap ditandai belum terkirim.`,
-      };
-    }
-  };
-
-  const resendSupplierWhatsAppNotification = (
-    batchId: string,
-    simulationOutcome: NotificationDeliveryResult = 'success',
-    customErrorMessage?: string
-  ) => {
-    if (currentUser.role === 'cashier') {
-      posSound.error();
-      return {
-        success: false,
-        result: 'failed' as NotificationDeliveryResult,
-        message: 'Akses ditolak: Hanya Supervisor atau Superadmin yang diizinkan mengirim ulang notifikasi WhatsApp.',
-      };
-    }
-
-    const batch = supplierNotificationBatches.find((b) => b.id === batchId);
-    if (!batch) {
-      posSound.error();
-      return {
-        success: false,
-        result: 'failed' as NotificationDeliveryResult,
-        message: 'Batch tidak ditemukan.',
-      };
-    }
-
-    const supplier = suppliers.find((s) => s.id === batch.supplierId);
-    if (!supplier) {
-      posSound.error();
-      return {
-        success: false,
-        result: 'failed' as NotificationDeliveryResult,
-        message: 'Supplier tidak ditemukan.',
-      };
-    }
-
-    if (!supplier.phone || supplier.phone.trim() === '') {
-      posSound.error();
-      return {
-        success: false,
-        result: 'failed' as NotificationDeliveryResult,
-        message: `Nomor telepon WhatsApp supplier ${supplier.name} tidak valid.`,
-      };
-    }
-
-    const matchingOrders = orders.filter((o) => batch.orderIds.includes(o.id));
-    const messageText = generateSupplierWhatsAppMessage(supplier, matchingOrders);
-    const nowIso = new Date().toISOString();
-    const isSuccess = simulationOutcome === 'success';
-
-    let errorReason = customErrorMessage;
-    if (!isSuccess && !errorReason) {
-      if (simulationOutcome === 'no_internet') {
-        errorReason = 'Gangguan koneksi internet gateway WhatsApp (Connection Timeout 504)';
-      } else if (simulationOutcome === 'failed') {
-        errorReason = 'Gagal mengirim pesan WhatsApp: Nomor tujuan tidak terjangkau (HTTP 400)';
-      } else {
-        errorReason = 'WhatsApp Gateway Response: Other API error';
-      }
-    }
-
-    setSupplierNotificationBatches((prev) =>
-      prev.map((b) => {
-        if (b.id !== batchId) return b;
-        return {
-          ...b,
-          status: isSuccess ? 'success' : (b.status === 'success' ? 'success' : simulationOutcome),
-          sentAt: isSuccess ? nowIso : b.sentAt,
-          sentBy: `${currentUser.name} (${currentUser.role === 'admin' ? 'Superadmin' : 'Supervisor'})`,
-          attemptsCount: b.attemptsCount + 1,
-          lastAttemptResult: simulationOutcome,
-          lastAttemptAt: nowIso,
-          lastErrorMessage: isSuccess ? undefined : errorReason,
-          supplierPhone: supplier.phone,
-        };
-      })
-    );
-
-    const newLog: SupplierDeliveryLogEntry = {
-      id: 'LOG-' + Date.now().toString().slice(-7),
-      batchId: batch.id,
-      supplierId: supplier.id,
-      supplierName: supplier.name,
-      supplierPhone: supplier.phone,
-      orderIds: batch.orderIds,
-      orderReceipts: matchingOrders.map((o) => o.poNumber || o.receiptNumber),
-      attemptType: 'resend',
-      result: simulationOutcome,
-      messageText,
-      actorName: currentUser.name,
-      actorRole: currentUser.role,
-      timestamp: nowIso,
-      errorMessage: errorReason,
-      rawResponse: simulationOutcome === 'no_internet'
-        ? 'HTTP 504 GATEWAY_TIMEOUT: Route to api.whatsapp.com unreachable'
-        : simulationOutcome === 'failed'
-        ? 'HTTP 400 BAD_REQUEST: Delivery failed at recipient gateway'
-        : simulationOutcome === 'other'
-        ? 'HTTP 500 INTERNAL_ERROR: Unknown gateway response'
-        : 'HTTP 200 OK: message_id=wamid.HBgM...',
-    };
-
-    setSupplierDeliveryLogs((prev) => [newLog, ...prev]);
-
-    // Record Audit
-    addAudit(
-      'NOTIFICATION_RESEND',
-      'supplier',
-      supplier.id,
-      `Kirim ulang notifikasi WhatsApp ke ${supplier.name} (Batch: ${batchId}, Percobaan ke-${batch.attemptsCount + 1}) - Hasil: ${simulationOutcome.toUpperCase()}`
-    );
-
-    if (isSuccess) {
-      posSound.success();
-      return {
-        success: true,
-        result: 'success',
-        message: `Kirim ulang WhatsApp ke ${supplier.name} (${supplier.phone}) berhasil dilakukan.`,
-      };
-    } else {
-      posSound.error();
-      return {
-        success: false,
-        result: simulationOutcome,
-        message: `Kirim ulang WhatsApp ke ${supplier.name} gagal: ${errorReason}.`,
-      };
-    }
-  };
+  // Supplier WhatsApp notifications - extracted to src/context/slices/useSupplierNotificationSlice.ts
+  const {
+    supplierNotificationBatches,
+    supplierDeliveryLogs,
+    sendSupplierWhatsAppNotification,
+    resendSupplierWhatsAppNotification,
+    generateSupplierWhatsAppMessage,
+  } = useSupplierNotificationSlice({
+    currentUser,
+    suppliers,
+    orders,
+    products,
+    selectedBranch,
+    addAudit,
+  });
 
   // Branch-Filtered Data Views
   const branchProducts = products.filter((p) => !p.branchId || p.branchId === selectedBranchId);
