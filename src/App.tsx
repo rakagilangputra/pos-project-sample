@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { POSProvider, usePOS } from './context/POSContext';
 import { Header, MainWorkspaceTab } from './components/Header';
 import { ProductCatalog } from './components/ProductCatalog';
@@ -9,17 +9,30 @@ import { ReceiptModal } from './components/ReceiptModal';
 import { SessionModal } from './components/SessionModal';
 import { HandoffModal } from './components/HandoffModal';
 import { SetAsideOrdersModal } from './components/SetAsideOrdersModal';
-import { AdminDashboard } from './components/AdminDashboard';
-import { AuditLogView } from './components/AuditLogView';
-import { StockWorkspace } from './components/StockWorkspace';
-import { ConsignmentWorkspace } from './components/ConsignmentWorkspace';
-import { PesananWorkspace } from './components/PesananWorkspace';
 import { TransactionHistorySubView } from './components/TransactionHistorySubView';
-import { BackofficeWorkspace } from './components/BackofficeWorkspace';
 import { SelectStoreScreen } from './components/SelectStoreScreen';
 import { SwitchStoreConfirmModal } from './components/SwitchStoreConfirmModal';
-import { ShoppingCart } from 'lucide-react';
+import { ShoppingCart, Loader2 } from 'lucide-react';
 import { formatIDR } from './utils/formatters';
+
+// Code-split heavy management workspaces to optimize initial POS load and mobile/touch terminals
+const AdminDashboard = lazy(() => import('./components/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
+const AuditLogView = lazy(() => import('./components/AuditLogView').then(m => ({ default: m.AuditLogView })));
+const StockWorkspace = lazy(() => import('./components/StockWorkspace').then(m => ({ default: m.StockWorkspace })));
+const ConsignmentWorkspace = lazy(() => import('./components/ConsignmentWorkspace').then(m => ({ default: m.ConsignmentWorkspace })));
+const PesananWorkspace = lazy(() => import('./components/PesananWorkspace').then(m => ({ default: m.PesananWorkspace })));
+const BackofficeWorkspace = lazy(() => import('./components/BackofficeWorkspace').then(m => ({ default: m.BackofficeWorkspace })));
+
+const WorkspaceFallback: React.FC<{ label: string }> = ({ label }) => (
+  <div className="flex h-full w-full items-center justify-center rounded-[2rem] bg-white border-2 border-[#E5DACE] p-8">
+    <div className="flex flex-col items-center gap-3 text-[#8C7B6C]">
+      <Loader2 className="h-8 w-8 animate-spin text-[#D97706]" />
+      <span className="text-xs font-bold uppercase tracking-wider text-[#2D241E]">
+        Memuat Workspace {label}...
+      </span>
+    </div>
+  </div>
+);
 
 const POSMainContent: React.FC = () => {
   const { cart, cartTotal, currentUser } = usePOS();
@@ -159,36 +172,48 @@ const POSMainContent: React.FC = () => {
 
         {/* TAB 2: PESANAN (Cashiers, Supervisors & Admin - Operational PO Management) */}
         {currentTab === 'pesanan' && (
-          <PesananWorkspace
-            onNavigateToPOS={() => setCurrentTab('pos')}
-          />
+          <Suspense fallback={<WorkspaceFallback label="Pesanan PO" />}>
+            <PesananWorkspace
+              onNavigateToPOS={() => setCurrentTab('pos')}
+            />
+          </Suspense>
         )}
 
         {/* TAB 3: DASHBOARD (Supervisors / Admin) */}
         {currentTab === 'dashboard' && currentUser.role !== 'cashier' && (
-          <AdminDashboard
-            onOpenConsignmentModal={() => setCurrentTab('konsinyasi')}
-          />
+          <Suspense fallback={<WorkspaceFallback label="Dashboard Operasional" />}>
+            <AdminDashboard
+              onOpenConsignmentModal={() => setCurrentTab('konsinyasi')}
+            />
+          </Suspense>
         )}
 
         {/* TAB 4: AUDIT LOG (Supervisors / Admin) */}
         {currentTab === 'audit' && currentUser.role !== 'cashier' && (
-          <AuditLogView />
+          <Suspense fallback={<WorkspaceFallback label="Audit Log" />}>
+            <AuditLogView />
+          </Suspense>
         )}
 
         {/* TAB 5: KONSINYASI (Supervisors / Admin - Dedicated Workspace) */}
         {currentTab === 'konsinyasi' && currentUser.role !== 'cashier' && (
-          <ConsignmentWorkspace />
+          <Suspense fallback={<WorkspaceFallback label="Konsinyasi Mitra" />}>
+            <ConsignmentWorkspace />
+          </Suspense>
         )}
 
         {/* TAB 6: STOK (Supervisors / Admin - Dedicated Workspace) */}
         {currentTab === 'stok' && currentUser.role !== 'cashier' && (
-          <StockWorkspace />
+          <Suspense fallback={<WorkspaceFallback label="Manajemen Stok" />}>
+            <StockWorkspace />
+          </Suspense>
         )}
 
         {/* TAB 7: BACKOFFICE HQ (Superadmin only) */}
         {currentTab === 'backoffice' && currentUser.role === 'admin' && (
-          <BackofficeWorkspace />
+          <Suspense fallback={<WorkspaceFallback label="Backoffice HQ" />}>
+            <BackofficeWorkspace />
+          </Suspense>
         )}
       </main>
 

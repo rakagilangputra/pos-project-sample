@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Building2, X, Check, CreditCard, Info } from 'lucide-react';
-import { usePOS } from '../context/POSContext';
+import { useSuppliers } from '../hooks';
 import { Supplier, MasterCategory } from '../types';
 
 interface AddSupplierModalProps {
@@ -16,7 +16,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
   onSupplierCreated,
   supplierToEdit,
 }) => {
-  const { addSupplier, updateSupplier, masterCategories, suppliers } = usePOS();
+  const { addSupplier, updateSupplier, masterCategories, suppliers } = useSuppliers();
   const [name, setName] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [picName, setPicName] = useState('');

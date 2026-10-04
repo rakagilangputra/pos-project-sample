@@ -1,0 +1,83 @@
+import { Customer } from "../../types";
+
+export const DEFAULT_WALKIN_CUSTOMER: Customer = {
+  id: "cust-walkin",
+  branchId: "branch-senopati",
+  name: 'Pelanggan Umum (Walk-in)',
+  category: 'Walk-in',
+  depositBalance: 0,
+  createdAt: '2026-01-01T00:00:00Z',
+  notes: 'Default walk-in counter customer',
+};
+
+
+export const INITIAL_CUSTOMERS: Customer[] = [
+  {
+    id: "cust-k-1",
+    branchId: "branch-kemang",
+    name: "Dr. Adrian Kusuma",
+    phone: "081122334455",
+    email: "adrian.k@kemangmedika.com",
+    category: "Individual",
+    address: "Kemang Selatan No. 12",
+    notes: "Langganan sourdough dan croissant",
+    depositBalance: 250000,
+    createdAt: "2026-02-20T10:00:00Z",
+    lastTransactionAt: "2026-09-05T09:00:00Z",
+  },
+  {
+    id: "cust-k-2",
+    branchId: "branch-kemang",
+    name: "Studio Seni Kemang 18",
+    phone: "0217188990",
+    email: "contact@kemangart.org",
+    category: "Corporate",
+    address: "Jl. Kemang Raya No. 18B",
+    notes: "Pemesanan snack box workshop mingguan",
+    depositBalance: 600000,
+    createdAt: "2026-03-01T11:00:00Z",
+    lastTransactionAt: "2026-09-04T16:00:00Z",
+  },
+
+  DEFAULT_WALKIN_CUSTOMER,
+  {
+    id: 'cust-2',
+    branchId: "branch-senopati",
+    name: 'Ibu Maya Dewi',
+    phone: '081234567890',
+    email: 'maya.dewi@gmail.com',
+    category: 'Retail',
+    address: 'Kebayoran Baru, Jakarta Selatan',
+    notes: 'Suka roti tanpa wijen, langganan pagi',
+    depositBalance: 150000,
+    createdAt: '2026-02-10T10:00:00Z',
+    lastTransactionAt: '2026-09-01T15:30:00Z',
+  },
+  {
+    id: 'cust-3',
+    branchId: "branch-senopati",
+    name: 'PT Sinar Surya Abadi',
+    phone: '02157998811',
+    email: 'procurement@sinarsurya.co.id',
+    category: 'Corporate',
+    address: 'Sudirman Central Business District (SCBD)',
+    notes: 'Order snack box rutin tiap hari Senin',
+    depositBalance: 850000,
+    createdAt: '2026-01-15T08:00:00Z',
+    lastTransactionAt: '2026-08-30T11:00:00Z',
+  },
+  {
+    id: 'cust-4',
+    branchId: "branch-senopati",
+    name: 'Pak Doni Prasetyo',
+    phone: '081877665544',
+    email: 'doni.prasetyo@yahoo.com',
+    category: 'Individual',
+    address: 'Gandaria City Residence',
+    notes: 'Member deposit loyal',
+    depositBalance: 320000,
+    createdAt: '2026-03-05T14:20:00Z',
+    lastTransactionAt: '2026-09-02T08:15:00Z',
+  },
+];
+
