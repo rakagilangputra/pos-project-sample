@@ -11,22 +11,26 @@ all Step 2 work so far is analysis/design, captured below so it does not have to
 | Plan step | Status | Commit |
 |---|---|---|
 | 1. De-duplicate seed data | ✅ DONE, verified, committed (not yet pushed) | `c0d2c43` |
-| 2. POSContext slice extraction (5 slices) | 🟡 **Commit 1/5 DONE** (session slice). Commits 2–5 pending | session slice commit |
+| 2. POSContext slice extraction (5 slices) | 🟡 **Commits 1–2/5 DONE** (session, org). Commits 3–5 pending | `c820b7c` |
 | 3. Fix stale AGENTS.md | ⬜ not started | — |
 | 4. Prune unused dependencies | ⬜ not started | — |
 | 5. Final validation + push | ⬜ not started (Step 1 commit still local!) | — |
 
-**First task when resuming:** start **Step 2 Commit 2 (org slice)** per the recipe below — the block
-ranges in the "Exact block ranges" table have been refreshed for the post-Commit-1 tree (3,572 lines).
+**First task when resuming:** start **Step 2 Commit 3 (cart slice)** per the recipe below — the block
+ranges in the "Exact block ranges" table are current as of `c820b7c` (3,362 lines).
 
-**Session slice shipped in Commit 1:** `src/context/slices/useSessionSlice.ts` (255 lines) owns
-`currentSession`, `closedSessions`, `openSession`, `correctOpeningCash`, `closeSession`,
-`openSupportSessionCorrection`. `POSContext.tsx` 3,765 → 3,572 lines (−193). Verified: `npm run lint`,
-`npm run build`, dev-server smoke (`/api/health` 200, `/src/main.tsx` transpiles), and `git diff -U0`
-shows only 4 hunks — the `POSContextType` interface and the `value={{…}}` literal are untouched.
-Two things to know: `handOffSession` stayed in the provider as planned, and the `useOrderSlice` call
-site needed **no** edit (it already passed `currentSession`/`setCurrentSession`; the values now just
-flow from the destructure — an earlier draft of this doc implied otherwise).
+**Org slice shipped in Commit 2:** `src/context/slices/useOrgSlice.ts` (391 lines) with two exports.
+`useOrgState()` is wired at ~L434 right after the `currentUser` block and takes **zero deps**;
+`useOrgActions()` is wired at ~L902 **after** the session slice because `selectBranch` calls `setCart`
+and `toggleBranchStatus` reads `currentSession`. All 13 actions + `verifySupervisorPin` moved verbatim
+(verified line-by-line against the pre-commit file). `POSContext.tsx` 3,572 → 3,362 lines.
+Verified: `npm run lint` ✅, `npm run build` ✅, dev-server smoke ✅, interface (310 lines) and
+`value={{…}}` (129 lines) byte-identical, `handOffSession` byte-identical. `INITIAL_BRANCHES` and
+`INITIAL_CUSTOMERS` became unused in the provider and were dropped from its imports.
+
+**Note on `npm test`:** AGENTS.md lists it, but `package.json` has **no `test` script** (only
+`dev`/`build`/`start`/`preview`/`clean`/`lint`). Treat `npm run lint` + `npm run build` as the gate;
+AGENTS.md should be corrected at some point.
 **Wiring gotcha:** the editor tool rewrites files with LF endings. After each commit run
 `git diff --stat`; if Git warns "LF will be replaced by CRLF", normalize the touched file back to CRLF
 (the repo is `core.autocrlf=true`, so committed content is unaffected either way).
@@ -151,11 +155,11 @@ orgState.branches, prov.products/suppliers, setStockAdjustments}.
 
 | Slice file | Blocks to move (line ranges, inclusive) | Provider keeps from that area |
 |---|---|---|
-| `useSessionSlice.ts` | ✅ **DONE in Commit 1** — state 485–531, actions 1096–1158 + 1207–1310 (old numbering) | `handOffSession` 1159–1206 (old numbering) |
-| `useOrgSlice.ts` | `useOrgState`: **383–451** + **640–653** + `verifySupervisorPin` **1042–1051**; `useOrgActions`: **875–1040** + **1118–1131** | currentUser **453–477**, derived **479–481**, session wiring **1053–1067** |
-| `useCartSlice.ts` | state **799–805**; actions **1407–1889** (incl. hold/resume/cancelHold + completeOrder) | `setAsideOrders` **807–818** |
-| `useInventorySlice.ts` | state **719–797**; actions **2961–3270** (create/receive transfer, bad stock, destroyExpiredBatches) | categoryClosings state **703–717** + its actions; `getStockHistory` and the supplier-notification wiring stay |
-| `useGoodsReceivingSlice.ts` | state **655–702**; actions **2191–2859** (submitGoodsReceipt + all purchase-plan fns) | `updateProductInfo` (2861+) and category-closing actions stay |
+| `useSessionSlice.ts` | ✅ **DONE in Commit 1** — state + `openSession`/`correctOpeningCash`/`closeSession`/`openSupportSessionCorrection`. Wired ~L818–835 | `handOffSession` **840–886** (stays in the provider — it reads `users` + `currentSession`) |
+| `useOrgSlice.ts` | ✅ **DONE in Commit 2** — `useOrgState` (zero deps, wired ~L412–434) + `useOrgActions` (wired ~L888–920, after the session slice). Owns branches/users/selected branch/switch guards/customers/`verifySupervisorPin` + 12 actions | `currentUser` **386–410**, `handOffSession` **840–886**, `selectedBranch`/`isBranchReadOnly` **435–437** |
+| `useCartSlice.ts` | state **743–749**; actions **1196–1678** (addToCart → hold/resume/cancelHold + completeOrder) | `setAsideOrders` **751–762**, `useOrderSlice` wiring **1680–1716** |
+| `useInventorySlice.ts` | state **663–741**; actions **2750–3059** (create/receive transfer, bad stock, destroyExpiredBatches) | categoryClosings state **647–662** + its actions; `getStockHistory` **3061–** and the supplier-notification wiring stay |
+| `useGoodsReceivingSlice.ts` | state **599–646**; actions **1980–2648** (submitGoodsReceipt + all purchase-plan fns) | `updateProductInfo` (2650+) and category-closing actions stay |
 
 Re-verify each range before splicing (`git` moves lines after every commit) — the fastest way is the
 same line-range splice used in Commit 1: print the first/last line of each range and confirm it is the
@@ -191,17 +195,21 @@ expected comment / closing `};` before writing the slice file.
    Returns `currentSession, setCurrentSession, closedSessions, openSession, correctOpeningCash,
    closeSession, openSupportSessionCorrection`; `setClosedSessions` stays internal to the slice.
    `useOrderSlice` needed **no** call-site change. `handOffSession` stayed exactly where it was.
-2. **Commit 2 — org.** Create `useOrgSlice.ts` (two exports); wire `useOrgState` at ~L477 (right after
-   the currentUser block, **before** the `selectedBranch` derivation and prefs), `useOrgActions` at ~L918
-   (`setCart` is still provider state until commit 3). Remove blocks 382–451, 683–697, 918–1095,
-   1311–1325. The session slice (wired at ~1096) gets `verifySupervisorPin` from the `useOrgState`
-   destructure. Update `useCatalogSlice` dep (`selectedBranchId` ← orgState) and `useOrderSlice` deps
-   (`verifySupervisorPin`, `setSelectedCustomer`, `setCustomers`).
-3. **Commit 3 — cart.** Create `useCartSlice.ts` (state 842–848 + actions 1600–2083); move the session
-   wiring up to just after `useCatalogSlice` — required order in that block: **session → cart →
-   orgActions** (cart needs `currentSession`; `useOrgActions` needs `setCart`). `setExpiryBatches` is
-   still provider state here (inventory not yet extracted) — fine. Update `useOrderSlice` deps
-   (`taxApplied`, `setCart`, `setOrderDiscountType/Value/Reason`).
+2. **✅ Commit 2 — DONE (org).** Shipped `useOrgSlice.ts` with `useOrgState()` (zero deps) and
+   `useOrgActions(deps)`. Wired `useOrgState` right after the `currentUser` block and `useOrgActions`
+   **after** the session slice (not at the old action location — it needs `currentSession`). The session
+   slice, `useCatalogSlice` and `useOrderSlice` call sites needed **no** edits: their dep names resolve
+   from the `useOrgState` destructure. Dropped the now-unused `INITIAL_BRANCHES` / `INITIAL_CUSTOMERS`
+   imports from the provider.
+3. **Commit 3 — cart.** Create `useCartSlice.ts` (state 743–749 + actions 1196–1678). Wire it right
+   after the session wiring (~818–835) and **before** `useOrgActions` (888) — the required order is
+   session → cart → orgActions, and that ordering already holds after Commit 2, so the session wiring
+   does **not** need to move (the earlier draft of this doc said it did; it doesn't). Cart state and
+   actions are in scope for everything after, so `setCart` reaches `useOrgActions` and `useOrderSlice`
+   from the destructure. `setAsideOrders`/`setSetAsideOrders` state **stays in the provider** (751–762)
+   and is passed in. `setExpiryBatches` is still provider state here (inventory not yet extracted) —
+   fine. Update `useOrderSlice` deps (`taxApplied`, `setCart`, `setOrderDiscountType/Value/Reason`)
+   only if the names don't resolve from the destructure.
 4. **Commit 4 — inventory.** Create `useInventorySlice.ts`; insert its wiring **between session and
    cart** (cart needs `setExpiryBatches`). Update `useOrderSlice` dep (`setExpiryBatches`) and check
    `getStockHistory` + branch views still resolve via the same destructure names.
