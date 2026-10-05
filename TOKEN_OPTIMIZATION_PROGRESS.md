@@ -10,27 +10,31 @@ all Step 2 work so far is analysis/design, captured below so it does not have to
 
 | Plan step | Status | Commit |
 |---|---|---|
-| 1. De-duplicate seed data | ✅ DONE, verified, committed (not yet pushed) | `c0d2c43` |
-| 2. POSContext slice extraction (5 slices) | 🟡 **Commits 1–2/5 DONE** (session, org). Commits 3–5 pending | `c820b7c` |
+| 1. De-duplicate seed data | ✅ DONE, verified, committed, pushed | `c0d2c43` |
+| 2. POSContext slice extraction (5 slices) | ✅ **ALL 5 DONE** (session, org, cart, inventory, goods receiving) | `c34be0f` |
 | 3. Fix stale AGENTS.md | ⬜ not started | — |
 | 4. Prune unused dependencies | ⬜ not started | — |
-| 5. Final validation + push | ⬜ not started (Step 1 commit still local!) | — |
+| 5. Final validation + push | 🟡 everything pushed; final pass pending | — |
 
-**First task when resuming:** start **Step 2 Commit 3 (cart slice)** per the recipe below — the block
-ranges in the "Exact block ranges" table are current as of `c820b7c` (3,362 lines).
+**`src/context/POSContext.tsx` is now 1,879 lines** (was 3,765 at the start of Step 2) and holds only
+the context interface, auth state, a handful of cross-cutting derivations, the branch views and the
+`value={{…}}` object. Everything else lives in `src/context/slices/`.
 
-**Org slice shipped in Commit 2:** `src/context/slices/useOrgSlice.ts` (391 lines) with two exports.
-`useOrgState()` is wired at ~L434 right after the `currentUser` block and takes **zero deps**;
-`useOrgActions()` is wired at ~L902 **after** the session slice because `selectBranch` calls `setCart`
-and `toggleBranchStatus` reads `currentSession`. All 13 actions + `verifySupervisorPin` moved verbatim
-(verified line-by-line against the pre-commit file). `POSContext.tsx` 3,572 → 3,362 lines.
-Verified: `npm run lint` ✅, `npm run build` ✅, dev-server smoke ✅, interface (310 lines) and
-`value={{…}}` (129 lines) byte-identical, `handOffSession` byte-identical. `INITIAL_BRANCHES` and
-`INITIAL_CUSTOMERS` became unused in the provider and were dropped from its imports.
+**Final provider wiring order** (matters — the graph is acyclic only in this order):
+
+```
+usePreferencesSlice → useOrgState() → currentUser → useAuditSlice → useCatalogSlice
+  → useSessionSlice → useInventorySlice → useCartSlice → useOrgActions
+  → useGoodsReceivingSlice → useOrderSlice → useSupplierNotificationSlice
+```
+
+**Remaining work:** Steps 3–5 (fix the stale AGENTS.md `npm test` reference, prune unused deps, and a
+final `lint`/`build`/smoke pass). `scripts/tmp-compare-fixtures.ts` and `scripts/tmp-scan-deps.ts`
+have been deleted — the temporary analysis tooling is no longer needed.
 
 **Note on `npm test`:** AGENTS.md lists it, but `package.json` has **no `test` script** (only
 `dev`/`build`/`start`/`preview`/`clean`/`lint`). Treat `npm run lint` + `npm run build` as the gate;
-AGENTS.md should be corrected at some point.
+AGENTS.md should be corrected (that is Step 3).
 **Wiring gotcha:** the editor tool rewrites files with LF endings. After each commit run
 `git diff --stat`; if Git warns "LF will be replaced by CRLF", normalize the touched file back to CRLF
 (the repo is `core.autocrlf=true`, so committed content is unaffected either way).
