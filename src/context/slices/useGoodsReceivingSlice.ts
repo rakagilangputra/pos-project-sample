@@ -268,11 +268,12 @@ export function useGoodsReceivingSlice({
                 goodsReceiptNumber: receiptNumber,
                 receivedDate: receiptData.arrivalDate || now.toISOString().slice(0, 10),
                 unitCost: item.actualBuyPrice || item.buyPrice || 0,
-                // Type-only cast: `Product.ownershipType` is 'own'|'consignment'
-                // while `ProductExpiryBatch.ownershipType` is
-                // 'owned'|'consignment'. This mismatch pre-dates the slice
-                // extraction; the cast does not change the runtime value.
-                ownershipType: (prod.ownershipType as 'owned' | 'consignment') || (receiptData.receiptType === 'Konsinyasi' ? 'consignment' : 'owned'),
+                // `Product.ownershipType` is 'own'|'consignment' while
+                // `ProductExpiryBatch.ownershipType` is 'owned'|'consignment'.
+                // Normalize instead of casting, matching useOrderSlice. The
+                // `||` fallback is kept so a falsy product value still falls
+                // back to the receipt type.
+                ownershipType: (prod.ownershipType || (receiptData.receiptType === 'Konsinyasi' ? 'consignment' : 'owned')) === 'consignment' ? 'consignment' : 'owned',
                 supplierId: receiptData.supplierId,
                 supplierName: receiptData.supplierName,
                 category: prod.category,
@@ -303,8 +304,8 @@ export function useGoodsReceivingSlice({
             goodsReceiptNumber: receiptNumber,
             receivedDate: receiptData.arrivalDate || now.toISOString().slice(0, 10),
             unitCost: item.actualBuyPrice || item.buyPrice || 0,
-            // Type-only cast, see the note on the batch above.
-            ownershipType: (prod.ownershipType as 'owned' | 'consignment') || (receiptData.receiptType === 'Konsinyasi' ? 'consignment' : 'owned'),
+            // Normalize 'own' -> 'owned'; see the note on the batch above.
+            ownershipType: (prod.ownershipType || (receiptData.receiptType === 'Konsinyasi' ? 'consignment' : 'owned')) === 'consignment' ? 'consignment' : 'owned',
             supplierId: receiptData.supplierId,
             supplierName: receiptData.supplierName,
             category: prod.category,
