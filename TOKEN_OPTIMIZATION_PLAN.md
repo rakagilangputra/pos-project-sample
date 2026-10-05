@@ -1,6 +1,6 @@
 # Token-Usage Optimization Plan — `fix/revision-pos-input`
 
-**Status:** Step 1 ✅ done (`c0d2c43`); Step 2 🟡 fully designed, not yet coded; Steps 3–5 ⬜ not started — **continuation guide: `TOKEN_OPTIMIZATION_PROGRESS.md`** · **Branch:** `fix/revision-pos-input` · **Created:** 2026-04-10 · **Updated:** 2026-10-05
+**Status:** ✅ **ALL STEPS COMPLETE** — Step 1 `c0d2c43` · Step 2 `c34be0f` · ownership fix `52ab553` · Step 3 `d728269` · Step 4 `7230737` · **Branch:** `fix/revision-pos-input` · **Updated:** 2026-10-05
 
 ## Goal
 
@@ -50,11 +50,32 @@ Commit per step on `fix/revision-pos-input`, push to origin.
 - Splitting the 80–110 KB workspace components (Pesanan, Backoffice, GoodsReceiving, PurchasePlan).
 - Rewriting components from `usePOS()` → `useDomainHooks` (large diff, marginal token win).
 
-## Expected outcome
-- POSContext shrinks 40–60% in this pass.
-- ~74 KB of duplicated seed data removed from agent context.
-- AGENTS.md stops directing agents to a nonexistent test command.
-- Zero runtime/behavior changes.
+## Expected outcome — achieved
+- POSContext shrinks 40–60% in this pass → **achieved: 3,765 → 1,879 lines (50% smaller)**.
+- ~74 KB of duplicated seed data removed from agent context → **achieved**: `mockData.ts` 2,281 → 91 lines,
+  21 exports re-exported from `src/data/fixtures/`.
+- AGENTS.md stops directing agents to a nonexistent test command → **achieved** (`d728269`).
+- Zero runtime/behavior changes → **achieved**, with one deliberate correctness fix (below).
+
+## Delivered
+
+| Step | Result | Commit |
+|---|---|---|
+| 1 — De-duplicate seed data | `mockData.ts` 2,281 → 91 lines | `c0d2c43` |
+| 2 — POSContext slice extraction | 5 slices; provider 3,765 → 1,879 lines | `369b6e5` … `c34be0f` |
+| fix — ownership `'own'` vs `'owned'` | goods-receiving normalized; casts deleted | `52ab553` |
+| 3 — Fix stale AGENTS.md | real gate documented; no test suite claimed | `d728269` |
+| 4 — Prune unused deps | 7 removed (50 packages); vite/`@types` re-homed | `7230737` |
+| 5 — Final validation | lint, build, dev smoke, byte-identical invariants | — |
+
+### The one behavior change
+
+`submitGoodsReceipt` wrote `prod.ownershipType` (`'own'`) straight into
+`ProductExpiryBatch.ownershipType`, which is declared `'owned'`. Both vocabularies ended up in
+the same persisted collection. Now normalized to `'owned'`, matching the convention already used
+by `useOrderSlice` and the 13 `INITIAL_EXPIRY_BATCHES` fixtures. Verified across all 8 input
+combinations: only `'own'` → `'owned'` changes; the `||` receipt-type fallback is preserved.
+No read site consumes the field, so no UI changes and no migration is needed.
 
 ## Notes for the executing agent
 - Standing branch is `fix/revision-pos-input` (see AGENTS.md) — do NOT create a new branch.

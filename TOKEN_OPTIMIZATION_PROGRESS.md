@@ -12,9 +12,23 @@ all Step 2 work so far is analysis/design, captured below so it does not have to
 |---|---|---|
 | 1. De-duplicate seed data | ✅ DONE, verified, committed, pushed | `c0d2c43` |
 | 2. POSContext slice extraction (5 slices) | ✅ **ALL 5 DONE** (session, org, cart, inventory, goods receiving) | `c34be0f` |
-| 3. Fix stale AGENTS.md | ⬜ not started | — |
-| 4. Prune unused dependencies | ⬜ not started | — |
-| 5. Final validation + push | 🟡 everything pushed; final pass pending | — |
+| fix. Ownership `'own'` vs `'owned'` | ✅ normalized; the two type-only casts deleted | `52ab553` |
+| 3. Fix stale AGENTS.md | ✅ DONE — real gate documented | `d728269` |
+| 4. Prune unused dependencies | ✅ DONE — 7 deps removed (50 packages) | `7230737` |
+| 5. Final validation + push | ✅ DONE — lint, build, dev smoke, invariants | — |
+
+**Nothing is outstanding. This plan is fully executed.**
+
+### Final validation (Step 5)
+- `npm run lint` ✅ clean · `npm run build` ✅ (4.0 s) · dev smoke ✅ (6/6 routes 200)
+- `POSContextType` (310 lines) and `value={{…}}` (129 lines) **byte-identical to baseline `2bfc6ab`**
+- Ownership fix confirmed in the shipped 1 MB bundle: 0 erased casts remain
+- `package-lock.json` gitignored — `main` deleted it deliberately in `856e275`, so re-adding a
+  regenerated 3,825-line lockfile would override that decision.
+
+**Standing caveat:** with no test suite in this repo, "no behavior change" rests on the
+byte-identical diffs, the 8-case truth table for the ownership normalization, and type-check +
+build + module-load smoke — not on automated assertions.
 
 **`src/context/POSContext.tsx` is now 1,879 lines** (was 3,765 at the start of Step 2) and holds only
 the context interface, auth state, a handful of cross-cutting derivations, the branch views and the
@@ -28,13 +42,12 @@ usePreferencesSlice → useOrgState() → currentUser → useAuditSlice → useC
   → useGoodsReceivingSlice → useOrderSlice → useSupplierNotificationSlice
 ```
 
-**Remaining work:** Steps 3–5 (fix the stale AGENTS.md `npm test` reference, prune unused deps, and a
-final `lint`/`build`/smoke pass). `scripts/tmp-compare-fixtures.ts` and `scripts/tmp-scan-deps.ts`
-have been deleted — the temporary analysis tooling is no longer needed.
+**Steps 3–5 are now done too** — AGENTS.md documents the real gate, 7 unused dependencies are
+pruned, and the final `lint`/`build`/smoke pass is green. `scripts/tmp-compare-fixtures.ts` and
+`scripts/tmp-scan-deps.ts` were deleted earlier (`f1dd658`) — the temporary analysis tooling is gone.
 
-**Note on `npm test`:** AGENTS.md lists it, but `package.json` has **no `test` script** (only
-`dev`/`build`/`start`/`preview`/`clean`/`lint`). Treat `npm run lint` + `npm run build` as the gate;
-AGENTS.md should be corrected (that is Step 3).
+**Note on `npm test`:** this is now settled — `package.json` has **no `test` script** (only
+`dev`/`build`/`start`/`preview`/`clean`/`lint`). AGENTS.md no longer references one (`d728269`).
 **Wiring gotcha:** the editor tool rewrites files with LF endings. After each commit run
 `git diff --stat`; if Git warns "LF will be replaced by CRLF", normalize the touched file back to CRLF
 (the repo is `core.autocrlf=true`, so committed content is unaffected either way).
