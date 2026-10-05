@@ -11,13 +11,25 @@ all Step 2 work so far is analysis/design, captured below so it does not have to
 | Plan step | Status | Commit |
 |---|---|---|
 | 1. De-duplicate seed data | ✅ DONE, verified, committed (not yet pushed) | `c0d2c43` |
-| 2. POSContext slice extraction (5 slices) | 🟡 DESIGNED in full — **zero code written yet** | — |
+| 2. POSContext slice extraction (5 slices) | 🟡 **Commit 1/5 DONE** (session slice). Commits 2–5 pending | session slice commit |
 | 3. Fix stale AGENTS.md | ⬜ not started | — |
 | 4. Prune unused dependencies | ⬜ not started | — |
 | 5. Final validation + push | ⬜ not started (Step 1 commit still local!) | — |
 
-**First task when resuming:** `git push origin fix/revision-pos-input` (commit `c0d2c43` is local only),
-then start Step 2 Commit 1 per the recipe below.
+**First task when resuming:** start **Step 2 Commit 2 (org slice)** per the recipe below — the block
+ranges in the "Exact block ranges" table have been refreshed for the post-Commit-1 tree (3,572 lines).
+
+**Session slice shipped in Commit 1:** `src/context/slices/useSessionSlice.ts` (255 lines) owns
+`currentSession`, `closedSessions`, `openSession`, `correctOpeningCash`, `closeSession`,
+`openSupportSessionCorrection`. `POSContext.tsx` 3,765 → 3,572 lines (−193). Verified: `npm run lint`,
+`npm run build`, dev-server smoke (`/api/health` 200, `/src/main.tsx` transpiles), and `git diff -U0`
+shows only 4 hunks — the `POSContextType` interface and the `value={{…}}` literal are untouched.
+Two things to know: `handOffSession` stayed in the provider as planned, and the `useOrderSlice` call
+site needed **no** edit (it already passed `currentSession`/`setCurrentSession`; the values now just
+flow from the destructure — an earlier draft of this doc implied otherwise).
+**Wiring gotcha:** the editor tool rewrites files with LF endings. After each commit run
+`git diff --stat`; if Git warns "LF will be replaced by CRLF", normalize the touched file back to CRLF
+(the repo is `core.autocrlf=true`, so committed content is unaffected either way).
 
 ## Verification commands (Windows)
 
@@ -87,6 +99,9 @@ consumed by `useAuditSlice`/`useCatalogSlice` before any new slice exists.
 
 ### Final provider wiring order (target state after all 5 commits)
 
+> Numbered with **pre-Commit-1** line numbers (3,765-line file) — it is a *structural* map of what
+> moves/stays. Use the refreshed range table above for exact current line numbers.
+
 ```
 1  imports + interface (lines 68–380)            — UNCHANGED
 2  [org state block L382–451]                    — REMOVED → useOrgState()
@@ -132,15 +147,19 @@ prov.orders(864)/setActiveReceiptOrder(898)/setCommissionLedger(618)/setProducts
 orgActions←{session.currentSession, cart.setCart, orgState, addAudit}; gr←{inventory, catalog.rawMaterials,
 orgState.branches, prov.products/suppliers, setStockAdjustments}.
 
-### Exact block ranges (verified against current HEAD — before any Step 2 edits)
+### Exact block ranges — **refreshed for the post-Commit-1 tree (3,572 lines)**
 
 | Slice file | Blocks to move (line ranges, inclusive) | Provider keeps from that area |
 |---|---|---|
-| `useSessionSlice.ts` | state **485–531**; actions **1096–1158** + **1207–1310** | `handOffSession` **1159–1206** |
-| `useOrgSlice.ts` | `useOrgState`: **382–451** + **683–697** + `verifySupervisorPin` **1085–1095**; `useOrgActions`: **918–1084** + **1311–1325** | currentUser **452–476**, derived **478–480** |
-| `useCartSlice.ts` | state **842–848**; actions **1600–2083** (incl. hold/resume/cancelHold + completeOrder) | `setAsideOrders` **850–861** |
-| `useInventorySlice.ts` | state **762–841**; actions **3154–3464** (create/receive transfer, bad stock, destroyExpiredBatches) | categoryClosings state/actions; `getStockHistory` **3465–3582** |
-| `useGoodsReceivingSlice.ts` | state **698–745**; actions **2384–3053** (submitGoodsReceipt + all purchase-plan fns) | `updateProductInfo`, category-closing fns |
+| `useSessionSlice.ts` | ✅ **DONE in Commit 1** — state 485–531, actions 1096–1158 + 1207–1310 (old numbering) | `handOffSession` 1159–1206 (old numbering) |
+| `useOrgSlice.ts` | `useOrgState`: **383–451** + **640–653** + `verifySupervisorPin` **1042–1051**; `useOrgActions`: **875–1040** + **1118–1131** | currentUser **453–477**, derived **479–481**, session wiring **1053–1067** |
+| `useCartSlice.ts` | state **799–805**; actions **1407–1889** (incl. hold/resume/cancelHold + completeOrder) | `setAsideOrders` **807–818** |
+| `useInventorySlice.ts` | state **719–797**; actions **2961–3270** (create/receive transfer, bad stock, destroyExpiredBatches) | categoryClosings state **703–717** + its actions; `getStockHistory` and the supplier-notification wiring stay |
+| `useGoodsReceivingSlice.ts` | state **655–702**; actions **2191–2859** (submitGoodsReceipt + all purchase-plan fns) | `updateProductInfo` (2861+) and category-closing actions stay |
+
+Re-verify each range before splicing (`git` moves lines after every commit) — the fastest way is the
+same line-range splice used in Commit 1: print the first/last line of each range and confirm it is the
+expected comment / closing `};` before writing the slice file.
 
 ### Dependency scan results (from `scripts/tmp-scan-deps.ts`, pre-refactor line numbers)
 
@@ -167,11 +186,11 @@ orgState.branches, prov.products/suppliers, setStockAdjustments}.
 
 ### Commit recipe (plan order, one commit each, `npm run lint` after each)
 
-1. **Commit 1 — session.** Create `useSessionSlice.ts`; remove blocks 485–531, 1096–1158, 1207–1310;
-   wire it where the actions were (~old L1096 — must come after `verifySupervisorPin`, still in the
-   provider at L1085 until commit 2). Return `currentSession, setCurrentSession, closedSessions,
-   openSession, correctOpeningCash, closeSession, openSupportSessionCorrection`. Update `useOrderSlice`
-   deps (`currentSession`, `setCurrentSession`). `handOffSession` stays exactly where it is.
+1. **✅ Commit 1 — DONE (session).** Shipped `useSessionSlice.ts`; removed blocks 485–531, 1096–1158,
+   1207–1310 (old numbering) and wired the slice at old ~L1096, i.e. right after `verifySupervisorPin`.
+   Returns `currentSession, setCurrentSession, closedSessions, openSession, correctOpeningCash,
+   closeSession, openSupportSessionCorrection`; `setClosedSessions` stays internal to the slice.
+   `useOrderSlice` needed **no** call-site change. `handOffSession` stayed exactly where it was.
 2. **Commit 2 — org.** Create `useOrgSlice.ts` (two exports); wire `useOrgState` at ~L477 (right after
    the currentUser block, **before** the `selectedBranch` derivation and prefs), `useOrgActions` at ~L918
    (`setCart` is still provider state until commit 3). Remove blocks 382–451, 683–697, 918–1095,
