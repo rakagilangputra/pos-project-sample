@@ -29,7 +29,15 @@ Run these before considering any change complete:
 ```sh
 npm run lint    # tsc --noEmit — type check
 npm run build   # vite build
-npm test        # jsdom render tests (vitest)
+```
+
+There is **no test suite** — `package.json` has no `test` script and no
+vitest/jsdom config exists, so `npm run lint` + `npm run build` are the
+full verification gate. For changes that touch the dev server or wiring,
+also smoke-test it:
+
+```sh
+npm.cmd run dev   # tsx server.ts -> http://localhost:3000
 ```
 
 For UI/chrome changes (tab bar, badges, header), assert the rendered text
@@ -52,6 +60,14 @@ npm run dev     # -> http://localhost:3000
 - A stale `node.exe` early in `PATH` (nvm/Volta leftovers) will shadow the real
   Node. Check `Get-Command node` before debugging anything else.
 - Admin login for manager-only tabs: user `usr-4`, PIN `9999`.
+
+## Declared but unused dependencies
+
+`@google/genai`, `dotenv`, `motion`, `esbuild`, `autoprefixer`, `jsdom` and
+`@types/jsdom` are declared in `package.json` but are **not imported anywhere**
+in `src/`, `server.ts` or `vite.config.ts`. There is no `postcss.config.*` (Tailwind
+v4 runs through `@tailwindcss/vite`), so `autoprefixer` is inert. Don't wire them
+up casually — add the import and the dep in the same change, or leave them out.
 
 ## Working copy
 

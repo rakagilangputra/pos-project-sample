@@ -27,20 +27,15 @@ import {
   NotificationDeliveryResult,
   NotificationAttemptType,
   PurchasePlan,
-  PurchasePlanProductLine,
-  PurchasePlanStatus,
   PurchasePlanItemType,
   MasterCategory,
   MasterCategoryType,
   RawMaterial,
   ProductExpiryBatch,
-  GoodsReceiptItemBatch,
   ProductExpiryType,
 } from '../types';
 import {
-  INITIAL_BRANCHES,
   INITIAL_USERS,
-  INITIAL_CUSTOMERS,
   DEFAULT_WALKIN_CUSTOMER,
   INITIAL_PRODUCTS,
   INITIAL_CATEGORIES,
@@ -48,19 +43,21 @@ import {
   INITIAL_COMMISSION_LEDGER,
   INITIAL_SETTLEMENT_CYCLES,
   INITIAL_ORDERS,
-  STORE_INFO,
-  INITIAL_GOODS_RECEIPTS,
-  INITIAL_STOCK_TRANSFERS,
-  INITIAL_BAD_STOCKS,
   INITIAL_CATEGORY_CLOSINGS,
-  INITIAL_SUPPLIER_NOTIFICATION_BATCHES,
-  INITIAL_SUPPLIER_DELIVERY_LOGS,
-  INITIAL_PURCHASE_PLANS,
   INITIAL_MASTER_CATEGORIES,
   INITIAL_RAW_MATERIALS,
-  INITIAL_EXPIRY_BATCHES,
 } from '../data/mockData';
-import { generateReceiptNumber, generatePONumber, posSound } from '../utils/formatters';
+import { posSound } from '../utils/formatters';
+import { usePreferencesSlice } from './slices/usePreferencesSlice';
+import { useCatalogSlice } from './slices/useCatalogSlice';
+import { useAuditSlice } from './slices/useAuditSlice';
+import { useSupplierNotificationSlice } from './slices/useSupplierNotificationSlice';
+import { useOrderSlice } from './slices/useOrderSlice';
+import { useSessionSlice } from './slices/useSessionSlice';
+import { useOrgActions, useOrgState } from './slices/useOrgSlice';
+import { useCartSlice } from './slices/useCartSlice';
+import { useInventorySlice } from './slices/useInventorySlice';
+import { useGoodsReceivingSlice } from './slices/useGoodsReceivingSlice';
 
 interface POSContextType {
   // Store Branches & Multi-Branch Management
@@ -376,75 +373,9 @@ interface POSContextType {
 const POSContext = createContext<POSContextType | undefined>(undefined);
 
 export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Multi-Branch State & Store Management
-  const [branches, setBranches] = useState<StoreBranch[]>(() => {
-    const saved = localStorage.getItem("pos_branches");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch {}
-    }
-    return INITIAL_BRANCHES;
-  });
-
-  useEffect(() => {
-    localStorage.setItem("pos_branches", JSON.stringify(branches));
-  }, [branches]);
-
-  const [users, setUsers] = useState<User[]>(() => {
-    const saved = localStorage.getItem("pos_users");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const userMap = new Map<string, User>();
-          INITIAL_USERS.forEach((u) => userMap.set(u.id, u));
-          parsed.forEach((u: User) => {
-            if (u && u.id) {
-              userMap.set(u.id, {
-                ...u,
-                assignedBranchIds:
-                  Array.isArray(u.assignedBranchIds) && u.assignedBranchIds.length > 0
-                    ? u.assignedBranchIds
-                    : u.role === 'admin'
-                    ? ['branch-senopati', 'branch-kemang', 'branch-bintaro']
-                    : ['branch-senopati'],
-              });
-            }
-          });
-          const list = Array.from(userMap.values());
-          if (!list.some((u) => u.role === 'admin')) {
-            const adminUser = INITIAL_USERS.find((u) => u.role === 'admin');
-            if (adminUser) list.push(adminUser);
-          }
-          return list;
-        }
-      } catch {}
-    }
-    return INITIAL_USERS;
-  });
-
-  useEffect(() => {
-    localStorage.setItem("pos_users", JSON.stringify(users));
-  }, [users]);
-
-  const [selectedBranchId, setSelectedBranchId] = useState<string>(() => {
-    const saved = localStorage.getItem("pos_selected_branch_id");
-    if (saved && saved.startsWith("branch-")) return saved;
-    return "branch-senopati";
-  });
-
-  useEffect(() => {
-    localStorage.setItem("pos_selected_branch_id", selectedBranchId);
-  }, [selectedBranchId]);
-
-  const [isStoreSelectionModalOpen, setIsStoreSelectionModalOpen] = useState<boolean>(false);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
-  const [confirmSwitchStore, setConfirmSwitchStore] = useState<{ isOpen: boolean; targetBranchId: string | null }>({
-    isOpen: false,
-    targetBranchId: null,
-  });
+  // Multi-Branch State & Store Management, the customer list and the
+  // supervisor PIN check are extracted to src/context/slices/useOrgSlice.ts
+  // (useOrgState wired in just below, useOrgActions further down).
 
   // Users & Auth
   const [currentUser, setCurrentUser] = useState<User>(() => {
@@ -472,131 +403,41 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     localStorage.setItem('pos_current_user', JSON.stringify(currentUser));
   }, [currentUser]);
 
+  // Branches, users, selected branch, switch-guard flags, customers and
+  // verifySupervisorPin — extracted to src/context/slices/useOrgSlice.ts.
+  // Wired here (zero dependencies) so every later slice can read org state.
+  const {
+    branches,
+    setBranches,
+    users,
+    setUsers,
+    selectedBranchId,
+    setSelectedBranchId,
+    isStoreSelectionModalOpen,
+    setIsStoreSelectionModalOpen,
+    hasUnsavedChanges,
+    setHasUnsavedChanges,
+    confirmSwitchStore,
+    setConfirmSwitchStore,
+    customers,
+    setCustomers,
+    selectedCustomer,
+    setSelectedCustomer,
+    verifySupervisorPin,
+  } = useOrgState();
+
   const selectedBranch = branches.find((b) => b.id === selectedBranchId) || branches[0];
   // Superadmin has full operational access across all stores; other roles follow branch active/inactive status
   const isBranchReadOnly = currentUser?.role === 'admin' ? false : (selectedBranch?.status === "inactive");
 
-  // Locale & Sound
-  const [lang, setLang] = useState<'id' | 'en'>(() => {
-    return (localStorage.getItem('pos_lang') as 'id' | 'en') || 'id';
-  });
-  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
-    return localStorage.getItem('pos_sound') !== 'false';
-  });
+  // Locale & Sound — extracted to slice (src/context/slices/usePreferencesSlice.ts)
+  const { lang, setLang, soundEnabled, setSoundEnabled } = usePreferencesSlice();
 
-  useEffect(() => {
-    localStorage.setItem('pos_lang', lang);
-  }, [lang]);
+  // Cashier Session state + open/close/correct/support actions — extracted to
+  // src/context/slices/useSessionSlice.ts (wired in after verifySupervisorPin below).
 
-  useEffect(() => {
-    localStorage.setItem('pos_sound', String(soundEnabled));
-    posSound.enabled = soundEnabled;
-  }, [soundEnabled]);
-
-  // Cashier Session
-  const [currentSession, setCurrentSession] = useState<CashierSession | null>(() => {
-    const saved = localStorage.getItem('pos_current_session');
-    if (saved) {
-      try { return JSON.parse(saved); } catch {}
-    }
-    // Pre-create an initial active session for instant cashier demo readiness!
-    const initialSession: CashierSession = {
-      id: 'SES-' + Date.now().toString().slice(-6),
-      cashierId: INITIAL_USERS[0].id,
-      cashierName: INITIAL_USERS[0].name,
-      startTime: new Date().toISOString(),
-      openingCash: 200000, // Rp 200.000 starting cash drawer
-      expectedCash: 200000,
-      status: 'active',
-      totalTransactions: 0,
-      totalSales: 0,
-      cashSales: 0,
-      qrisSales: 0,
-      depositSales: 0,
-      totalRefunds: 0,
-      totalDiscounts: 0,
-      handOffHistory: [],
-    };
-    return initialSession;
-  });
-
-  const [closedSessions, setClosedSessions] = useState<CashierSession[]>(() => {
-    const saved = localStorage.getItem('pos_closed_sessions');
-    if (saved) {
-      try { return JSON.parse(saved); } catch {}
-    }
-    return [];
-  });
-
-  useEffect(() => {
-    if (currentSession) {
-      localStorage.setItem('pos_current_session', JSON.stringify(currentSession));
-    } else {
-      localStorage.removeItem('pos_current_session');
-    }
-  }, [currentSession]);
-
-  useEffect(() => {
-    localStorage.setItem('pos_closed_sessions', JSON.stringify(closedSessions));
-  }, [closedSessions]);
-
-  // Category Master (POS-US-028)
-  const [categories, setCategories] = useState<ProductCategoryItem[]>(() => {
-    const saved = localStorage.getItem('pos_categories');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const seen = new Set<string>();
-          const result: ProductCategoryItem[] = [];
-          for (const item of parsed) {
-            if (item && item.id && !seen.has(item.id)) {
-              seen.add(item.id);
-              result.push(item);
-            }
-          }
-          return result;
-        }
-      } catch {}
-    }
-    return INITIAL_CATEGORIES;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('pos_categories', JSON.stringify(categories));
-  }, [categories]);
-
-  // Master Kategori - Central Category Master (POS-HQ)
-  const [masterCategories, setMasterCategories] = useState<MasterCategory[]>(() => {
-    const saved = localStorage.getItem('pos_master_categories');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch {}
-    }
-    return INITIAL_MASTER_CATEGORIES;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('pos_master_categories', JSON.stringify(masterCategories));
-  }, [masterCategories]);
-
-  // Raw Materials Master (Bahan Baku)
-  const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>(() => {
-    const saved = localStorage.getItem('pos_raw_materials');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch {}
-    }
-    return INITIAL_RAW_MATERIALS;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('pos_raw_materials', JSON.stringify(rawMaterials));
-  }, [rawMaterials]);
+  // Category Master, Master Kategori & Raw Materials state + persistence are
+  // extracted to src/context/slices/useCatalogSlice.ts (wired in after addAudit below).
 
   // Catalog & Products (POS-US-029)
   const [products, setProducts] = useState<Product[]>(() => {
@@ -746,68 +587,11 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     localStorage.setItem('pos_settlement_cycles', JSON.stringify(settlementCycles));
   }, [settlementCycles]);
 
-  // Customers
-  const [customers, setCustomers] = useState<Customer[]>(() => {
-    const saved = localStorage.getItem('pos_customers');
-    if (saved) {
-      try { return JSON.parse(saved); } catch {}
-    }
-    return INITIAL_CUSTOMERS;
-  });
+  // Customers (list + selected customer) — extracted to
+  // src/context/slices/useOrgSlice.ts (useOrgState above).
 
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer>(DEFAULT_WALKIN_CUSTOMER);
-
-  useEffect(() => {
-    localStorage.setItem('pos_customers', JSON.stringify(customers));
-  }, [customers]);
-
-  // Purchase & Receiving (POS-US-059, POS-US-060, POS-US-061, POS-US-062)
-  const [goodsReceipts, setGoodsReceipts] = useState<GoodsReceiptRecord[]>(() => {
-    const saved = localStorage.getItem('pos_goods_receipts');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch {}
-    }
-    return INITIAL_GOODS_RECEIPTS;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('pos_goods_receipts', JSON.stringify(goodsReceipts));
-  }, [goodsReceipts]);
-
-  const [receivingDraft, setReceivingDraft] = useState<ReceivingDraft | null>(() => {
-    const saved = localStorage.getItem('pos_receiving_draft');
-    if (saved) {
-      try { return JSON.parse(saved); } catch {}
-    }
-    return null;
-  });
-
-  useEffect(() => {
-    if (receivingDraft) {
-      localStorage.setItem('pos_receiving_draft', JSON.stringify(receivingDraft));
-    } else {
-      localStorage.removeItem('pos_receiving_draft');
-    }
-  }, [receivingDraft]);
-
-  // POS-US-073, POS-US-074, POS-US-075: Rencana Pembelian (Owned Purchases Only)
-  const [purchasePlans, setPurchasePlans] = useState<PurchasePlan[]>(() => {
-    const saved = localStorage.getItem('pos_purchase_plans_v1');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch {}
-    }
-    return INITIAL_PURCHASE_PLANS;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('pos_purchase_plans_v1', JSON.stringify(purchasePlans));
-  }, [purchasePlans]);
+  // Goods receipts, receiving draft and purchase-plan state — extracted to
+  // src/context/slices/useGoodsReceivingSlice.ts (wired in after useOrgActions).
 
   // POS-US-069: Category Daily Closings
   const [categoryClosings, setCategoryClosings] = useState<CategoryClosingSession[]>(() => {
@@ -825,93 +609,11 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     localStorage.setItem('pos_category_closings', JSON.stringify(categoryClosings));
   }, [categoryClosings]);
 
-  // Expiry Batches Tracking (FEFO & Daily Closing Expiry Reconciliation)
-  const [expiryBatches, setExpiryBatches] = useState<ProductExpiryBatch[]>(() => {
-    const saved = localStorage.getItem('pos_expiry_batches');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const initMap = new Map<string, ProductExpiryBatch>();
-          for (const init of INITIAL_EXPIRY_BATCHES) {
-            initMap.set(init.id, init);
-          }
-          const seen = new Set<string>();
-          const result: ProductExpiryBatch[] = [];
-          for (const b of parsed) {
-            if (b && b.id && !seen.has(b.id)) {
-              seen.add(b.id);
-              const init = initMap.get(b.id);
-              if (init) {
-                result.push({
-                  ...init,
-                  remainingQuantity: b.status === 'destroyed' ? b.remainingQuantity : (b.remainingQuantity ?? init.remainingQuantity),
-                  status: b.status || init.status,
-                });
-              } else {
-                result.push(b);
-              }
-            }
-          }
-          // Ensure all initial demo batches (daily & multi_day) are present
-          for (const init of INITIAL_EXPIRY_BATCHES) {
-            if (!seen.has(init.id)) {
-              seen.add(init.id);
-              result.push(init);
-            }
-          }
-          return result;
-        }
-      } catch (e) {
-        console.error('Failed to parse pos_expiry_batches', e);
-      }
-    }
-    return INITIAL_EXPIRY_BATCHES;
-  });
+  // Expiry batches, stock transfers and bad-stock state — extracted to
+  // src/context/slices/useInventorySlice.ts (wired in after the session slice below).
 
-  useEffect(() => {
-    localStorage.setItem('pos_expiry_batches', JSON.stringify(expiryBatches));
-  }, [expiryBatches]);
-
-  // POS-US-070: Stock Transfers
-  const [stockTransfers, setStockTransfers] = useState<StockTransferRecord[]>(() => {
-    const saved = localStorage.getItem('pos_stock_transfers');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch {}
-    }
-    return INITIAL_STOCK_TRANSFERS;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('pos_stock_transfers', JSON.stringify(stockTransfers));
-  }, [stockTransfers]);
-
-  // POS-US-071: Bad Stock Records
-  const [badStocks, setBadStocks] = useState<BadStockRecord[]>(() => {
-    const saved = localStorage.getItem('pos_bad_stocks');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch {}
-    }
-    return INITIAL_BAD_STOCKS;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('pos_bad_stocks', JSON.stringify(badStocks));
-  }, [badStocks]);
-
-  // Cart State
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [taxApplied, setTaxApplied] = useState<boolean>(true); // 11% PPN on by default
-  const [orderDiscountType, setOrderDiscountType] = useState<'percent' | 'fixed' | null>(null);
-  const [orderDiscountValue, setOrderDiscountValue] = useState<number>(0);
-  const [orderDiscountReason, setOrderDiscountReason] = useState<string>('');
-  const [orderDiscountApprovedBy, setOrderDiscountApprovedBy] = useState<string | undefined>(undefined);
+  // Cart state (cart, taxApplied, order-level discount fields) — extracted to
+  // src/context/slices/useCartSlice.ts (wired in after the session slice below).
 
   // Set-aside orders
   const [setAsideOrders, setSetAsideOrders] = useState<SetAsideOrder[]>(() => {
@@ -958,376 +660,126 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     localStorage.setItem('pos_orders', JSON.stringify(orders));
   }, [orders]);
 
-  // POS-US-059 to POS-US-063: Supplier Notification Batches & Delivery Logs
-  const [supplierNotificationBatches, setSupplierNotificationBatches] = useState<SupplierNotificationBatch[]>(() => {
-    const saved = localStorage.getItem('pos_supplier_batches');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const seen = new Set<string>();
-          const list: SupplierNotificationBatch[] = [];
-          for (const b of parsed) {
-            if (b && b.id) {
-              seen.add(b.id);
-              list.push(b);
-            }
-          }
-          for (const init of INITIAL_SUPPLIER_NOTIFICATION_BATCHES) {
-            if (!seen.has(init.id)) {
-              seen.add(init.id);
-              list.push(init);
-            }
-          }
-          return list;
-        }
-      } catch {}
-    }
-    return INITIAL_SUPPLIER_NOTIFICATION_BATCHES;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('pos_supplier_batches', JSON.stringify(supplierNotificationBatches));
-  }, [supplierNotificationBatches]);
-
-  const [supplierDeliveryLogs, setSupplierDeliveryLogs] = useState<SupplierDeliveryLogEntry[]>(() => {
-    const saved = localStorage.getItem('pos_supplier_delivery_logs');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const seen = new Set<string>();
-          const list: SupplierDeliveryLogEntry[] = [];
-          for (const l of parsed) {
-            if (l && l.id) {
-              seen.add(l.id);
-              list.push(l);
-            }
-          }
-          for (const init of INITIAL_SUPPLIER_DELIVERY_LOGS) {
-            if (!seen.has(init.id)) {
-              seen.add(init.id);
-              list.push(init);
-            }
-          }
-          return list;
-        }
-      } catch {}
-    }
-    return INITIAL_SUPPLIER_DELIVERY_LOGS;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('pos_supplier_delivery_logs', JSON.stringify(supplierDeliveryLogs));
-  }, [supplierDeliveryLogs]);
-
-  // Audits & Adjustments
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
-    const saved = localStorage.getItem('pos_audit_logs');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          const seenIds = new Set<string>();
-          return parsed.map((item: AuditLog, index: number) => {
-            if (!item.id || seenIds.has(item.id)) {
-              const uniqueId = `AUD-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`;
-              seenIds.add(uniqueId);
-              return { ...item, id: uniqueId };
-            }
-            seenIds.add(item.id);
-            return item;
-          });
-        }
-      } catch {}
-    }
-    return [];
-  });
-
-  const [stockAdjustments, setStockAdjustments] = useState<StockAdjustmentRecord[]>(() => {
-    const saved = localStorage.getItem('pos_stock_adjustments');
-    if (saved) {
-      try { return JSON.parse(saved); } catch {}
-    }
-    return [];
-  });
-
-  useEffect(() => {
-    localStorage.setItem('pos_audit_logs', JSON.stringify(auditLogs));
-  }, [auditLogs]);
-
-  useEffect(() => {
-    localStorage.setItem('pos_stock_adjustments', JSON.stringify(stockAdjustments));
-  }, [stockAdjustments]);
+  // Audit log & stock adjustments state — extracted to src/context/slices/useAuditSlice.ts
 
   // Receipt Modal State
   const [activeReceiptOrder, setActiveReceiptOrder] = useState<Order | null>(null);
 
-  // Helper to log an audit event
-  const addAudit = (
-    action: string,
-    entityType: AuditLog['entityType'],
-    entityId: string,
-    details: string,
-    beforeValue?: string,
-    afterValue?: string
-  ) => {
-    const entry: AuditLog = {
-      id: `AUD-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      timestamp: new Date().toISOString(),
-      actorId: currentUser.id,
-      actorName: currentUser.name,
-      actorRole: currentUser.role,
-      action,
-      entityType,
-      entityId,
-      details,
-      beforeValue,
-      afterValue,
-    };
-    setAuditLogs((prev) => [entry, ...prev]);
-  };
+  // Audit log, stock adjustments & the shared addAudit logger — extracted to slice
+  const { auditLogs, stockAdjustments, setStockAdjustments, addAudit } = useAuditSlice({ currentUser });
 
-  // Switch User / Cashier Login (POS-US-004, POS-US-023)
-  const switchUser = (userId: string, pin: string) => {
-    const target = users.find((u) => u.id === userId);
-    if (!target) {
-      posSound.error();
-      return { success: false, message: "Pengguna tidak ditemukan" };
-    }
-    if (target.pin !== pin) {
-      posSound.error();
-      return { success: false, message: "PIN Salah. Silakan coba lagi." };
-    }
-    setCurrentUser(target);
-    posSound.beep();
-    addAudit("LOGIN_SWITCH", "user", target.id, `Pengguna berganti ke ${target.name} (${target.role})`);
+  // Catalog master data (categories, master categories, raw materials) — extracted to slice
+  const {
+    categories,
+    masterCategories,
+    rawMaterials,
+    setRawMaterials,
+    addCategory,
+    addMasterCategory,
+    updateMasterCategory,
+    deleteMasterCategory,
+    addRawMaterial,
+    updateRawMaterial,
+    deleteRawMaterial,
+  } = useCatalogSlice({ selectedBranchId, currentUserName: currentUser.name, addAudit });
 
-    if (target.role === "cashier") {
-      const cashierBranch = (target.assignedBranchIds && target.assignedBranchIds[0]) || "branch-senopati";
-      setSelectedBranchId(cashierBranch);
-      setIsStoreSelectionModalOpen(false);
-    } else {
-      setIsStoreSelectionModalOpen(true);
-    }
+  // User login/switching, branch selection + CRUD/status, user CRUD/status and
+  // customer creation — extracted to src/context/slices/useOrgSlice.ts.
+  // The org state comes from useOrgState above; these actions are wired below
+  // the session slice because selectBranch clears the cart and
+  // toggleBranchStatus reads the active session.
+  // Cashier Session actions — extracted to src/context/slices/useSessionSlice.ts
+  const {
+    currentSession,
+    setCurrentSession,
+    closedSessions,
+    openSession,
+    correctOpeningCash,
+    closeSession,
+    openSupportSessionCorrection,
+  } = useSessionSlice({
+    currentUser,
+    setAsideOrders,
+    addAudit,
+    verifySupervisorPin,
+  });
+  // Expiry batches, stock transfers and bad stock (state + actions) — extracted to
+  // src/context/slices/useInventorySlice.ts (wired in below, before the cart slice,
+  // which consumes setExpiryBatches).
+  const {
+    expiryBatches,
+    setExpiryBatches,
+    stockTransfers,
+    badStocks,
+    createStockTransfer,
+    receiveStockTransfer,
+    recordBadStock,
+    destroyExpiredBatches,
+  } = useInventorySlice({
+    branches,
+    selectedBranchId,
+    selectedBranch,
+    currentUser,
+    isBranchReadOnly,
+    products,
+    setProducts,
+    setStockAdjustments,
+    addAudit,
+  });
 
-    return { success: true, message: `Berhasil login sebagai ${target.name}` };
-  };
+  // Cart state + cart/discount/tax actions — extracted to
+  // src/context/slices/useCartSlice.ts (wired in below, after the session slice
+  // and before useOrgActions, which clears the cart when switching branch).
+  const {
+    cart,
+    setCart,
+    taxApplied,
+    setTaxApplied,
+    orderDiscountType,
+    setOrderDiscountType,
+    orderDiscountValue,
+    setOrderDiscountValue,
+    orderDiscountReason,
+    setOrderDiscountReason,
+    orderDiscountApprovedBy,
+    setOrderDiscountApprovedBy,
+    addToCart,
+    updateCartQty,
+    removeFromCart,
+    clearCart,
+    overrideItemPrice,
+    applyItemDiscount,
+    applyOrderDiscount,
+    removeOrderDiscount,
+    cartSubtotal,
+    cartTaxAmount,
+    cartDiscountAmount,
+    cartTotal,
+    holdCurrentOrder,
+    resumeOrder,
+    cancelHoldOrder,
+    completeOrder,
+  } = useCartSlice({
+    currentUser,
+    currentSession,
+    setCurrentSession,
+    selectedCustomer,
+    setSelectedCustomer,
+    setCustomers,
+    setExpiryBatches,
+    branches,
+    selectedBranchId,
+    orders,
+    setOrders,
+    products,
+    setProducts,
+    setCommissionLedger,
+    setActiveReceiptOrder,
+    setAsideOrders,
+    setSetAsideOrders,
+    addAudit,
+  });
 
-  // Store Branch Operations (POS Multi-Branch Phase 1)
-  const selectBranch = (branchId: string, force: boolean = false): boolean => {
-    const targetBranch = branches.find((b) => b.id === branchId);
-    if (!targetBranch) {
-      posSound.error();
-      return false;
-    }
-
-    if (hasUnsavedChanges && !force) {
-      setConfirmSwitchStore({ isOpen: true, targetBranchId: branchId });
-      return false;
-    }
-
-    setSelectedBranchId(branchId);
-    setCart([]);
-    setSelectedCustomer(DEFAULT_WALKIN_CUSTOMER);
-    setHasUnsavedChanges(false);
-    setConfirmSwitchStore({ isOpen: false, targetBranchId: null });
-    setIsStoreSelectionModalOpen(false);
-
-    addAudit(
-      "SWITCH_STORE",
-      "branch",
-      branchId,
-      `Cabang aktif dialihkan ke ${targetBranch.name} (${targetBranch.code}) oleh ${currentUser.name}`
-    );
-    posSound.beep();
-    return true;
-  };
-
-  const requestSwitchBranch = (targetBranchId: string) => {
-    selectBranch(targetBranchId, false);
-  };
-
-  const confirmAndSwitchBranch = () => {
-    if (confirmSwitchStore.targetBranchId) {
-      selectBranch(confirmSwitchStore.targetBranchId, true);
-    }
-  };
-
-  const cancelSwitchBranch = () => {
-    setConfirmSwitchStore({ isOpen: false, targetBranchId: null });
-  };
-
-  const addBranch = (data: Omit<StoreBranch, "id" | "createdAt">) => {
-    const trimmedName = data.name.trim();
-    const trimmedCode = data.code.trim().toUpperCase();
-    if (!trimmedName) return { success: false, message: "Nama cabang wajib diisi!" };
-    if (!trimmedCode) return { success: false, message: "Kode cabang wajib diisi!" };
-    if (branches.some((b) => b.code.toUpperCase() === trimmedCode)) {
-      return { success: false, message: `Kode cabang "${trimmedCode}" sudah digunakan!` };
-    }
-
-    const id = "branch-" + Date.now().toString().slice(-6);
-    const newBranch: StoreBranch = {
-      ...data,
-      id,
-      name: trimmedName,
-      code: trimmedCode,
-      createdAt: new Date().toISOString(),
-    };
-
-    setBranches((prev) => [...prev, newBranch]);
-    addAudit("BRANCH_CREATE", "branch", id, `Cabang baru dibuat: ${newBranch.name} (${newBranch.code})`);
-    posSound.beep();
-    return { success: true, branch: newBranch, message: `Cabang ${newBranch.name} berhasil dibuat!` };
-  };
-
-  const updateBranch = (id: string, data: Partial<StoreBranch>) => {
-    const branch = branches.find((b) => b.id === id);
-    if (!branch) return { success: false, message: "Cabang tidak ditemukan!" };
-
-    setBranches((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, ...data, updatedAt: new Date().toISOString() } : b))
-    );
-    addAudit("BRANCH_UPDATE", "branch", id, `Data cabang ${branch.name} diperbarui oleh ${currentUser.name}`);
-    posSound.beep();
-    return { success: true, message: "Data cabang berhasil diperbarui!" };
-  };
-
-  const toggleBranchStatus = (id: string) => {
-    const branch = branches.find((b) => b.id === id);
-    if (!branch) return { success: false, message: "Cabang tidak ditemukan!" };
-
-    const newStatus = branch.status === "active" ? "inactive" : "active";
-    if (newStatus === "inactive" && currentSession?.status === "active" && currentSession.branchId === id) {
-      posSound.error();
-      return {
-        success: false,
-        message: "Tidak dapat menonaktifkan cabang karena sedang ada sesi kasir yang aktif!",
-      };
-    }
-
-    setBranches((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, status: newStatus, updatedAt: new Date().toISOString() } : b))
-    );
-    addAudit("BRANCH_STATUS_TOGGLE", "branch", id, `Status cabang ${branch.name} diubah menjadi: ${newStatus}`);
-    posSound.beep();
-    return { success: true, message: `Status cabang berhasil diubah ke ${newStatus === "active" ? "Aktif" : "Nonaktif (Read-only)"}!` };
-  };
-
-  // User Management (Superadmin RBAC)
-  const addUser = (userData: Omit<User, "id">) => {
-    const trimmedName = userData.name.trim();
-    if (!trimmedName) return { success: false, message: "Nama pengguna wajib diisi!" };
-    if (!userData.pin || userData.pin.length !== 4) return { success: false, message: "PIN harus 4 digit angka!" };
-
-    const id = "usr-" + Date.now().toString().slice(-5);
-    const newUser: User = {
-      ...userData,
-      id,
-      name: trimmedName,
-    };
-
-    setUsers((prev) => [...prev, newUser]);
-    addAudit("USER_CREATE", "user", id, `Pengguna baru dibuat: ${newUser.name} (${newUser.role})`);
-    posSound.beep();
-    return { success: true, user: newUser, message: `Pengguna ${newUser.name} berhasil ditambahkan!` };
-  };
-
-  const updateUser = (id: string, data: Partial<User>) => {
-    const targetUser = users.find((u) => u.id === id);
-    if (!targetUser) return { success: false, message: "Pengguna tidak ditemukan!" };
-
-    setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...data } : u)));
-    addAudit("USER_UPDATE", "user", id, `Data pengguna ${targetUser.name} diperbarui`);
-    posSound.beep();
-    return { success: true, message: "Data pengguna berhasil diperbarui!" };
-  };
-
-  const toggleUserStatus = (id: string) => {
-    const targetUser = users.find((u) => u.id === id);
-    if (!targetUser) return { success: false, message: "Pengguna tidak ditemukan!" };
-
-    const newStatus = targetUser.status === "active" ? "inactive" : "active";
-    setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, status: newStatus } : u)));
-    addAudit("USER_STATUS_TOGGLE", "user", id, `Status pengguna ${targetUser.name} diubah menjadi: ${newStatus}`);
-    posSound.beep();
-    return { success: true, message: `Status pengguna berhasil diubah ke ${newStatus === "active" ? "Aktif" : "Nonaktif"}!` };
-  };
-
-  // Verify Supervisor / Manager PIN (POS-US-011, POS-US-016, POS-US-017, POS-US-019)
-  const verifySupervisorPin = (pin: string) => {
-    const supervisor = users.find(
-      (u) => (u.role === 'supervisor' || u.role === 'admin') && u.pin === pin
-    );
-    if (supervisor) {
-      return { success: true, supervisor, message: 'Otorisasi Disetujui' };
-    }
-    return { success: false, message: 'PIN Supervisor/Admin tidak valid!' };
-  };
-
-  // Open Cashier Session (POS-US-003)
-  const openSession = (openingCash: number) => {
-    if (currentSession && currentSession.status === 'active') {
-      return;
-    }
-    const newSession: CashierSession = {
-      id: 'SES-' + Date.now().toString().slice(-6),
-      cashierId: currentUser.id,
-      cashierName: currentUser.name,
-      startTime: new Date().toISOString(),
-      openingCash: Math.max(0, openingCash),
-      expectedCash: Math.max(0, openingCash),
-      status: 'active',
-      totalTransactions: 0,
-      totalSales: 0,
-      cashSales: 0,
-      qrisSales: 0,
-      depositSales: 0,
-      totalRefunds: 0,
-      totalDiscounts: 0,
-      handOffHistory: [],
-    };
-    setCurrentSession(newSession);
-    addAudit(
-      'SESSION_OPEN',
-      'session',
-      newSession.id,
-      `Sesi Kasir dibuka oleh ${currentUser.name} dengan Modal Awal: Rp ${openingCash.toLocaleString('id-ID')}`
-    );
-    posSound.beep();
-  };
-
-  // Correct Opening Cash (POS-US-003)
-  const correctOpeningCash = (newAmount: number, adminPin: string, reason: string) => {
-    const auth = verifySupervisorPin(adminPin);
-    if (!auth.success || !currentSession) {
-      posSound.error();
-      return false;
-    }
-    const oldAmount = currentSession.openingCash;
-    const diff = newAmount - oldAmount;
-    setCurrentSession((prev) => {
-      if (!prev) return null;
-      return {
-        ...prev,
-        openingCash: newAmount,
-        openingCashCorrected: true,
-        openingCashOld: oldAmount,
-        expectedCash: prev.expectedCash + diff,
-      };
-    });
-    addAudit(
-      'CORRECT_OPENING_CASH',
-      'session',
-      currentSession.id,
-      `Koreksi Modal Awal oleh ${auth.supervisor?.name}. Alasan: ${reason}`,
-      `Rp ${oldAmount}`,
-      `Rp ${newAmount}`
-    );
-    posSound.cashRegister();
-    return true;
-  };
 
   // Hand Off Active Session (POS-US-004)
   const handOffSession = (newCashierId: string, pin: string) => {
@@ -1377,258 +829,74 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: true, message: `Sesi berhasil diserahkan ke ${receivingCashier.name}` };
   };
 
-  // Close and Reconcile Session (POS-US-005)
-  const closeSession = (
-    actualCash: number,
-    varianceReason: string,
-    supervisorPin: string
-  ) => {
-    if (!currentSession) {
-      return { success: false, message: 'Tidak ada sesi kasir aktif' };
-    }
+  const {
+    switchUser,
+    selectBranch,
+    requestSwitchBranch,
+    confirmAndSwitchBranch,
+    cancelSwitchBranch,
+    addBranch,
+    updateBranch,
+    toggleBranchStatus,
+    addUser,
+    updateUser,
+    toggleUserStatus,
+    addCustomer,
+  } = useOrgActions({
+    branches,
+    setBranches,
+    users,
+    setUsers,
+    selectedBranchId,
+    setSelectedBranchId,
+    setIsStoreSelectionModalOpen,
+    hasUnsavedChanges,
+    setHasUnsavedChanges,
+    confirmSwitchStore,
+    setConfirmSwitchStore,
+    setCustomers,
+    setSelectedCustomer,
+    currentUser,
+    setCurrentUser,
+    currentSession,
+    setCart,
+    addAudit,
+  });
+  // Goods receipts, receiving draft, purchase plans and their actions — extracted
+  // to src/context/slices/useGoodsReceivingSlice.ts (wired in below, after the
+  // inventory and catalog slices that it depends on).
+  const {
+    goodsReceipts,
+    setGoodsReceipts,
+    receivingDraft,
+    setReceivingDraft,
+    purchasePlans,
+    submitGoodsReceipt,
+    addPurchasePlan,
+    updatePurchasePlan,
+    cancelPurchasePlan,
+    lockPurchasePlanForReceipt,
+    unlockPurchasePlanFromReceipt,
+  } = useGoodsReceivingSlice({
+    branches,
+    selectedBranchId,
+    selectedBranch,
+    currentUser,
+    products,
+    setProducts,
+    suppliers,
+    rawMaterials,
+    stockTransfers,
+    setExpiryBatches,
+    setStockAdjustments,
+    setRawMaterials,
+    addAudit,
+  });
 
-    // Check if any held orders exist that block closing
-    if (setAsideOrders.length > 0) {
-      posSound.error();
-      return {
-        success: false,
-        message: `Masih ada ${setAsideOrders.length} pesanan yang ditahan (parkir). Selesaikan atau batalkan terlebih dahulu sebelum tutup kasir.`,
-      };
-    }
 
-    const expected = currentSession.expectedCash;
-    const variance = actualCash - expected;
-    const varianceThreshold = 10000; // Rp 10.000
+  // addCategory: extracted to src/context/slices/useCatalogSlice.ts
 
-    // If variance > Rp 10.000 or < -Rp 10.000, reason is mandatory
-    if (Math.abs(variance) > varianceThreshold && !varianceReason.trim()) {
-      posSound.error();
-      return {
-        success: false,
-        message: 'Selisih melebihi ±Rp 10.000! Alasan selisih kas wajib diisi.',
-      };
-    }
-
-    // Manager approval is required
-    const auth = verifySupervisorPin(supervisorPin);
-    if (!auth.success) {
-      posSound.error();
-      return { success: false, message: 'Otorisasi Supervisor diperlukan untuk menutup shift!' };
-    }
-
-    const closed: CashierSession = {
-      ...currentSession,
-      endTime: new Date().toISOString(),
-      actualCash,
-      variance,
-      varianceReason: varianceReason.trim() || undefined,
-      closingApprovedBy: auth.supervisor?.name,
-      status: 'closed',
-    };
-
-    setClosedSessions((prev) => [closed, ...prev]);
-    setCurrentSession(null);
-
-    addAudit(
-      'SESSION_CLOSE',
-      'session',
-      closed.id,
-      `Tutup Sesi oleh ${currentUser.name}, disetujui ${auth.supervisor?.name}. Fisik: Rp ${actualCash.toLocaleString('id-ID')}, Ekspektasi: Rp ${expected.toLocaleString('id-ID')}, Selisih: Rp ${variance.toLocaleString('id-ID')}`
-    );
-    posSound.cashRegister();
-    return { success: true, message: 'Sesi Kasir berhasil ditutup dan direkonsiliasi.' };
-  };
-
-  // Support Session Correction for Closed Session (POS-US-006)
-  const openSupportSessionCorrection = (
-    sessionId: string,
-    action: string,
-    reason: string,
-    adminPin: string
-  ) => {
-    const auth = verifySupervisorPin(adminPin);
-    if (!auth.success || auth.supervisor?.role !== 'admin') {
-      posSound.error();
-      return false;
-    }
-    setClosedSessions((prev) =>
-      prev.map((s) => {
-        if (s.id === sessionId) {
-          const correction = {
-            adminId: auth.supervisor!.id,
-            adminName: auth.supervisor!.name,
-            timestamp: new Date().toISOString(),
-            action,
-            reason,
-            beforeValue: `Status: ${s.status}`,
-            afterValue: `Audited Support Correction: ${action}`,
-          };
-          return {
-            ...s,
-            supportCorrections: [...(s.supportCorrections || []), correction],
-          };
-        }
-        return s;
-      })
-    );
-    addAudit(
-      'SUPPORT_SESSION_CORRECTION',
-      'session',
-      sessionId,
-      `Koreksi Support Session oleh Admin ${auth.supervisor.name}. Aksi: ${action}. Alasan: ${reason}`
-    );
-    posSound.beep();
-    return true;
-  };
-
-  // Add Customer (POS-US-001)
-  const addCustomer = (customerData: Omit<Customer, 'id' | 'createdAt'>) => {
-    const newCust: Customer = {
-      ...customerData,
-      id: 'cust-' + Date.now().toString().slice(-5),
-      branchId: selectedBranchId,
-      createdAt: new Date().toISOString(),
-    };
-    setCustomers((prev) => [newCust, ...prev]);
-    setSelectedCustomer(newCust);
-    addAudit('CUSTOMER_ADD', 'order', newCust.id, `Pelanggan baru ditambahkan: ${newCust.name} (${newCust.category})`);
-    posSound.beep();
-    return newCust;
-  };
-
-  // Product Category Master (POS-US-028)
-  const addCategory = (name: string, description?: string) => {
-    const trimmed = name.trim();
-    if (!trimmed) {
-      return { success: false, message: 'Nama kategori produk tidak boleh kosong!' };
-    }
-    const isDuplicate = categories.some(
-      (c) => c.name.toLowerCase() === trimmed.toLowerCase()
-    );
-    if (isDuplicate) {
-      return { success: false, message: `Kategori "${trimmed}" sudah ada!` };
-    }
-
-    const id = trimmed.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    const newCat: ProductCategoryItem = {
-      id,
-      name: trimmed,
-      branchId: selectedBranchId,
-      description: description?.trim() || undefined,
-      icon: '🏷️',
-    };
-
-    setCategories((prev) => [...prev, newCat]);
-    addAudit(
-      'CATEGORY_CREATE',
-      'category',
-      id,
-      `Kategori produk baru dibuat: "${trimmed}" oleh ${currentUser.name}`
-    );
-    posSound.beep();
-    return { success: true, category: newCat, message: `Kategori "${trimmed}" berhasil dibuat!` };
-  };
-
-  // Master Kategori Management (Central HQ Master)
-  const addMasterCategory = (data: Omit<MasterCategory, 'createdAt'>) => {
-    const trimmedId = data.id.trim().toUpperCase();
-    const trimmedName = data.name.trim();
-
-    if (!trimmedId) {
-      posSound.error();
-      return { success: false, message: 'ID Master Kategori wajib diisi!' };
-    }
-    if (!trimmedName) {
-      posSound.error();
-      return { success: false, message: 'Nama Kategori wajib diisi!' };
-    }
-    if (!data.categoryType) {
-      posSound.error();
-      return { success: false, message: 'Pilih tipe kategori (KONSINYASI/PRODUKSI/BELI (RESELLER))!' };
-    }
-    if (!data.branchIds || data.branchIds.length === 0) {
-      posSound.error();
-      return { success: false, message: 'Pilih minimal satu Cabang untuk kategori ini!' };
-    }
-
-    const isDuplicate = masterCategories.some(
-      (c) => c.id.toLowerCase() === trimmedId.toLowerCase()
-    );
-    if (isDuplicate) {
-      posSound.error();
-      return { success: false, message: `ID Kategori '${trimmedId}' sudah digunakan!` };
-    }
-
-    const newCat: MasterCategory = {
-      id: trimmedId,
-      name: trimmedName,
-      categoryType: data.categoryType,
-      branchIds: data.branchIds,
-      description: data.description?.trim() || '',
-      createdAt: new Date().toISOString(),
-    };
-
-    setMasterCategories((prev) => [newCat, ...prev]);
-    addAudit(
-      'MASTER_CATEGORY_CREATE',
-      'category',
-      trimmedId,
-      `Master Kategori baru '${newCat.name}' (${newCat.id}) tipe ${newCat.categoryType} dibuat oleh ${currentUser.name}`
-    );
-    posSound.success();
-    return {
-      success: true,
-      category: newCat,
-      message: `Master Kategori '${newCat.name}' (${newCat.id}) berhasil dibuat!`,
-    };
-  };
-
-  const updateMasterCategory = (id: string, data: Partial<MasterCategory>) => {
-    const target = masterCategories.find((c) => c.id === id);
-    if (!target) {
-      posSound.error();
-      return { success: false, message: 'Data Master Kategori tidak ditemukan!' };
-    }
-
-    setMasterCategories((prev) =>
-      prev.map((c) =>
-        c.id === id
-          ? {
-              ...c,
-              ...data,
-              updatedAt: new Date().toISOString(),
-            }
-          : c
-      )
-    );
-
-    addAudit(
-      'MASTER_CATEGORY_UPDATE',
-      'category',
-      id,
-      `Master Kategori '${target.name}' (${id}) diperbarui oleh ${currentUser.name}`
-    );
-    posSound.beep();
-    return { success: true, message: 'Master Kategori berhasil diperbarui!' };
-  };
-
-  const deleteMasterCategory = (id: string) => {
-    const target = masterCategories.find((c) => c.id === id);
-    if (!target) {
-      posSound.error();
-      return { success: false, message: 'Data Master Kategori tidak ditemukan!' };
-    }
-
-    setMasterCategories((prev) => prev.filter((c) => c.id !== id));
-    addAudit(
-      'MASTER_CATEGORY_DELETE',
-      'category',
-      id,
-      `Master Kategori '${target.name}' (${id}) dihapus oleh ${currentUser.name}`
-    );
-    posSound.beep();
-    return { success: true, message: `Master Kategori '${target.name}' berhasil dihapus!` };
-  };
+  // Master Kategori CRUD: extracted to src/context/slices/useCatalogSlice.ts
 
   // Product Master (POS-US-029)
   const addProduct = (productData: Omit<Product, 'id'>) => {
@@ -1673,75 +941,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: true, product: newProd, message: `Produk "${newProd.name}" berhasil ditambahkan dengan stok 0!` };
   };
 
-  // Raw Material Master (Bahan Baku)
-  const addRawMaterial = (data: Omit<RawMaterial, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const trimmedName = data.name.trim();
-    const trimmedSku = data.sku.trim().toUpperCase();
-
-    if (!trimmedName) {
-      return { success: false, message: 'Nama bahan baku wajib diisi!' };
-    }
-    if (!trimmedSku) {
-      return { success: false, message: 'Kode SKU bahan baku wajib diisi!' };
-    }
-
-    const isDuplicateSku = rawMaterials.some(
-      (r) => r.sku.toLowerCase() === trimmedSku.toLowerCase()
-    );
-    if (isDuplicateSku) {
-      return { success: false, message: `Kode SKU "${trimmedSku}" sudah terdaftar!` };
-    }
-
-    const id = 'raw-' + Date.now().toString().slice(-6);
-    const newRaw: RawMaterial = {
-      ...data,
-      id,
-      name: trimmedName,
-      sku: trimmedSku,
-      branchId: selectedBranchId,
-      stock: 0, // Strict rule: starts at 0, must be added through penerimaan barang
-      createdAt: new Date().toISOString(),
-    };
-
-    setRawMaterials((prev) => [newRaw, ...prev]);
-
-    addAudit(
-      'STOCK_ADJUSTMENT',
-      'product',
-      id,
-      `Master Bahan Baku baru: ${newRaw.name} (SKU: ${newRaw.sku}), Kategori: ${newRaw.category}, Stok: 0 (Menunggu Penerimaan Barang)`
-    );
-    posSound.beep();
-    return { success: true, rawMaterial: newRaw, message: `Bahan baku "${newRaw.name}" berhasil ditambahkan!` };
-  };
-
-  const updateRawMaterial = (id: string, data: Partial<RawMaterial>) => {
-    const exists = rawMaterials.find((r) => r.id === id);
-    if (!exists) {
-      return { success: false, message: 'Bahan baku tidak ditemukan!' };
-    }
-    if (data.sku && data.sku.trim().toUpperCase() !== exists.sku) {
-      const duplicate = rawMaterials.some(
-        (r) => r.id !== id && r.sku.toLowerCase() === data.sku?.trim().toLowerCase()
-      );
-      if (duplicate) {
-        return { success: false, message: `Kode SKU "${data.sku}" sudah digunakan!` };
-      }
-    }
-    setRawMaterials((prev) =>
-      prev.map((r) =>
-        r.id === id
-          ? { ...r, ...data, updatedAt: new Date().toISOString() }
-          : r
-      )
-    );
-    return { success: true, message: 'Data bahan baku berhasil diperbarui!' };
-  };
-
-  const deleteRawMaterial = (id: string) => {
-    setRawMaterials((prev) => prev.filter((r) => r.id !== id));
-    return { success: true, message: 'Bahan baku berhasil dihapus!' };
-  };
+  // Raw Material CRUD: extracted to src/context/slices/useCatalogSlice.ts
 
   // Supplier Master (POS-US-030)
   const addSupplier = (supplierData: Omit<Supplier, 'id' | 'createdAt'>) => {
@@ -1968,1293 +1168,46 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { count: newCycles.length };
   };
 
-  // Cart Operations (POS-US-008, POS-US-009, POS-US-020)
-  const addToCart = (product: Product, quantity = 1) => {
-    if (!currentSession || currentSession.status !== 'active') {
-      posSound.error();
-      return { success: false, warning: 'Buka sesi kasir terlebih dahulu sebelum memulai transaksi!' };
-    }
+  // Cart actions (add/update/remove/clear, price overrides, item + order
+  // discounts, hold/resume/cancel, completeOrder) — extracted to
+  // src/context/slices/useCartSlice.ts.
+  // MTO / purchase-order lifecycle & order item expiry-qty — extracted to
+  // src/context/slices/useOrderSlice.ts
+  const {
+    createMtoOrder,
+    settleMadeToOrder,
+    updatePoPickupTime,
+    updateOrderItemExpiryAndQty,
+    settlePoPayment,
+    markPoReadyForPickup,
+    confirmPoPickup,
+    cancelPoWithSupervisor,
+    duplicatePoToCart,
+  } = useOrderSlice({
+    branches,
+    selectedBranchId,
+    selectedBranch,
+    currentUser,
+    currentSession,
+    verifySupervisorPin,
+    taxApplied,
+    orders,
+    products,
+    setActiveReceiptOrder,
+    setSelectedCustomer,
+    addAudit,
+    setCart,
+    setCurrentSession,
+    setCustomers,
+    setExpiryBatches,
+    setOrderDiscountReason,
+    setOrderDiscountType,
+    setOrderDiscountValue,
+    setOrders,
+    setProducts,
+    setStockAdjustments,
+  });
 
-    let warning: string | undefined;
-    if (product.stock <= 0) {
-      warning = `Peringatan: Stok ${product.name} saat ini 0 (Habis). Anda tetap diizinkan menambahkan sesuai kebijakan toko.`;
-    } else if (product.stock < product.lowStockThreshold) {
-      warning = `Perhatian: Stok ${product.name} menipis (sisa ${product.stock}).`;
-    }
-
-    setCart((prev) => {
-      const existing = prev.find(
-        (item) => item.productId === product.id && !item.isPriceOverridden && !item.isMadeToOrder
-      );
-      if (existing) {
-        return prev.map((item) =>
-          item.id === existing.id
-            ? { ...item, quantity: item.quantity + quantity }
-            : item
-        );
-      }
-      const newLine: CartItem = {
-        id: 'line-' + Math.random().toString(36).slice(2, 9),
-        productId: product.id,
-        productName: product.name,
-        category: product.category,
-        unitPrice: product.price,
-        originalPrice: product.price,
-        isPriceOverridden: false,
-        quantity,
-        image: product.image,
-        isMadeToOrder: product.isMadeToOrder,
-        stockAvailable: product.stock,
-        // Consignment snapshot (POS-US-031)
-        ownershipType: product.ownershipType || 'own',
-        supplierId: product.supplierId,
-        supplierName: product.supplierName,
-        commissionMethod: product.commissionMethod,
-        commissionValue: product.commissionValue,
-        commissionBasis: product.commissionBasis,
-      };
-      return [...prev, newLine];
-    });
-
-    posSound.beep();
-    return { success: true, warning };
-  };
-
-  const updateCartQty = (lineId: string, qty: number) => {
-    if (qty <= 0) {
-      removeFromCart(lineId);
-      return;
-    }
-    setCart((prev) =>
-      prev.map((item) => (item.id === lineId ? { ...item, quantity: qty } : item))
-    );
-    posSound.beep();
-  };
-
-  const removeFromCart = (lineId: string) => {
-    setCart((prev) => prev.filter((item) => item.id !== lineId));
-    posSound.beep();
-  };
-
-  const clearCart = () => {
-    setCart([]);
-    setSelectedCustomer(DEFAULT_WALKIN_CUSTOMER);
-    setOrderDiscountType(null);
-    setOrderDiscountValue(0);
-    setOrderDiscountReason('');
-    setOrderDiscountApprovedBy(undefined);
-  };
-
-  // Price Override on Cart Item (POS-US-009)
-  const overrideItemPrice = (lineId: string, newPrice: number, reason: string) => {
-    setCart((prev) =>
-      prev.map((item) => {
-        if (item.id === lineId) {
-          addAudit(
-            'PRICE_OVERRIDE',
-            'price',
-            item.productId,
-            `Override harga ${item.productName}: Rp ${item.unitPrice.toLocaleString('id-ID')} -> Rp ${newPrice.toLocaleString('id-ID')}. Alasan: ${reason}`,
-            String(item.unitPrice),
-            String(newPrice)
-          );
-          return {
-            ...item,
-            unitPrice: Math.max(0, newPrice),
-            isPriceOverridden: true,
-            overrideReason: reason,
-          };
-        }
-        return item;
-      })
-    );
-    posSound.beep();
-  };
-
-  // Item Discount (POS-US-011)
-  const applyItemDiscount = (lineId: string, percent: number, amount: number, reason: string) => {
-    setCart((prev) =>
-      prev.map((item) => {
-        if (item.id === lineId) {
-          return {
-            ...item,
-            itemDiscountPercent: percent,
-            itemDiscountAmount: amount,
-            itemDiscountReason: reason,
-          };
-        }
-        return item;
-      })
-    );
-    posSound.beep();
-  };
-
-  // Order Discount (POS-US-011)
-  const applyOrderDiscount = (
-    type: 'percent' | 'fixed',
-    value: number,
-    reason: string,
-    approverName?: string
-  ) => {
-    setOrderDiscountType(type);
-    setOrderDiscountValue(value);
-    setOrderDiscountReason(reason);
-    setOrderDiscountApprovedBy(approverName);
-    addAudit(
-      'ORDER_DISCOUNT_APPLIED',
-      'discount',
-      'active-cart',
-      `Diskon ${type === 'percent' ? value + '%' : 'Rp ' + value.toLocaleString('id-ID')} diterapkan. Alasan: ${reason}. Otorisasi: ${approverName || currentUser.name}`
-    );
-    posSound.beep();
-  };
-
-  const removeOrderDiscount = () => {
-    setOrderDiscountType(null);
-    setOrderDiscountValue(0);
-    setOrderDiscountReason('');
-    setOrderDiscountApprovedBy(undefined);
-  };
-
-  // Computations
-  const cartSubtotal = cart.reduce((sum, item) => {
-    const itemBase = item.unitPrice * item.quantity;
-    const itemDisc = item.itemDiscountAmount
-      ? item.itemDiscountAmount * item.quantity
-      : item.itemDiscountPercent
-      ? (itemBase * item.itemDiscountPercent) / 100
-      : 0;
-    return sum + Math.max(0, itemBase - itemDisc);
-  }, 0);
-
-  let cartDiscountAmount = 0;
-  if (orderDiscountType === 'percent') {
-    cartDiscountAmount = (cartSubtotal * orderDiscountValue) / 100;
-  } else if (orderDiscountType === 'fixed') {
-    cartDiscountAmount = Math.min(cartSubtotal, orderDiscountValue);
-  }
-
-  const netAfterDiscount = Math.max(0, cartSubtotal - cartDiscountAmount);
-  const cartTaxAmount = taxApplied ? Math.round(netAfterDiscount * STORE_INFO.taxRate) : 0;
-  const cartTotal = netAfterDiscount + cartTaxAmount;
-
-  // Hold / Set-Aside Order (POS-US-012)
-  const holdCurrentOrder = (label?: string) => {
-    if (cart.length === 0 || !currentSession) {
-      posSound.error();
-      return false;
-    }
-    const held: SetAsideOrder = {
-      id: 'HOLD-' + Date.now().toString().slice(-6),
-      sessionId: currentSession.id,
-      customer: selectedCustomer,
-      items: [...cart],
-      subtotal: cartSubtotal,
-      taxApplied,
-      discountAmount: cartDiscountAmount,
-      discountReason: orderDiscountReason,
-      total: cartTotal,
-      createdAt: new Date().toISOString(),
-      label: label || `Parkir #${setAsideOrders.length + 1} - ${selectedCustomer.name}`,
-    };
-    setSetAsideOrders((prev) => [held, ...prev]);
-    clearCart();
-    addAudit('ORDER_SET_ASIDE', 'order', held.id, `Pesanan ditahan/parkir: ${held.label}`);
-    posSound.beep();
-    return true;
-  };
-
-  const resumeOrder = (id: string) => {
-    const target = setAsideOrders.find((o) => o.id === id);
-    if (!target) return;
-    setCart(target.items);
-    setSelectedCustomer(target.customer);
-    setTaxApplied(target.taxApplied);
-    if (target.discountAmount > 0) {
-      setOrderDiscountType('fixed');
-      setOrderDiscountValue(target.discountAmount);
-      setOrderDiscountReason(target.discountReason || 'Diskon Dipulihkan');
-    } else {
-      removeOrderDiscount();
-    }
-    setSetAsideOrders((prev) => prev.filter((o) => o.id !== id));
-    addAudit('ORDER_RESUMED', 'order', target.id, `Pesanan dilanjutkan dari parkir: ${target.label}`);
-    posSound.beep();
-  };
-
-  const cancelHoldOrder = (id: string) => {
-    const target = setAsideOrders.find((o) => o.id === id);
-    setSetAsideOrders((prev) => prev.filter((o) => o.id !== id));
-    if (target) {
-      addAudit('ORDER_CANCEL_HOLD', 'order', target.id, `Pesanan parkir dibatalkan`);
-    }
-    posSound.beep();
-  };
-
-  // Complete Order / Process Payment (POS-US-013, POS-US-014, POS-US-015)
-  const completeOrder = (
-    payments: PaymentComponent[],
-    options?: {
-      isDeposit?: boolean;
-      customizationNotes?: string;
-      pickupDate?: string;
-      pickupTime?: string;
-      poNumber?: string;
-    }
-  ) => {
-    if (cart.length === 0) {
-      posSound.error();
-      return { success: false, message: 'Keranjang belanja kosong' };
-    }
-    if (!currentSession || currentSession.status !== 'active') {
-      posSound.error();
-      return { success: false, message: 'Tidak ada sesi kasir yang aktif' };
-    }
-
-    const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
-    const hasMadeToOrder = cart.some((i) => i.isMadeToOrder);
-    const isDeposit = Boolean(options?.isDeposit);
-
-    // Validation: Normal checkout requires full payment
-    if (!isDeposit && !hasMadeToOrder && totalPaid < cartTotal) {
-      posSound.error();
-      return { success: false, message: 'Jumlah pembayaran belum mencukupi total belanja!' };
-    }
-
-    // MTO requires at least DP amount
-    if (hasMadeToOrder && totalPaid <= 0) {
-      posSound.error();
-      return { success: false, message: 'Harap masukkan pembayaran DP atau Pelunasan!' };
-    }
-
-    const isPartial = totalPaid < cartTotal;
-    const paymentStatus: Order['paymentStatus'] = isPartial ? 'partial' : 'paid';
-
-    // Initial status for MTO: active (partially paid or paid)
-    // Non-MTO: awaiting_settlement if partial, else completed
-    const orderStatus: Order['orderStatus'] = hasMadeToOrder
-      ? 'active'
-      : isPartial
-      ? 'awaiting_settlement'
-      : 'completed';
-
-    // Calculate cash change
-    const cashComponent = payments.find((p) => p.method === 'cash');
-    const change = cashComponent?.change || 0;
-
-    const receiptNo = generateReceiptNumber();
-    const branchName = branches.find((b) => b.id === selectedBranchId)?.name || 'Senopati Utama';
-    const poNo = hasMadeToOrder
-      ? options?.poNumber || generatePONumber(orders, branchName)
-      : undefined;
-
-    const newOrder: Order = {
-      id: 'ORD-' + Date.now().toString().slice(-7),
-      receiptNumber: receiptNo,
-      poNumber: poNo,
-      sessionId: currentSession.id,
-      cashierId: currentUser.id,
-      cashierName: currentUser.name,
-      customer: selectedCustomer,
-      items: [...cart],
-      subtotal: cartSubtotal,
-      taxApplied,
-      taxRate: STORE_INFO.taxRate,
-      taxAmount: cartTaxAmount,
-      discountType: orderDiscountType || undefined,
-      discountValue: orderDiscountValue,
-      discountAmount: cartDiscountAmount,
-      discountReason: orderDiscountReason,
-      discountApprovedBy: orderDiscountApprovedBy,
-      total: cartTotal,
-      paidAmount: totalPaid,
-      remainingBalance: Math.max(0, cartTotal - totalPaid),
-      change,
-      payments,
-      paymentStatus,
-      orderStatus,
-      isMadeToOrder: hasMadeToOrder,
-      customizationNotes: options?.customizationNotes,
-      pickupDate: options?.pickupDate,
-      pickupTime: options?.pickupTime,
-      pickupTimeHistory: [],
-      createdAt: new Date().toISOString(),
-      reprintCount: 0,
-    };
-
-    // Deduct stock:
-    // Ready Stock is deducted immediately upon completion.
-    // Made-to-Order items are NEVER deducted at PO creation; stock deduction happens strictly at Konfirmasi Diambil!
-    const nonMtoItems = cart.filter((item) => !item.isMadeToOrder);
-    if (!isPartial && nonMtoItems.length > 0) {
-      setProducts((prev) =>
-        prev.map((prod) => {
-          const cartItem = nonMtoItems.find((item) => item.productId === prod.id);
-          if (cartItem) {
-            return { ...prod, stock: Math.max(0, prod.stock - cartItem.quantity) };
-          }
-          return prod;
-        })
-      );
-
-      // FEFO (First Expired, First Out) batch deduction:
-      // Deducts automatically from active batches with the earliest expiry date first
-      setExpiryBatches((prevBatches) => {
-        let updatedBatches = [...prevBatches];
-        nonMtoItems.forEach((cartItem) => {
-          let needed = cartItem.quantity;
-          const matchingBatches = updatedBatches
-            .filter(
-              (b) =>
-                b.productId === cartItem.productId &&
-                (!b.branchId || b.branchId === selectedBranchId) &&
-                b.status === 'active' &&
-                b.remainingQuantity > 0
-            )
-            .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
-
-          for (const b of matchingBatches) {
-            if (needed <= 0) break;
-            const deduct = Math.min(b.remainingQuantity, needed);
-            const newRemaining = b.remainingQuantity - deduct;
-            needed -= deduct;
-
-            updatedBatches = updatedBatches.map((orig) => {
-              if (orig.id === b.id) {
-                return {
-                  ...orig,
-                  remainingQuantity: newRemaining,
-                  status: newRemaining === 0 ? 'exhausted' : 'active',
-                };
-              }
-              return orig;
-            });
-          }
-        });
-        return updatedBatches;
-      });
-    }
-
-    // Update customer deposit balance if paid by deposit account
-    const depositPay = payments.find((p) => p.method === 'deposit');
-    if (depositPay && depositPay.amount > 0) {
-      setCustomers((prev) =>
-        prev.map((c) =>
-          c.id === selectedCustomer.id
-            ? {
-                ...c,
-                depositBalance: Math.max(0, c.depositBalance - depositPay.amount),
-                lastTransactionAt: new Date().toISOString(),
-              }
-            : c
-        )
-      );
-    }
-
-    // Update active cashier session totals
-    const cashPortion = payments
-      .filter((p) => p.method === 'cash')
-      .reduce((sum, p) => sum + p.amount, 0);
-    const qrisPortion = payments
-      .filter((p) => p.method === 'qris')
-      .reduce((sum, p) => sum + p.amount, 0);
-    const depositPortion = payments
-      .filter((p) => p.method === 'deposit')
-      .reduce((sum, p) => sum + p.amount, 0);
-
-    setCurrentSession((prev) => {
-      if (!prev) return null;
-      return {
-        ...prev,
-        totalTransactions: prev.totalTransactions + 1,
-        totalSales: prev.totalSales + totalPaid,
-        cashSales: prev.cashSales + cashPortion,
-        qrisSales: prev.qrisSales + qrisPortion,
-        depositSales: prev.depositSales + depositPortion,
-        expectedCash: prev.expectedCash + cashPortion,
-        totalDiscounts: prev.totalDiscounts + cartDiscountAmount,
-      };
-    });
-
-    setOrders((prev) => [newOrder, ...prev]);
-    setActiveReceiptOrder(newOrder);
-
-    // Record Consignment Commission Ledger Entries (POS-US-031)
-    if (!isPartial) {
-      const consignmentCartItems = cart.filter(
-        (i) => i.ownershipType === 'consignment' && i.supplierId
-      );
-
-      if (consignmentCartItems.length > 0) {
-        const newCommEntries: CommissionLedgerEntry[] = consignmentCartItems.map((item, idx) => {
-          const gross = item.unitPrice * item.quantity;
-          const lineItemDisc = item.itemDiscountAmount
-            ? item.itemDiscountAmount * item.quantity
-            : item.itemDiscountPercent
-            ? Math.round((gross * item.itemDiscountPercent) / 100)
-            : 0;
-
-          const orderDiscPortion = cartSubtotal > 0
-            ? Math.round((cartDiscountAmount * (gross - lineItemDisc)) / cartSubtotal)
-            : 0;
-
-          const allocatedDiscount = lineItemDisc + orderDiscPortion;
-          const net = Math.max(0, gross - allocatedDiscount);
-
-          let commAmount = 0;
-          if (item.commissionMethod === 'fixed') {
-            commAmount = Math.round((item.commissionValue || 0) * item.quantity);
-          } else if (item.commissionMethod === 'percentage') {
-            const basisAmount = item.commissionBasis === 'gross' ? gross : net;
-            commAmount = Math.round((basisAmount * (item.commissionValue || 0)) / 100);
-          }
-          commAmount = Math.max(0, Math.min(commAmount, net));
-          const storeNet = Math.max(0, net - commAmount);
-
-          return {
-            id: 'comm-' + Date.now().toString().slice(-6) + '-' + idx,
-            orderId: newOrder.id,
-            orderLineId: item.id,
-            receiptNumber: newOrder.receiptNumber,
-            productId: item.productId,
-            productName: item.productName,
-            supplierId: item.supplierId!,
-            supplierName: item.supplierName || 'Supplier Konsinyasi',
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            grossAmount: gross,
-            allocatedDiscount,
-            netAmount: net,
-            commissionMethod: item.commissionMethod || 'fixed',
-            commissionValue: item.commissionValue || 0,
-            commissionBasis: item.commissionBasis,
-            commissionAmount: commAmount,
-            storeNetAmount: storeNet,
-            status: 'accrued',
-            createdAt: new Date().toISOString(),
-          };
-        });
-
-        setCommissionLedger((prev) => [...newCommEntries, ...prev]);
-      }
-    }
-
-    addAudit(
-      'ORDER_COMPLETE',
-      'order',
-      newOrder.id,
-      `Transaksi Berhasil No. Struk: ${newOrder.receiptNumber} (${newOrder.customer.name}), Total: Rp ${cartTotal.toLocaleString('id-ID')}, Bayar: Rp ${totalPaid.toLocaleString('id-ID')}, Status: ${newOrder.orderStatus}`
-    );
-
-    posSound.cashRegister();
-    clearCart();
-
-    return { success: true, order: newOrder, message: 'Transaksi berhasil diselesaikan!' };
-  };
-
-  const createMtoOrder = (input: {
-    productId?: string;
-    quantity?: number;
-    customPrice?: number;
-    items?: MtoOrderItemInput[];
-    customer: Customer;
-    pickupDate: string;
-    pickupTime: string;
-    customizationNotes: string;
-    payments: PaymentComponent[];
-  }) => {
-    if (!currentSession || currentSession.status !== 'active') {
-      posSound.error();
-      return { success: false, message: 'Tidak ada sesi kasir yang aktif' };
-    }
-
-    // Support both multiple items array and single item backward compatibility
-    const itemInputs: MtoOrderItemInput[] =
-      input.items && input.items.length > 0
-        ? input.items
-        : input.productId && input.quantity
-        ? [
-            {
-              productId: input.productId,
-              quantity: input.quantity,
-              customPrice: input.customPrice,
-              customizationNotes: input.customizationNotes,
-            },
-          ]
-        : [];
-
-    if (itemInputs.length === 0) {
-      posSound.error();
-      return { success: false, message: 'Minimal pilih 1 produk pesanan' };
-    }
-
-    const cartItems: CartItem[] = [];
-    let subtotal = 0;
-
-    for (const itemInput of itemInputs) {
-      const product = products.find((p) => p.id === itemInput.productId);
-      if (!product) {
-        posSound.error();
-        return { success: false, message: `Produk tidak valid` };
-      }
-      if (itemInput.quantity <= 0) {
-        posSound.error();
-        return { success: false, message: `Jumlah pesanan untuk "${product.name}" harus lebih dari 0` };
-      }
-
-      const unitPrice =
-        itemInput.customPrice !== undefined && itemInput.customPrice >= 0
-          ? itemInput.customPrice
-          : product.price;
-
-      const lineTotal = unitPrice * itemInput.quantity;
-      subtotal += lineTotal;
-
-      const cartItem: CartItem = {
-        id: 'line-' + Math.random().toString(36).slice(2, 9),
-        productId: product.id,
-        productName: product.name,
-        category: product.category,
-        unitPrice,
-        originalPrice: product.price,
-        isPriceOverridden: itemInput.customPrice !== undefined && itemInput.customPrice !== product.price,
-        quantity: itemInput.quantity,
-        image: product.image,
-        isMadeToOrder: true,
-        stockAvailable: product.stock,
-        ownershipType: itemInput.ownershipType || (itemInput.supplierId && itemInput.supplierId !== 'internal' ? 'consignment' : (product.ownershipType || 'own')),
-        supplierId: itemInput.supplierId !== undefined ? (itemInput.supplierId === 'internal' ? undefined : itemInput.supplierId) : product.supplierId,
-        supplierName: itemInput.supplierName !== undefined ? itemInput.supplierName : product.supplierName,
-        commissionMethod: product.commissionMethod,
-        commissionValue: product.commissionValue,
-        commissionBasis: product.commissionBasis,
-        customizationNotes: itemInput.customizationNotes || input.customizationNotes,
-        expiryType: itemInput.expiryType || product.expiryType || 'daily',
-        expiryDate: itemInput.expiryDate || (itemInput.expiryType === 'multi_day' ? new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) : input.pickupDate || new Date().toISOString().slice(0, 10)),
-      };
-
-      cartItems.push(cartItem);
-    }
-
-    const taxRate = taxApplied ? STORE_INFO.taxRate : 0;
-    const taxAmount = Math.round(subtotal * taxRate);
-    const total = subtotal + taxAmount;
-
-    const totalPaid = input.payments.reduce((sum, p) => sum + p.amount, 0);
-    const hasPayTomorrow = input.payments.some((p) => p.method === 'pay_tomorrow');
-    if (totalPaid <= 0 && !hasPayTomorrow) {
-      posSound.error();
-      return { success: false, message: 'Harap masukkan pembayaran DP atau pilih metode Dibayar Besok!' };
-    }
-
-    const isUnpaid = totalPaid === 0;
-    const isPartial = totalPaid < total;
-    const paymentStatus: Order['paymentStatus'] = isUnpaid ? 'unpaid' : (isPartial ? 'partial' : 'paid');
-    const orderStatus: Order['orderStatus'] = 'active';
-
-    const cashComponent = input.payments.find((p) => p.method === 'cash');
-    const change = cashComponent?.change || 0;
-
-    const receiptNo = generateReceiptNumber();
-    const branchName = branches.find((b) => b.id === selectedBranchId)?.name || 'Senopati Utama';
-    const poNo = generatePONumber(orders, branchName);
-
-    const newOrder: Order = {
-      id: 'ORD-' + Date.now().toString().slice(-7),
-      branchId: selectedBranchId,
-      receiptNumber: receiptNo,
-      poNumber: poNo,
-      sessionId: currentSession.id,
-      cashierId: currentUser.id,
-      cashierName: currentUser.name,
-      customer: input.customer,
-      items: cartItems,
-      subtotal,
-      taxApplied,
-      taxRate: STORE_INFO.taxRate,
-      taxAmount,
-      discountAmount: 0,
-      total,
-      paidAmount: totalPaid,
-      remainingBalance: Math.max(0, total - totalPaid),
-      change,
-      payments: input.payments,
-      paymentStatus,
-      orderStatus,
-      isMadeToOrder: true,
-      customizationNotes: input.customizationNotes,
-      pickupDate: input.pickupDate,
-      pickupTime: input.pickupTime,
-      pickupTimeHistory: [],
-      createdAt: new Date().toISOString(),
-      reprintCount: 0,
-    };
-
-    setOrders((prev) => [newOrder, ...prev]);
-
-    // Register batches for order items so they appear in Daily Closing (Requirement 2 & 3)
-    const orderBatches: ProductExpiryBatch[] = [];
-    cartItems.forEach((ci, ciIdx) => {
-      const expType = ci.expiryType || 'daily';
-      const expDate = ci.expiryDate || (expType === 'daily' ? input.pickupDate || new Date().toISOString().slice(0, 10) : new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10));
-      orderBatches.push({
-        id: `batch-ord-${Date.now()}-${ci.productId}-${ciIdx}`,
-        batchNumber: `BCH-PO-${poNo}-${ciIdx + 1}`,
-        productId: ci.productId,
-        productName: ci.productName,
-        sku: ci.productId,
-        branchId: selectedBranchId,
-        branchName: branchName,
-        expiryType: expType,
-        expiryDate: expDate,
-        initialQuantity: ci.quantity,
-        remainingQuantity: ci.quantity,
-        goodsReceiptId: newOrder.id,
-        goodsReceiptNumber: poNo,
-        receivedDate: new Date().toISOString().slice(0, 10),
-        unitCost: ci.unitPrice,
-        ownershipType: ci.ownershipType === 'consignment' ? 'consignment' : 'owned',
-        supplierId: ci.supplierId,
-        supplierName: ci.supplierName,
-        category: ci.category,
-        status: 'active',
-        notes: `Batch PO ${poNo} (${expType === 'daily' ? 'Expired Harian' : 'Expired > 1 Hari: ' + expDate})`,
-        createdAt: new Date().toISOString(),
-      });
-    });
-    if (orderBatches.length > 0) {
-      setExpiryBatches((prev) => [...orderBatches, ...prev]);
-    }
-
-    const cashPortion = input.payments
-      .filter((p) => p.method === 'cash')
-      .reduce((sum, p) => sum + p.amount, 0);
-    const qrisPortion = input.payments
-      .filter((p) => p.method === 'qris')
-      .reduce((sum, p) => sum + p.amount, 0);
-    const depositPortion = input.payments
-      .filter((p) => p.method === 'deposit')
-      .reduce((sum, p) => sum + p.amount, 0);
-
-    setCurrentSession((prev) => {
-      if (!prev) return null;
-      return {
-        ...prev,
-        totalTransactions: prev.totalTransactions + (totalPaid > 0 ? 1 : 0),
-        totalSales: prev.totalSales + totalPaid,
-        cashSales: prev.cashSales + cashPortion,
-        qrisSales: prev.qrisSales + qrisPortion,
-        depositSales: prev.depositSales + depositPortion,
-        expectedCash: prev.expectedCash + cashPortion,
-      };
-    });
-
-    const paymentSummaryText = hasPayTomorrow
-      ? `Dibayar Besok (DP Rp ${totalPaid.toLocaleString('id-ID')}, Sisa Rp ${(total - totalPaid).toLocaleString('id-ID')})`
-      : `DP/Bayar: Rp ${totalPaid.toLocaleString('id-ID')}`;
-
-    addAudit(
-      'ORDER_CREATE_PO',
-      'order',
-      newOrder.id,
-      `Membuat PO Made-to-Order baru ${poNo} (${cartItems.length} item) untuk ${input.customer.name} (Total: Rp ${total.toLocaleString('id-ID')}, ${paymentSummaryText})`
-    );
-
-    setActiveReceiptOrder(newOrder);
-    posSound.cashRegister();
-
-    return { success: true, order: newOrder, message: `PO Made-to-Order ${poNo} berhasil dibuat!` };
-  };
-
-  // Settle Made-to-Order Remaining Balance (POS-US-014)
-  const settleMadeToOrder = (orderId: string, payment: PaymentComponent) => {
-    const target = orders.find((o) => o.id === orderId);
-    if (!target) return { success: false, message: 'Pesanan tidak ditemukan' };
-
-    const newPaid = target.paidAmount + payment.amount;
-    const newRemaining = Math.max(0, target.total - newPaid);
-    const isNowPaid = newRemaining === 0;
-
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id === orderId) {
-          return {
-            ...o,
-            paidAmount: newPaid,
-            remainingBalance: newRemaining,
-            paymentStatus: isNowPaid ? 'paid' : 'partial',
-            orderStatus: isNowPaid ? 'completed' : 'awaiting_settlement',
-            payments: [...o.payments, payment],
-          };
-        }
-        return o;
-      })
-    );
-
-    // If fully settled, now deduct the base stock! (POS-US-014, POS-US-020)
-    if (isNowPaid) {
-      setProducts((prev) =>
-        prev.map((prod) => {
-          // deduct base cake tart
-          if (prod.id === 'prod-11') {
-            return { ...prod, stock: Math.max(0, prod.stock - 1) };
-          }
-          return prod;
-        })
-      );
-    }
-
-    // Update session
-    if (currentSession && payment.method === 'cash') {
-      setCurrentSession((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          cashSales: prev.cashSales + payment.amount,
-          expectedCash: prev.expectedCash + payment.amount,
-        };
-      });
-    }
-
-    addAudit(
-      'ORDER_SETTLEMENT',
-      'order',
-      orderId,
-      `Pelunasan Pesanan Custom ${target.receiptNumber} sebesar Rp ${payment.amount.toLocaleString('id-ID')}`
-    );
-
-    posSound.cashRegister();
-    return { success: true, message: 'Pelunasan pesanan berhasil dicatat!' };
-  };
-
-  // MTO Purchase Order (PO) Management
-  const updatePoPickupTime = (orderId: string, newTime: string) => {
-    const target = orders.find((o) => o.id === orderId);
-    if (!target) {
-      posSound.error();
-      return { success: false, message: 'Pesanan tidak ditemukan' };
-    }
-    if (target.orderStatus === 'picked_up' || target.orderStatus === 'cancelled') {
-      posSound.error();
-      return { success: false, message: 'Jam ambil pesanan yang sudah selesai atau batal tidak dapat diubah!' };
-    }
-    if (!newTime.trim()) {
-      posSound.error();
-      return { success: false, message: 'Jam pengambilan baru wajib diisi!' };
-    }
-
-    const prevTime = target.pickupTime || '00:00';
-    const now = new Date().toISOString();
-
-    const historyEntry = {
-      previousTime: prevTime,
-      newTime: newTime.trim(),
-      updatedBy: currentUser.name,
-      timestamp: now,
-    };
-
-    // If new time makes scheduled time future and order was overdue, reactivate
-    let newStatus = target.orderStatus;
-    if (target.pickupDate) {
-      const scheduledDateTime = new Date(`${target.pickupDate}T${newTime.trim()}:00`);
-      if (scheduledDateTime.getTime() > Date.now() && target.orderStatus === 'overdue') {
-        newStatus = 'active';
-      }
-    }
-
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId
-          ? {
-              ...o,
-              pickupTime: newTime.trim(),
-              orderStatus: newStatus,
-              pickupTimeHistory: [...(o.pickupTimeHistory || []), historyEntry],
-            }
-          : o
-      )
-    );
-
-    addAudit(
-      'PO_RESCHEDULE_TIME',
-      'order',
-      orderId,
-      `Perubahan jam ambil PO ${target.poNumber || target.receiptNumber} dari ${prevTime} ke ${newTime.trim()} oleh ${currentUser.name}`
-    );
-
-    posSound.beep();
-    return {
-      success: true,
-      message: `Jam pengambilan berhasil diubah menjadi ${newTime.trim()}!`,
-    };
-  };
-
-  // Requirement 3: Penyesuaian Kuantitas dan Tanggal Expiry Date Item Pesanan
-  const updateOrderItemExpiryAndQty = (
-    orderId: string,
-    itemId: string,
-    newQuantity: number,
-    newExpiryDate: string
-  ) => {
-    const target = orders.find((o) => o.id === orderId);
-    if (!target) {
-      posSound.error();
-      return { success: false, message: 'Pesanan tidak ditemukan!' };
-    }
-    const targetItem = target.items.find((it) => it.id === itemId || it.productId === itemId);
-    if (!targetItem) {
-      posSound.error();
-      return { success: false, message: 'Item produk pesanan tidak ditemukan!' };
-    }
-
-    const qty = Math.max(1, newQuantity);
-    const updatedItems = target.items.map((it) => {
-      if (it.id === targetItem.id) {
-        return {
-          ...it,
-          quantity: qty,
-          expiryType: 'multi_day' as ProductExpiryType,
-          expiryDate: newExpiryDate,
-        };
-      }
-      return it;
-    });
-
-    const newSubtotal = updatedItems.reduce((sum, it) => sum + it.unitPrice * it.quantity, 0);
-    const taxAmt = target.taxApplied ? Math.round(newSubtotal * (target.taxRate || 0.11)) : 0;
-    const newTotal = newSubtotal + taxAmt;
-
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId
-          ? {
-              ...o,
-              items: updatedItems,
-              subtotal: newSubtotal,
-              taxAmount: taxAmt,
-              total: newTotal,
-              remainingBalance: Math.max(0, newTotal - o.paidAmount),
-            }
-          : o
-      )
-    );
-
-    // Sync or register batch in ProductExpiryBatch so it appears in Closing Harian!
-    const batchId = `batch-po-${target.id}-${targetItem.productId}`;
-    const nowStr = new Date().toISOString();
-    setExpiryBatches((prev) => {
-      const existingIdx = prev.findIndex(
-        (b) => b.id === batchId || (b.goodsReceiptId === target.id && b.productId === targetItem.productId)
-      );
-      if (existingIdx >= 0) {
-        const copy = [...prev];
-        copy[existingIdx] = {
-          ...copy[existingIdx],
-          expiryType: 'multi_day',
-          expiryDate: newExpiryDate,
-          initialQuantity: qty,
-          remainingQuantity: qty,
-          status: 'active',
-          notes: `Penyesuaian kuantitas (${qty} pcs) & Tanggal Expiry (${newExpiryDate})`,
-        };
-        return copy;
-      } else {
-        const newBatch: ProductExpiryBatch = {
-          id: batchId,
-          batchNumber: `BCH-PO-${target.poNumber || target.receiptNumber}`,
-          productId: targetItem.productId,
-          productName: targetItem.productName,
-          sku: targetItem.productId,
-          branchId: selectedBranchId,
-          branchName: selectedBranch.name,
-          expiryType: 'multi_day',
-          expiryDate: newExpiryDate,
-          initialQuantity: qty,
-          remainingQuantity: qty,
-          goodsReceiptId: target.id,
-          goodsReceiptNumber: target.poNumber || target.receiptNumber,
-          receivedDate: nowStr.slice(0, 10),
-          unitCost: targetItem.unitPrice,
-          ownershipType: targetItem.ownershipType === 'consignment' ? 'consignment' : 'owned',
-          supplierId: targetItem.supplierId,
-          supplierName: targetItem.supplierName,
-          category: targetItem.category,
-          status: 'active',
-          notes: `Batch Penyesuaian Pesanan (${target.poNumber || target.receiptNumber}) - Exp: ${newExpiryDate}`,
-          createdAt: nowStr,
-        };
-        return [newBatch, ...prev];
-      }
-    });
-
-    addAudit(
-      'PO_ITEM_EXPIRY_UPDATE',
-      'order',
-      orderId,
-      `Penyesuaian item PO ${target.poNumber || target.receiptNumber}: ${targetItem.productName}, Kuantitas: ${qty} pcs, Expiry Date: ${newExpiryDate} oleh ${currentUser.name}`
-    );
-
-    posSound.beep();
-    return {
-      success: true,
-      message: `Kuantitas (${qty} pcs) & Tanggal Expiry (${newExpiryDate}) untuk ${targetItem.productName} berhasil diperbarui dan muncul di Closing Harian!`,
-    };
-  };
-
-  const settlePoPayment = (orderId: string, newPayments: PaymentComponent[]) => {
-    const target = orders.find((o) => o.id === orderId);
-    if (!target) {
-      posSound.error();
-      return { success: false, message: 'Pesanan tidak ditemukan' };
-    }
-    if (target.orderStatus === 'picked_up' || target.orderStatus === 'cancelled') {
-      posSound.error();
-      return { success: false, message: 'Pesanan yang selesai atau batal tidak dapat dilakukan pelunasan!' };
-    }
-
-    const additionalPaid = newPayments.reduce((s, p) => s + p.amount, 0);
-    if (additionalPaid <= 0) {
-      posSound.error();
-      return { success: false, message: 'Nominal pelunasan harus lebih dari 0!' };
-    }
-
-    const newTotalPaid = target.paidAmount + additionalPaid;
-    const newRemaining = Math.max(0, target.total - newTotalPaid);
-    const isFullyPaid = newRemaining === 0;
-
-    // Deduct deposit if deposit method used
-    const depositComp = newPayments.find((p) => p.method === 'deposit');
-    if (depositComp && depositComp.amount > 0) {
-      setCustomers((prev) =>
-        prev.map((c) =>
-          c.id === target.customer.id
-            ? {
-                ...c,
-                depositBalance: Math.max(0, c.depositBalance - depositComp.amount),
-                lastTransactionAt: new Date().toISOString(),
-              }
-            : c
-        )
-      );
-    }
-
-    // Update active cashier session
-    const cashPortion = newPayments.filter((p) => p.method === 'cash').reduce((s, p) => s + p.amount, 0);
-    const qrisPortion = newPayments.filter((p) => p.method === 'qris').reduce((s, p) => s + p.amount, 0);
-    const depositPortion = newPayments.filter((p) => p.method === 'deposit').reduce((s, p) => s + p.amount, 0);
-
-    if (currentSession) {
-      setCurrentSession((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          totalSales: prev.totalSales + additionalPaid,
-          cashSales: prev.cashSales + cashPortion,
-          qrisSales: prev.qrisSales + qrisPortion,
-          depositSales: prev.depositSales + depositPortion,
-          expectedCash: prev.expectedCash + cashPortion,
-        };
-      });
-    }
-
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId
-          ? {
-              ...o,
-              paidAmount: newTotalPaid,
-              remainingBalance: newRemaining,
-              paymentStatus: isFullyPaid ? 'paid' : 'partial',
-              payments: [...o.payments, ...newPayments],
-            }
-          : o
-      )
-    );
-
-    addAudit(
-      'PO_PAYMENT_SETTLEMENT',
-      'order',
-      orderId,
-      `Pelunasan PO ${target.poNumber || target.receiptNumber} (${target.customer.name}) sebesar Rp ${additionalPaid.toLocaleString('id-ID')} via ${newPayments.map((p) => p.method.toUpperCase()).join('+')}. Sisa Tagihan: Rp ${newRemaining.toLocaleString('id-ID')}`
-    );
-
-    posSound.cashRegister();
-    return {
-      success: true,
-      message: `Pelunasan sebesar Rp ${additionalPaid.toLocaleString('id-ID')} berhasil dicatat! Status: ${isFullyPaid ? 'Lunas' : 'Sisa Rp ' + newRemaining.toLocaleString('id-ID')}`,
-    };
-  };
-
-  const markPoReadyForPickup = (orderId: string) => {
-    const target = orders.find((o) => o.id === orderId);
-    if (!target) {
-      posSound.error();
-      return { success: false, message: 'Pesanan tidak ditemukan' };
-    }
-    if (target.orderStatus === 'picked_up' || target.orderStatus === 'cancelled') {
-      posSound.error();
-      return { success: false, message: 'Status pesanan tidak dapat diubah!' };
-    }
-
-    const now = new Date().toISOString();
-
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId
-          ? {
-              ...o,
-              orderStatus: 'ready_for_pickup',
-              readyAt: now,
-              readyBy: currentUser.name,
-            }
-          : o
-      )
-    );
-
-    addAudit(
-      'PO_READY_FOR_PICKUP',
-      'order',
-      orderId,
-      `PO ${target.poNumber || target.receiptNumber} (${target.customer.name}) ditandai Siap Diambil oleh ${currentUser.name}`
-    );
-
-    posSound.beep();
-    return {
-      success: true,
-      message: `Pesanan ${target.poNumber || target.receiptNumber} berhasil ditandai Siap Diambil!`,
-    };
-  };
-
-  const confirmPoPickup = (orderId: string, collectorName: string) => {
-    const target = orders.find((o) => o.id === orderId);
-    if (!target) {
-      posSound.error();
-      return { success: false, message: 'Pesanan tidak ditemukan' };
-    }
-    if (target.orderStatus === 'picked_up') {
-      posSound.error();
-      return { success: false, message: 'Pesanan ini sudah pernah diambil!' };
-    }
-    if (target.orderStatus === 'cancelled') {
-      posSound.error();
-      return { success: false, message: 'Pesanan ini sudah dibatalkan!' };
-    }
-    if (!collectorName.trim()) {
-      posSound.error();
-      return { success: false, message: 'Nama pengambil pesanan wajib diisi!' };
-    }
-
-    const now = new Date().toISOString();
-
-    // Deduct stock exactly once if not yet deducted
-    if (!target.stockDeducted) {
-      setProducts((prev) =>
-        prev.map((prod) => {
-          let qtyToDeduct = 0;
-          for (const item of target.items) {
-            if (item.productId === prod.id) {
-              qtyToDeduct += item.quantity;
-            }
-            if (item.baseProductId === prod.id || (item.isMadeToOrder && prod.id === 'prod-11')) {
-              qtyToDeduct += item.quantity;
-            }
-          }
-          if (qtyToDeduct > 0) {
-            return { ...prod, stock: Math.max(0, prod.stock - qtyToDeduct) };
-          }
-          return prod;
-        })
-      );
-
-      // Record stock adjustment
-      target.items.forEach((item) => {
-        const adj: StockAdjustmentRecord = {
-          id: 'ADJ-' + Date.now().toString().slice(-6) + '-' + Math.random().toString(36).slice(2, 5),
-          productId: item.productId,
-          productName: item.productName,
-          type: 'decrease',
-          quantity: item.quantity,
-          previousStock: item.stockAvailable,
-          resultingStock: Math.max(0, item.stockAvailable - item.quantity),
-          reason: `Pengambilan Pesanan PO ${target.poNumber || target.receiptNumber} oleh ${collectorName.trim()}`,
-          adminId: currentUser.id,
-          adminName: currentUser.name,
-          timestamp: now,
-        };
-        setStockAdjustments((prev) => [adj, ...prev]);
-      });
-    }
-
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId
-          ? {
-              ...o,
-              orderStatus: 'picked_up',
-              collectorName: collectorName.trim(),
-              pickedUpAt: now,
-              pickedUpBy: currentUser.name,
-              stockDeducted: true,
-            }
-          : o
-      )
-    );
-
-    addAudit(
-      'PO_PICKUP_CONFIRMED',
-      'order',
-      orderId,
-      `Konfirmasi Pengambilan PO ${target.poNumber || target.receiptNumber} (${target.customer.name}). Pengambil: ${collectorName.trim()}. Petugas: ${currentUser.name}. Sisa Tagihan: Rp ${target.remainingBalance.toLocaleString('id-ID')}`
-    );
-
-    posSound.cashRegister();
-    return {
-      success: true,
-      message: `Pesanan ${target.poNumber || target.receiptNumber} berhasil diambil oleh ${collectorName.trim()}!`,
-    };
-  };
-
-  const cancelPoWithSupervisor = (orderId: string, reason: string, supervisorPin: string) => {
-    const target = orders.find((o) => o.id === orderId);
-    if (!target) {
-      posSound.error();
-      return { success: false, message: 'Pesanan tidak ditemukan' };
-    }
-    if (target.orderStatus === 'picked_up') {
-      posSound.error();
-      return { success: false, message: 'Pesanan yang sudah diambil tidak dapat dibatalkan!' };
-    }
-    if (target.orderStatus === 'cancelled') {
-      posSound.error();
-      return { success: false, message: 'Pesanan ini sudah dibatalkan sebelumnya!' };
-    }
-    if (!reason.trim()) {
-      posSound.error();
-      return { success: false, message: 'Alasan pembatalan pesanan wajib diisi!' };
-    }
-
-    const auth = verifySupervisorPin(supervisorPin);
-    if (!auth.success || !auth.supervisor) {
-      posSound.error();
-      return { success: false, message: 'Otorisasi Supervisor diperlukan untuk membatalkan pesanan!' };
-    }
-
-    const now = new Date().toISOString();
-    const creditRef = `REF-BATAL-${target.poNumber || target.receiptNumber}`;
-
-    // Credit all received payments to customer deposit account
-    if (target.paidAmount > 0) {
-      setCustomers((prev) =>
-        prev.map((c) =>
-          c.id === target.customer.id
-            ? {
-                ...c,
-                depositBalance: c.depositBalance + target.paidAmount,
-                lastTransactionAt: now,
-              }
-            : c
-        )
-      );
-    }
-
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId
-          ? {
-              ...o,
-              orderStatus: 'cancelled',
-              paymentStatus: 'refunded',
-              cancellationReason: reason.trim(),
-              cancellationApprovedBy: auth.supervisor!.name,
-              cancellationCreditRef: creditRef,
-              cancelledAt: now,
-            }
-          : o
-      )
-    );
-
-    addAudit(
-      'PO_CANCELLED',
-      'order',
-      orderId,
-      `Pembatalan PO ${target.poNumber || target.receiptNumber} (${target.customer.name}) disetujui oleh SPV ${auth.supervisor.name}. Alasan: ${reason.trim()}. Dana Rp ${target.paidAmount.toLocaleString('id-ID')} dikreditkan ke Akun Deposit Pelanggan (Ref: ${creditRef}).`
-    );
-
-    posSound.beep();
-    return {
-      success: true,
-      message: `Pesanan ${target.poNumber || target.receiptNumber} berhasil dibatalkan. Dana Rp ${target.paidAmount.toLocaleString('id-ID')} telah dikreditkan ke Akun Deposit ${target.customer.name}.`,
-    };
-  };
-
-  const duplicatePoToCart = (orderId: string, selectedItemIds: string[]) => {
-    const target = orders.find((o) => o.id === orderId);
-    if (!target) {
-      posSound.error();
-      return { success: false, message: 'Pesanan tidak ditemukan' };
-    }
-    if (target.orderStatus !== 'picked_up') {
-      posSound.error();
-      return {
-        success: false,
-        message: 'Duplikat pesanan hanya diizinkan untuk pesanan yang sudah Selesai (Picked Up)!',
-      };
-    }
-    if (selectedItemIds.length === 0) {
-      posSound.error();
-      return { success: false, message: 'Pilih minimal satu item untuk diduplikasi!' };
-    }
-
-    const itemsToDuplicate = target.items.filter((i) => selectedItemIds.includes(i.id));
-    if (itemsToDuplicate.length === 0) {
-      posSound.error();
-      return { success: false, message: 'Tidak ada item yang cocok untuk diduplikasi!' };
-    }
-
-    // Reset payment, customization notes, schedule, fulfillment status
-    const freshCartItems: CartItem[] = itemsToDuplicate.map((item, idx) => {
-      const prodMaster = products.find((p) => p.id === item.productId);
-      return {
-        id: 'dup-' + Date.now().toString().slice(-6) + '-' + idx,
-        productId: item.productId,
-        productName: item.productName,
-        unitPrice: item.unitPrice,
-        originalPrice: item.originalPrice || item.unitPrice,
-        quantity: item.quantity,
-        isPriceOverridden: item.isPriceOverridden,
-        overrideReason: item.overrideReason,
-        isMadeToOrder: item.isMadeToOrder,
-        baseProductId: item.baseProductId,
-        category: item.category,
-        stockAvailable: prodMaster?.stock ?? item.stockAvailable,
-        ownershipType: item.ownershipType,
-        supplierId: item.supplierId,
-        supplierName: item.supplierName,
-        commissionMethod: item.commissionMethod,
-        commissionValue: item.commissionValue,
-        commissionBasis: item.commissionBasis,
-      };
-    });
-
-    setCart(freshCartItems);
-    setSelectedCustomer(target.customer);
-    setOrderDiscountType(null);
-    setOrderDiscountValue(0);
-    setOrderDiscountReason('');
-
-    addAudit(
-      'PO_DUPLICATE_DRAFT',
-      'order',
-      orderId,
-      `Duplikasi pesanan selesai ${target.poNumber || target.receiptNumber} ke keranjang kasir untuk ${target.customer.name}. Jumlah item: ${freshCartItems.length}`
-    );
-
-    posSound.cashRegister();
-    return {
-      success: true,
-      message: `Berhasil menduplikasi ${freshCartItems.length} item ke Kasir untuk pelanggan ${target.customer.name}!`,
-    };
-  };
 
   // Void Order within Grace Period (POS-US-016)
   const voidOrder = (orderId: string, reason: string, supervisorPin: string) => {
@@ -3518,676 +1471,9 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: true, message: `Stok ${target.name} berhasil diperbarui: ${newStock}` };
   };
 
-  // Submit Goods Receipt (POS-US-059, POS-US-060, POS-US-061)
-  const submitGoodsReceipt = (
-    receiptData: Omit<GoodsReceiptRecord, 'id' | 'receiptNumber' | 'stockMovementRef' | 'createdAt' | 'status'>
-  ) => {
-    // 1. Validation
-    if (!receiptData.supplierId) {
-      posSound.error();
-      return { success: false, message: 'Supplier mitra pengirim wajib dipilih!' };
-    }
-    if (!receiptData.items || receiptData.items.length === 0) {
-      posSound.error();
-      return { success: false, message: 'Minimal harus ada 1 baris item produk yang diterima!' };
-    }
-    for (const item of receiptData.items) {
-      if (!item.productId) {
-        posSound.error();
-        return { success: false, message: 'Ada baris item yang belum memilih SKU produk!' };
-      }
-      if (!item.quantityReceived || item.quantityReceived <= 0) {
-        posSound.error();
-        return {
-          success: false,
-          message: `Jumlah stok jual diterima untuk "${item.productName || 'produk'}" harus lebih dari 0!`,
-        };
-      }
-    }
-
-    let safeTotalPurchaseCost = receiptData.totalPurchaseCost;
-    let safePaymentMethod = receiptData.paymentMethod;
-
-    if (receiptData.receiptType === 'Dibeli Sendiri') {
-      if (
-        safeTotalPurchaseCost === undefined ||
-        safeTotalPurchaseCost === null ||
-        isNaN(safeTotalPurchaseCost) ||
-        safeTotalPurchaseCost < 0
-      ) {
-        // Auto-calculate from items if available, or fallback to 0
-        safeTotalPurchaseCost = receiptData.items.reduce((sum, it) => {
-          const price = it.actualBuyPrice ?? it.plannedBuyPrice ?? Math.round(it.sellingPrice * 0.6);
-          return sum + (it.quantityReceived * price);
-        }, 0);
-      }
-      if (!safePaymentMethod) {
-        safePaymentMethod = 'transfer';
-      }
-    }
-
-    // 2. Generate Receipt Number and Movement Reference
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-    const seq = String(goodsReceipts.length + 1).padStart(3, '0');
-    const receiptNumber = `RCV-${dateStr}-${seq}`;
-    const stockMovementRef = `MOV-IN-${receiptNumber}`;
-    const id = `rec-${Date.now()}`;
-    const totalQuantity = receiptData.items.reduce((sum, it) => sum + it.quantityReceived, 0);
-
-    const newRecord: GoodsReceiptRecord = {
-      ...receiptData,
-      id,
-      branchId: selectedBranchId,
-      receiptNumber,
-      totalQuantity,
-      totalPurchaseCost: safeTotalPurchaseCost,
-      paymentMethod: safePaymentMethod,
-      status: 'submitted',
-      stockMovementRef,
-      submittedAt: now.toISOString(),
-      createdAt: now.toISOString(),
-    };
-
-    // 3. Update stock for each product & raw material (added exactly once) and log stock movements
-    const updatedProducts = [...products];
-    const updatedRawMaterials = [...rawMaterials];
-    const newStockAdjustments: StockAdjustmentRecord[] = [];
-
-    receiptData.items.forEach((item) => {
-      const pIdx = updatedProducts.findIndex((p) => p.id === item.productId);
-      if (pIdx >= 0) {
-        const prevStock = updatedProducts[pIdx].stock;
-        const newStock = prevStock + item.quantityReceived;
-        updatedProducts[pIdx] = {
-          ...updatedProducts[pIdx],
-          stock: newStock,
-        };
-
-        newStockAdjustments.push({
-          id: `adj-rcv-${Date.now()}-${item.productId}`,
-          productId: item.productId,
-          productName: item.productName || updatedProducts[pIdx].name,
-          type: 'increase',
-          quantity: item.quantityReceived,
-          previousStock: prevStock,
-          resultingStock: newStock,
-          reason: `Penerimaan Barang (${receiptData.receiptType}): ${receiptNumber} [Ref: ${stockMovementRef}]`,
-          adminId: currentUser.id,
-          adminName: currentUser.name,
-          timestamp: now.toISOString(),
-        });
-      }
-
-      const rIdx = updatedRawMaterials.findIndex((r) => r.id === item.productId);
-      if (rIdx >= 0) {
-        const prevStock = updatedRawMaterials[rIdx].stock;
-        const newStock = prevStock + item.quantityReceived;
-        updatedRawMaterials[rIdx] = {
-          ...updatedRawMaterials[rIdx],
-          stock: newStock,
-        };
-
-        newStockAdjustments.push({
-          id: `adj-rcv-raw-${Date.now()}-${item.productId}`,
-          productId: item.productId,
-          productName: item.productName || updatedRawMaterials[rIdx].name,
-          type: 'increase',
-          quantity: item.quantityReceived,
-          previousStock: prevStock,
-          resultingStock: newStock,
-          reason: `Penerimaan Bahan Baku (${receiptData.receiptType}): ${receiptNumber} [Ref: ${stockMovementRef}]`,
-          adminId: currentUser.id,
-          adminName: currentUser.name,
-          timestamp: now.toISOString(),
-        });
-      }
-    });
-
-    setProducts(updatedProducts);
-    setRawMaterials(updatedRawMaterials);
-    setStockAdjustments((prev) => [...newStockAdjustments, ...prev]);
-    setGoodsReceipts((prev) => [newRecord, ...prev]);
-
-    // Generate and register Expiry Batches for saleable products
-    const newBatches: ProductExpiryBatch[] = [];
-    receiptData.items.forEach((item) => {
-      const prod = updatedProducts.find((p) => p.id === item.productId);
-      if (prod) {
-        if (item.expiryBatches && item.expiryBatches.length > 0) {
-          item.expiryBatches.forEach((b, bIdx) => {
-            const batchQty = Number(b.quantity) || 0;
-            if (batchQty > 0) {
-              const expType = prod.expiryType || (b.expiryDate === (receiptData.arrivalDate || now.toISOString().slice(0, 10)) ? 'daily' : 'multi_day');
-              newBatches.push({
-                id: `batch-${Date.now()}-${item.productId}-${bIdx}-${Math.random().toString(36).slice(2, 6)}`,
-                batchNumber: b.batchNumber || `BCH-${receiptNumber}-${bIdx + 1}`,
-                productId: item.productId,
-                productName: item.productName || prod.name,
-                sku: item.productSku || prod.sku,
-                branchId: selectedBranchId,
-                branchName: selectedBranch.name,
-                expiryType: expType,
-                expiryDate: b.expiryDate || now.toISOString().slice(0, 10),
-                initialQuantity: batchQty,
-                remainingQuantity: batchQty,
-                goodsReceiptId: id,
-                goodsReceiptNumber: receiptNumber,
-                receivedDate: receiptData.arrivalDate || now.toISOString().slice(0, 10),
-                unitCost: item.actualBuyPrice || item.buyPrice || 0,
-                ownershipType: prod.ownershipType || (receiptData.receiptType === 'Konsinyasi' ? 'consignment' : 'owned'),
-                supplierId: receiptData.supplierId,
-                supplierName: receiptData.supplierName,
-                category: prod.category,
-                status: 'active',
-                notes: b.notes || (expType === 'daily' ? 'Batch Expired Harian' : 'Batch Expired Multi-Hari'),
-                createdAt: now.toISOString(),
-              });
-            }
-          });
-        } else if (item.quantityReceived > 0) {
-          const expType = prod.expiryType || 'daily';
-          const defaultExp = expType === 'daily'
-            ? (receiptData.arrivalDate || now.toISOString().slice(0, 10))
-            : new Date(Date.now() + (prod.shelfLifeDays || 7) * 86400000).toISOString().slice(0, 10);
-          newBatches.push({
-            id: `batch-${Date.now()}-${item.productId}-0-${Math.random().toString(36).slice(2, 6)}`,
-            batchNumber: `BCH-${receiptNumber}-1`,
-            productId: item.productId,
-            productName: item.productName || prod.name,
-            sku: item.productSku || prod.sku,
-            branchId: selectedBranchId,
-            branchName: selectedBranch.name,
-            expiryType: expType,
-            expiryDate: defaultExp,
-            initialQuantity: item.quantityReceived,
-            remainingQuantity: item.quantityReceived,
-            goodsReceiptId: id,
-            goodsReceiptNumber: receiptNumber,
-            receivedDate: receiptData.arrivalDate || now.toISOString().slice(0, 10),
-            unitCost: item.actualBuyPrice || item.buyPrice || 0,
-            ownershipType: prod.ownershipType || (receiptData.receiptType === 'Konsinyasi' ? 'consignment' : 'owned'),
-            supplierId: receiptData.supplierId,
-            supplierName: receiptData.supplierName,
-            category: prod.category,
-            status: 'active',
-            notes: expType === 'daily' ? 'Batch Expired Harian' : 'Batch Expired Multi-Hari',
-            createdAt: now.toISOString(),
-          });
-        }
-      }
-    });
-
-    if (newBatches.length > 0) {
-      setExpiryBatches((prev) => [...newBatches, ...prev]);
-    }
-
-    // 4. Atomically realize linked purchase plan (POS-US-075)
-    if (receiptData.purchasePlanId) {
-      setPurchasePlans((prevPlans) =>
-        prevPlans.map((p) => {
-          if (p.id === receiptData.purchasePlanId) {
-            return {
-              ...p,
-              status: 'Terealisasi',
-              linkedReceiptId: id,
-              linkedReceiptNumber: receiptNumber,
-              updatedAt: now.toISOString(),
-              updatedBy: currentUser.id,
-              updatedByName: `${currentUser.name} (${currentUser.role})`,
-            };
-          }
-          return p;
-        })
-      );
-      addAudit(
-        'REALISASI_RENCANA_PEMBELIAN',
-        'purchase_plan',
-        receiptData.purchasePlanId,
-        `Realisasi Rencana Pembelian ${receiptData.purchasePlanId} berhasil melalui Bukti Penerimaan ${receiptNumber} [Ref: ${stockMovementRef}]`
-      );
-    }
-
-    // 5. Log audit trail
-    addAudit(
-      'SUBMIT_GOODS_RECEIPT',
-      'receipt',
-      receiptNumber,
-      `Penerimaan Barang ${receiptNumber} (${receiptData.receiptType}) dari ${receiptData.supplierName}: ${totalQuantity} pcs masuk stok jual. Ref: ${stockMovementRef}`
-    );
-
-    // 6. Sound & Clear Draft
-    posSound.cashRegister();
-    setReceivingDraft(null);
-
-    return {
-      success: true,
-      receipt: newRecord,
-      message: `Penerimaan barang ${receiptNumber} berhasil disimpan! ${totalQuantity} pcs telah ditambahkan ke stok jual.`,
-    };
-  };
-
-  // =========================================================================
-  // POS-US-073, POS-US-074, POS-US-075: RENCANA PEMBELIAN (PURCHASE PLANNING)
-  // Superadmin Only - Owned Purchases Only - No stock edits in this module
-  // =========================================================================
-
-  // Create Purchase Plan (Superadmin Only)
-  const addPurchasePlan = (data: {
-    namaRencana: string;
-    branchId: string;
-    supplierId?: string;
-    lines: {
-      productId: string;
-      plannedQuantity: number;
-      plannedBuyPrice: number;
-      itemType?: PurchasePlanItemType;
-      sourcePoRef?: string;
-      supplierId?: string;
-      supplierName?: string;
-      notes?: string;
-    }[];
-    notes?: string;
-    sourceOrderIds?: string[];
-    attachedPoNumbers?: string[];
-  }) => {
-    // 1. Permission check
-    if (currentUser.role !== 'admin') {
-      posSound.error();
-      return { success: false, message: 'Hanya Superadmin yang berhak membuat Rencana Pembelian!' };
-    }
-
-    // 2. Validate Branch
-    const targetBranch = branches.find((b) => b.id === data.branchId);
-    if (!targetBranch || targetBranch.status === 'inactive') {
-      posSound.error();
-      return { success: false, message: 'Cabang aktif wajib dipilih sebelum membuat rencana pembelian!' };
-    }
-
-    // 3. Validate Plan Name
-    if (!data.namaRencana || !data.namaRencana.trim()) {
-      posSound.error();
-      return { success: false, message: 'Nama Rencana Pembelian wajib diisi!' };
-    }
-
-    // 4. Validate Supplier (fallback to Multi-Sumber if not specified or 'multi')
-    const targetSupplier = (data.supplierId && data.supplierId !== 'multi'
-      ? suppliers.find((s) => s.id === data.supplierId)
-      : null) || {
-      id: 'multi',
-      name: 'Multi-Sumber / Terpadu',
-      category: 'Campuran (In-House, Konsinyasi & Pembelian Langsung)',
-    };
-
-    // 5. Validate Product Lines
-    if (!data.lines || data.lines.length === 0) {
-      posSound.error();
-      return { success: false, message: 'Minimal harus ada 1 baris item produk dalam rencana pembelian!' };
-    }
-
-    // Allow multiple lines if itemType or sourcePoRef differs, or aggregate
-    const formattedLines: PurchasePlanProductLine[] = [];
-
-    for (let i = 0; i < data.lines.length; i++) {
-      const line = data.lines[i];
-      if (!line.productId) {
-        posSound.error();
-        return { success: false, message: `Baris #${i + 1} belum memilih produk!` };
-      }
-
-      const prod = products.find((p) => p.id === line.productId);
-      if (!prod) {
-        posSound.error();
-        return { success: false, message: `Produk pada baris #${i + 1} tidak ditemukan!` };
-      }
-
-      const qty = Math.floor(Number(line.plannedQuantity));
-      if (isNaN(qty) || qty <= 0) {
-        posSound.error();
-        return {
-          success: false,
-          message: `Jumlah rencana beli untuk "${prod.name}" harus berupa angka bulat positif (minimal 1)!`,
-        };
-      }
-
-      const price = Math.max(0, Number(line.plannedBuyPrice) || 0);
-      const lineTotal = qty * price;
-
-      // Determine itemType fallback
-      let itemType: PurchasePlanItemType = line.itemType || 'direct_purchase';
-      if (!line.itemType) {
-        if (prod.ownershipType === 'consignment' || (prod.supplierId && prod.supplierId !== 'internal')) {
-          itemType = 'consignment';
-        } else if (prod.isMadeToOrder) {
-          itemType = 'in_house';
-        } else {
-          itemType = 'direct_purchase';
-        }
-      }
-
-      const lineSupplier = line.supplierId
-        ? suppliers.find((s) => s.id === line.supplierId)
-        : (prod.supplierId ? suppliers.find((s) => s.id === prod.supplierId) : undefined);
-
-      formattedLines.push({
-        id: `rpl-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
-        productId: prod.id,
-        productSku: prod.sku,
-        productName: prod.name,
-        category: prod.categoryLabel || prod.category || 'Umum',
-        plannedQuantity: qty,
-        plannedBuyPrice: price,
-        lineTotal,
-        itemType,
-        sourcePoRef: line.sourcePoRef,
-        supplierId: lineSupplier?.id || line.supplierId,
-        supplierName: lineSupplier?.name || line.supplierName,
-        notes: line.notes,
-      });
-    }
-
-    // 6. Calculate total planned value
-    const totalPlannedValue = formattedLines.reduce((sum, l) => sum + l.lineTotal, 0);
-
-    // 7. Generate ID format: RP-{BRANCHCODE}-{YYYYMM}-{NNNN}
-    const now = new Date();
-    const yearMonth = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const cleanBranchCode = (targetBranch.code || 'CAB01').replace(/[^a-zA-Z0-9]/g, '').toUpperCase() || 'CAB01';
-    const prefix = `RP-${cleanBranchCode}-${yearMonth}-`;
-
-    let maxSeq = 0;
-    purchasePlans.forEach((p) => {
-      if (p.id.startsWith(prefix)) {
-        const seqStr = p.id.replace(prefix, '');
-        const num = parseInt(seqStr, 10);
-        if (!isNaN(num) && num > maxSeq) {
-          maxSeq = num;
-        }
-      }
-    });
-    const seq = String(maxSeq + 1).padStart(4, '0');
-    const planId = `${prefix}${seq}`;
-
-    // 8. Create Plan object (DO NOT ADD OR EDIT STOCK QUANTITY HERE)
-    const newPlan: PurchasePlan = {
-      id: planId,
-      namaRencana: data.namaRencana.trim(),
-      branchId: targetBranch.id,
-      branchCode: targetBranch.code,
-      branchName: targetBranch.name,
-      supplierId: targetSupplier.id,
-      supplierName: targetSupplier.name,
-      supplierCategory: targetSupplier.category || 'Umum',
-      lines: formattedLines,
-      totalPlannedValue,
-      status: 'Direncanakan',
-      notes: data.notes?.trim() || undefined,
-      sourceOrderIds: data.sourceOrderIds,
-      attachedPoNumbers: data.attachedPoNumbers,
-      createdBy: currentUser.id,
-      createdByName: `${currentUser.name} (${currentUser.role})`,
-      createdAt: now.toISOString(),
-      updatedAt: now.toISOString(),
-    };
-
-    setPurchasePlans((prev) => [newPlan, ...prev]);
-
-    // 9. Audit log
-    addAudit(
-      'CREATE_PURCHASE_PLAN',
-      'purchase_plan',
-      planId,
-      `Superadmin ${currentUser.name} membuat Rencana Pembelian ${planId} (${newPlan.namaRencana}) di ${targetBranch.name} untuk supplier ${targetSupplier.name} senilai Rp ${totalPlannedValue.toLocaleString('id-ID')}`
-    );
-
-    posSound.cashRegister();
-    return {
-      success: true,
-      plan: newPlan,
-      message: `Rencana Pembelian ${planId} berhasil disimpan dengan status Direncanakan!`,
-    };
-  };
-
-  // Edit Purchase Plan (Superadmin Only, Only 'Direncanakan', Branch is IMMUTABLE)
-  const updatePurchasePlan = (
-    id: string,
-    data: {
-      namaRencana?: string;
-      supplierId?: string;
-      lines?: {
-        productId: string;
-        plannedQuantity: number;
-        plannedBuyPrice: number;
-        itemType?: PurchasePlanItemType;
-        sourcePoRef?: string;
-        supplierId?: string;
-        supplierName?: string;
-        notes?: string;
-      }[];
-      notes?: string;
-      sourceOrderIds?: string[];
-      attachedPoNumbers?: string[];
-    }
-  ) => {
-    if (currentUser.role !== 'admin') {
-      posSound.error();
-      return { success: false, message: 'Hanya Superadmin yang berhak mengubah Rencana Pembelian!' };
-    }
-
-    const targetPlan = purchasePlans.find((p) => p.id === id);
-    if (!targetPlan) {
-      posSound.error();
-      return { success: false, message: 'Rencana Pembelian tidak ditemukan!' };
-    }
-
-    if (targetPlan.status !== 'Direncanakan') {
-      posSound.error();
-      return {
-        success: false,
-        message: `Rencana Pembelian ${id} berstatus "${targetPlan.status}" dan tidak dapat diubah lagi!`,
-      };
-    }
-
-    let updatedSupplierId = targetPlan.supplierId;
-    let updatedSupplierName = targetPlan.supplierName;
-    let updatedSupplierCategory = targetPlan.supplierCategory;
-
-    if (data.supplierId && data.supplierId !== targetPlan.supplierId) {
-      if (data.supplierId === 'multi') {
-        updatedSupplierId = 'multi';
-        updatedSupplierName = 'Multi-Sumber / Terpadu';
-        updatedSupplierCategory = 'Campuran (In-House, Konsinyasi & Pembelian Langsung)';
-      } else {
-        const sup = suppliers.find((s) => s.id === data.supplierId);
-        if (sup) {
-          updatedSupplierId = sup.id;
-          updatedSupplierName = sup.name;
-          updatedSupplierCategory = sup.category || 'Umum';
-        }
-      }
-    }
-
-    let updatedLines = targetPlan.lines;
-    if (data.lines) {
-      if (data.lines.length === 0) {
-        posSound.error();
-        return { success: false, message: 'Minimal harus ada 1 baris item produk dalam rencana pembelian!' };
-      }
-      const formattedLines: PurchasePlanProductLine[] = [];
-
-      for (let i = 0; i < data.lines.length; i++) {
-        const line = data.lines[i];
-        const prod = products.find((p) => p.id === line.productId);
-        if (!prod) {
-          posSound.error();
-          return { success: false, message: `Produk pada baris #${i + 1} tidak ditemukan!` };
-        }
-
-        const qty = Math.floor(Number(line.plannedQuantity));
-        if (isNaN(qty) || qty <= 0) {
-          posSound.error();
-          return {
-            success: false,
-            message: `Jumlah rencana beli untuk "${prod.name}" harus berupa angka bulat positif (minimal 1)!`,
-          };
-        }
-
-        const price = Math.max(0, Number(line.plannedBuyPrice) || 0);
-        const lineTotal = qty * price;
-
-        let itemType: PurchasePlanItemType = line.itemType || 'direct_purchase';
-        if (!line.itemType) {
-          if (prod.ownershipType === 'consignment' || (prod.supplierId && prod.supplierId !== 'internal')) {
-            itemType = 'consignment';
-          } else if (prod.isMadeToOrder) {
-            itemType = 'in_house';
-          } else {
-            itemType = 'direct_purchase';
-          }
-        }
-
-        const lineSupplier = line.supplierId
-          ? suppliers.find((s) => s.id === line.supplierId)
-          : (prod.supplierId ? suppliers.find((s) => s.id === prod.supplierId) : undefined);
-
-        formattedLines.push({
-          id: `rpl-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
-          productId: prod.id,
-          productSku: prod.sku,
-          productName: prod.name,
-          category: prod.categoryLabel || prod.category || 'Umum',
-          plannedQuantity: qty,
-          plannedBuyPrice: price,
-          lineTotal,
-          itemType,
-          sourcePoRef: line.sourcePoRef,
-          supplierId: lineSupplier?.id || line.supplierId,
-          supplierName: lineSupplier?.name || line.supplierName,
-          notes: line.notes,
-        });
-      }
-      updatedLines = formattedLines;
-    }
-
-    const totalPlannedValue = updatedLines.reduce((sum, l) => sum + l.lineTotal, 0);
-    const now = new Date();
-
-    const updatedPlan: PurchasePlan = {
-      ...targetPlan,
-      namaRencana: data.namaRencana !== undefined ? data.namaRencana.trim() : targetPlan.namaRencana,
-      supplierId: updatedSupplierId,
-      supplierName: updatedSupplierName,
-      supplierCategory: updatedSupplierCategory,
-      lines: updatedLines,
-      totalPlannedValue,
-      notes: data.notes !== undefined ? data.notes.trim() : targetPlan.notes,
-      sourceOrderIds: data.sourceOrderIds !== undefined ? data.sourceOrderIds : targetPlan.sourceOrderIds,
-      attachedPoNumbers: data.attachedPoNumbers !== undefined ? data.attachedPoNumbers : targetPlan.attachedPoNumbers,
-      updatedAt: now.toISOString(),
-      updatedBy: currentUser.id,
-      updatedByName: `${currentUser.name} (${currentUser.role})`,
-    };
-
-    setPurchasePlans((prev) => prev.map((p) => (p.id === id ? updatedPlan : p)));
-
-    addAudit(
-      'UPDATE_PURCHASE_PLAN',
-      'purchase_plan',
-      id,
-      `Superadmin ${currentUser.name} memperbarui Rencana Pembelian ${id} (Total Rencana: Rp ${totalPlannedValue.toLocaleString('id-ID')})`
-    );
-
-    posSound.beep();
-    return {
-      success: true,
-      plan: updatedPlan,
-      message: `Rencana Pembelian ${id} berhasil diperbarui!`,
-    };
-  };
-
-  // Cancel Purchase Plan (Superadmin Only, Only 'Direncanakan')
-  const cancelPurchasePlan = (id: string, reason?: string) => {
-    if (currentUser.role !== 'admin') {
-      posSound.error();
-      return { success: false, message: 'Hanya Superadmin yang berhak membatalkan Rencana Pembelian!' };
-    }
-
-    const targetPlan = purchasePlans.find((p) => p.id === id);
-    if (!targetPlan) {
-      posSound.error();
-      return { success: false, message: 'Rencana Pembelian tidak ditemukan!' };
-    }
-
-    if (targetPlan.status !== 'Direncanakan') {
-      posSound.error();
-      return {
-        success: false,
-        message: `Rencana Pembelian ${id} tidak dapat dibatalkan karena berstatus "${targetPlan.status}"!`,
-      };
-    }
-
-    const now = new Date();
-    setPurchasePlans((prev) =>
-      prev.map((p) => {
-        if (p.id !== id) return p;
-        return {
-          ...p,
-          status: 'Dibatalkan',
-          notes: reason ? `${p.notes ? p.notes + ' | ' : ''}Alasan Batal: ${reason}` : p.notes,
-          updatedAt: now.toISOString(),
-          updatedBy: currentUser.id,
-          updatedByName: `${currentUser.name} (${currentUser.role})`,
-        };
-      })
-    );
-
-    addAudit(
-      'CANCEL_PURCHASE_PLAN',
-      'purchase_plan',
-      id,
-      `Superadmin ${currentUser.name} membatalkan Rencana Pembelian ${id}. ${reason ? 'Alasan: ' + reason : ''}`
-    );
-
-    posSound.beep();
-    return {
-      success: true,
-      message: `Rencana Pembelian ${id} berhasil dibatalkan!`,
-    };
-  };
-
-  // Lock Purchase Plan for Goods Receipt draft
-  const lockPurchasePlanForReceipt = (id: string) => {
-    const targetPlan = purchasePlans.find((p) => p.id === id);
-    if (!targetPlan) {
-      return { success: false, message: 'Rencana Pembelian tidak ditemukan!' };
-    }
-    if (targetPlan.status !== 'Direncanakan') {
-      return {
-        success: false,
-        message: `Rencana Pembelian ${id} tidak tersedia (status: ${targetPlan.status}).`,
-      };
-    }
-
-    const now = new Date();
-    setPurchasePlans((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, status: 'Terkait Penerimaan', updatedAt: now.toISOString() } : p))
-    );
-
-    return { success: true, message: 'Rencana Pembelian dikunci untuk proses penerimaan barang.' };
-  };
-
-  // Unlock Purchase Plan if Goods Receipt draft is discarded
-  const unlockPurchasePlanFromReceipt = (id: string) => {
-    const targetPlan = purchasePlans.find((p) => p.id === id);
-    if (targetPlan && targetPlan.status === 'Terkait Penerimaan') {
-      const now = new Date();
-      setPurchasePlans((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, status: 'Direncanakan', updatedAt: now.toISOString() } : p))
-      );
-    }
-    return { success: true, message: 'Rencana Pembelian dikembalikan ke status Direncanakan.' };
-  };
-
+  // Goods receipt submission and the purchase-plan lifecycle (add, update,
+  // cancel, lock for receipt, unlock) — extracted to
+  // src/context/slices/useGoodsReceivingSlice.ts.
   // POS-US-072 & POS-US-067: Update Product Information (Master data only, NEVER stock or Stok Awal)
   const updateProductInfo = (
     productId: string,
@@ -4288,317 +1574,8 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: true, message: 'Draft penutupan berhasil disimpan.' };
   };
 
-  // POS-US-070: Stock Transfers
-  const createStockTransfer = (data: {
-    fromBranchId: string;
-    toBranchId: string;
-    productId: string;
-    quantity: number;
-    notes?: string;
-  }) => {
-    if (isBranchReadOnly || selectedBranch.status === 'inactive') {
-      posSound.error();
-      return { success: false, message: 'Cabang nonaktif tidak dapat membuat transfer stok.' };
-    }
-    if (data.fromBranchId === data.toBranchId) {
-      posSound.error();
-      return { success: false, message: 'Cabang tujuan harus berbeda dari cabang asal.' };
-    }
-    if (data.quantity <= 0) {
-      posSound.error();
-      return { success: false, message: 'Jumlah transfer harus lebih dari 0.' };
-    }
-
-    const sourceProduct = products.find((p) => p.id === data.productId);
-    if (!sourceProduct) return { success: false, message: 'Produk tidak ditemukan.' };
-    if (sourceProduct.stock < data.quantity) {
-      posSound.error();
-      return { success: false, message: `Stok tidak mencukupi! Stok saat ini: ${sourceProduct.stock}` };
-    }
-
-    const fromBranch = branches.find((b) => b.id === data.fromBranchId);
-    const toBranch = branches.find((b) => b.id === data.toBranchId);
-
-    // Deduct stock from source product
-    setProducts((prev) =>
-      prev.map((p) => {
-        if (p.id === data.productId) {
-          return { ...p, stock: p.stock - data.quantity };
-        }
-        // In destination branch, mark inTransitStock
-        if (p.branchId === data.toBranchId && (p.sku === sourceProduct.sku || p.name === sourceProduct.name)) {
-          return { ...p, inTransitStock: (p.inTransitStock || 0) + data.quantity };
-        }
-        return p;
-      })
-    );
-
-    const transferNo = `TRF-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString().slice(-4)}`;
-    const newRecord: StockTransferRecord = {
-      id: 'trf-' + Date.now().toString(),
-      transferNo,
-      fromBranchId: data.fromBranchId,
-      fromBranchName: fromBranch?.name || 'Cabang Asal',
-      toBranchId: data.toBranchId,
-      toBranchName: toBranch?.name || 'Cabang Tujuan',
-      productId: sourceProduct.id,
-      productName: sourceProduct.name,
-      sku: sourceProduct.sku,
-      quantity: data.quantity,
-      status: 'in_transit',
-      notes: data.notes,
-      createdBy: `${currentUser.name} (${currentUser.role})`,
-      createdAt: new Date().toISOString(),
-    };
-
-    setStockTransfers((prev) => [newRecord, ...prev]);
-
-    addAudit(
-      'STOCK_TRANSFER_SEND',
-      'stock',
-      newRecord.id,
-      `Transfer ${data.quantity} pcs ${sourceProduct.name} dari ${fromBranch?.name} ke ${toBranch?.name} (${transferNo}) dibuat oleh ${currentUser.name}`
-    );
-
-    posSound.beep();
-    return { success: true, message: `Transfer ${transferNo} berhasil dibuat (${data.quantity} pcs dalam pengiriman).` };
-  };
-
-  const receiveStockTransfer = (transferId: string) => {
-    if (isBranchReadOnly || selectedBranch.status === 'inactive') {
-      posSound.error();
-      return { success: false, message: 'Cabang nonaktif tidak dapat menerima transfer stok.' };
-    }
-
-    const trf = stockTransfers.find((t) => t.id === transferId);
-    if (!trf) return { success: false, message: 'Data transfer tidak ditemukan.' };
-    if (trf.status !== 'in_transit') return { success: false, message: 'Transfer sudah diproses sebelumnya.' };
-
-    // Increase target branch sellable stock & decrease in-transit
-    setProducts((prev) =>
-      prev.map((p) => {
-        if (p.branchId === trf.toBranchId && (p.sku === trf.sku || p.name === trf.productName)) {
-          return {
-            ...p,
-            stock: p.stock + trf.quantity,
-            inTransitStock: Math.max(0, (p.inTransitStock || 0) - trf.quantity),
-          };
-        }
-        return p;
-      })
-    );
-
-    setStockTransfers((prev) =>
-      prev.map((t) =>
-        t.id === transferId
-          ? {
-              ...t,
-              status: 'received',
-              receivedAt: new Date().toISOString(),
-              receivedBy: `${currentUser.name} (${currentUser.role})`,
-            }
-          : t
-      )
-    );
-
-    addAudit(
-      'STOCK_TRANSFER_RECEIVE',
-      'stock',
-      transferId,
-      `Penerimaan transfer ${trf.transferNo} (${trf.quantity} pcs ${trf.productName}) di ${trf.toBranchName} oleh ${currentUser.name}`
-    );
-
-    posSound.beep();
-    return { success: true, message: `Transfer ${trf.transferNo} berhasil diterima! Stok siap jual bertambah ${trf.quantity} pcs.` };
-  };
-
-  // POS-US-071: Record Bad Stock
-  const recordBadStock = (data: {
-    branchId: string;
-    productId: string;
-    quantity: number;
-    reason: any;
-    disposition: any;
-    notes?: string;
-  }) => {
-    if (isBranchReadOnly || selectedBranch.status === 'inactive') {
-      posSound.error();
-      return { success: false, message: 'Cabang nonaktif tidak dapat mencatat stok buruk.' };
-    }
-    if (data.quantity <= 0) {
-      posSound.error();
-      return { success: false, message: 'Jumlah stok buruk harus lebih dari 0.' };
-    }
-
-    const target = products.find((p) => p.id === data.productId);
-    if (!target) return { success: false, message: 'Produk tidak ditemukan.' };
-    if (target.stock < data.quantity) {
-      posSound.error();
-      return { success: false, message: `Stok tidak mencukupi! Stok saat ini: ${target.stock}` };
-    }
-
-    // Deduct sellable stock & add to badStock
-    setProducts((prev) =>
-      prev.map((p) => {
-        if (p.id === data.productId) {
-          return {
-            ...p,
-            stock: p.stock - data.quantity,
-            badStock: (p.badStock || 0) + data.quantity,
-          };
-        }
-        return p;
-      })
-    );
-
-    const recordNo = `BAD-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString().slice(-4)}`;
-    const newRecord: BadStockRecord = {
-      id: 'bad-' + Date.now().toString(),
-      recordNo,
-      branchId: data.branchId,
-      productId: target.id,
-      productName: target.name,
-      sku: target.sku,
-      quantity: data.quantity,
-      reason: data.reason,
-      disposition: data.disposition,
-      notes: data.notes,
-      recordedBy: `${currentUser.name} (${currentUser.role})`,
-      createdAt: new Date().toISOString(),
-    };
-
-    setBadStocks((prev) => [newRecord, ...prev]);
-
-    addAudit(
-      'STOCK_BAD_RECORD',
-      'stock',
-      newRecord.id,
-      `Pencatatan stok buruk/kadaluwarsa (${recordNo}): ${data.quantity} pcs ${target.name}. Alasan: ${data.reason}. Tindakan: ${data.disposition}`
-    );
-
-    posSound.beep();
-    return { success: true, message: `Stok buruk ${recordNo} (${data.quantity} pcs) berhasil dicatat dan dipotong dari stok jual.` };
-  };
-
-  // Expiry Reconciliation & Stock Destruction Trigger (Requirement: Superadmin Only with Audit Log)
-  const destroyExpiredBatches = (batchIds: string[], reasonNote?: string) => {
-    if (currentUser.role !== 'admin' && (currentUser.role as string) !== 'superadmin') {
-      posSound.error();
-      return {
-        success: false,
-        message: 'Akses Ditolak: Otorisasi pemusnahan stok kadaluwarsa hanya dapat dilakukan oleh Admin / Superadmin.',
-      };
-    }
-
-    if (isBranchReadOnly || selectedBranch.status === 'inactive') {
-      posSound.error();
-      return { success: false, message: 'Cabang nonaktif tidak dapat melakukan pemusnahan stok!' };
-    }
-
-    const targetBatches = expiryBatches.filter(
-      (b) => batchIds.includes(b.id) && b.status === 'active' && b.remainingQuantity > 0
-    );
-
-    if (targetBatches.length === 0) {
-      posSound.error();
-      return { success: false, message: 'Tidak ada batch stok aktif yang dipilih untuk dimusnahkan.' };
-    }
-
-    const now = new Date();
-    const nowStr = now.toISOString();
-    const dateCode = nowStr.slice(0, 10).replace(/-/g, '');
-    const destructionRecordNo = `DST-EXP-${dateCode}-${Date.now().toString().slice(-4)}`;
-
-    const updatedProducts = [...products];
-    const newBadStockRecords: BadStockRecord[] = [];
-    const newAdjustments: StockAdjustmentRecord[] = [];
-    let totalPcs = 0;
-
-    targetBatches.forEach((batch) => {
-      const qty = batch.remainingQuantity;
-      totalPcs += qty;
-
-      const pIdx = updatedProducts.findIndex((p) => p.id === batch.productId);
-      if (pIdx >= 0) {
-        const prevStock = updatedProducts[pIdx].stock;
-        const newStock = Math.max(0, prevStock - qty);
-        updatedProducts[pIdx] = {
-          ...updatedProducts[pIdx],
-          stock: newStock,
-          badStock: (updatedProducts[pIdx].badStock || 0) + qty,
-        };
-
-        newAdjustments.push({
-          id: `adj-dst-${Date.now()}-${batch.id}`,
-          productId: batch.productId,
-          productName: batch.productName,
-          type: 'decrease',
-          quantity: qty,
-          previousStock: prevStock,
-          resultingStock: newStock,
-          reason: `Pemusnahan Kadaluwarsa [${destructionRecordNo}] - Batch No: ${batch.batchNumber || batch.id} (Exp: ${batch.expiryDate})`,
-          adminId: currentUser.id,
-          adminName: currentUser.name,
-          timestamp: nowStr,
-        });
-      }
-
-      newBadStockRecords.push({
-        id: `bad-${Date.now()}-${batch.id}`,
-        recordNo: `${destructionRecordNo}-${batch.id.slice(-4)}`,
-        branchId: batch.branchId || selectedBranchId,
-        productId: batch.productId,
-        productName: batch.productName,
-        sku: batch.sku,
-        quantity: qty,
-        reason: 'expired',
-        disposition: 'disposed',
-        notes: reasonNote || `Pemusnahan stok kadaluwarsa (Batch Exp: ${batch.expiryDate}) pada Closing Harian. Asal Penerimaan: ${batch.goodsReceiptNumber || '-'}`,
-        recordedBy: `${currentUser.name} (Superadmin)`,
-        createdAt: nowStr,
-      });
-    });
-
-    // Mark batches as destroyed
-    setExpiryBatches((prev) =>
-      prev.map((b) => {
-        if (batchIds.includes(b.id)) {
-          return {
-            ...b,
-            status: 'destroyed',
-            remainingQuantity: 0,
-            destroyedAt: nowStr,
-            destroyedBy: `${currentUser.name} (Superadmin)`,
-            destructionRecordNo,
-            notes: reasonNote ? `${b.notes ? b.notes + ' | ' : ''}${reasonNote}` : b.notes,
-          };
-        }
-        return b;
-      })
-    );
-
-    setProducts(updatedProducts);
-    setBadStocks((prev) => [...newBadStockRecords, ...prev]);
-    setStockAdjustments((prev) => [...newAdjustments, ...prev]);
-
-    // Requirement 6: Audit log
-    addAudit(
-      'STOCK_DESTROY_EXPIRED',
-      'stock',
-      destructionRecordNo,
-      `Pemusnahan Stok Kadaluwarsa Berita Acara ${destructionRecordNo}: ${totalPcs} pcs (${targetBatches.length} batch) dieksekusi oleh Superadmin ${currentUser.name} pada cabang ${selectedBranch.name}.`
-    );
-
-    posSound.beep();
-    return {
-      success: true,
-      recordNo: destructionRecordNo,
-      totalPcs,
-      totalBatches: targetBatches.length,
-      message: `Pemusnahan ${totalPcs} pcs stok kadaluwarsa (${targetBatches.length} batch) berhasil dieksekusi oleh Superadmin dan dicatat ke Audit Log & Waste History (${destructionRecordNo}).`,
-    };
-  };
-
+  // Stock transfers, bad stock and expired-batch destruction actions — extracted to
+  // src/context/slices/useInventorySlice.ts.
   // POS-US-072: Consolidated Stock History (Penerimaan, Daily Closing, Transfers, Bad Stock)
   const getStockHistory = (productId?: string, branchId?: string): StockHistoryItem[] => {
     const targetBranchId = branchId || selectedBranchId;
@@ -4717,318 +1694,21 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   };
 
-  // POS-US-059 to POS-US-063: Supplier WhatsApp Order Notifications
-  const generateSupplierWhatsAppMessage = (
-    supplier: Supplier,
-    ordersToInclude: Order[]
-  ): string => {
-    const todayStr = new Date().toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
-    const storeName = STORE_INFO.name;
-    const branchName = selectedBranch?.name || STORE_INFO.branch;
-
-    const orderLines = ordersToInclude.map((order) => {
-      // Find consignment/supplier items belonging to this supplier
-      const itemsForSupplier = order.items.filter((item) => {
-        const prod = products.find((p) => p.id === item.productId);
-        const itemSupplierId = item.supplierId || prod?.supplierId;
-        const matchesSupplier = itemSupplierId === supplier.id && supplier.id !== 'internal';
-        const isConsignment = (item.ownershipType === 'consignment') || (prod?.ownershipType === 'consignment') || Boolean(item.supplierId || prod?.supplierId);
-        return matchesSupplier && isConsignment;
-      });
-
-      const itemDetails = itemsForSupplier
-        .map((i) => `  - ${i.quantity}x ${i.productName}`)
-        .join('\n');
-
-      const refNumber = order.poNumber || order.receiptNumber;
-      return `• *Nota/PO ${refNumber}* (Pelanggan: ${order.customer.name}):\n${itemDetails}`;
-    });
-
-    const totalQty = ordersToInclude.reduce((sum, order) => {
-      const itemsForSupplier = order.items.filter((item) => {
-        const prod = products.find((p) => p.id === item.productId);
-        const itemSupplierId = item.supplierId || prod?.supplierId;
-        const matchesSupplier = itemSupplierId === supplier.id && supplier.id !== 'internal';
-        const isConsignment = (item.ownershipType === 'consignment') || (prod?.ownershipType === 'consignment') || Boolean(item.supplierId || prod?.supplierId);
-        return matchesSupplier && isConsignment;
-      });
-      return sum + itemsForSupplier.reduce((iSum, item) => iSum + item.quantity, 0);
-    }, 0);
-
-    return (
-      `Halo *${supplier.name}* (PIC: ${supplier.picName || 'Bapak/Ibu'}),\n\n` +
-      `Berikut rekap pesanan produk konsinyasi (*Kue Titipan*) hari ini (${todayStr}) di *${storeName} - ${branchName}*:\n\n` +
-      `${orderLines.join('\n\n')}\n\n` +
-      `Total Produk Konsinyasi: *${totalQty} item/pcs*.\n` +
-      `Mohon segera disiapkan sesuai pesanan di atas. Terima kasih atas kerja samanya!\n\n` +
-      `— *${storeName}*`
-    );
-  };
-
-  const sendSupplierWhatsAppNotification = (
-    supplierId: string,
-    orderIds: string[],
-    simulationOutcome: NotificationDeliveryResult = 'success',
-    customErrorMessage?: string
-  ) => {
-    if (currentUser.role === 'cashier') {
-      posSound.error();
-      return {
-        success: false,
-        result: 'failed' as NotificationDeliveryResult,
-        message: 'Akses ditolak: Hanya Supervisor atau Superadmin yang dapat mengirim notifikasi WhatsApp.',
-      };
-    }
-
-    const supplier = suppliers.find((s) => s.id === supplierId);
-    if (!supplier) {
-      posSound.error();
-      return {
-        success: false,
-        result: 'failed' as NotificationDeliveryResult,
-        message: 'Data supplier tidak ditemukan.',
-      };
-    }
-
-    if (!supplier.phone || supplier.phone.trim() === '') {
-      posSound.error();
-      return {
-        success: false,
-        result: 'failed' as NotificationDeliveryResult,
-        message: `Nomor telepon WhatsApp supplier ${supplier.name} belum terdaftar. Harap lengkapi pada master supplier.`,
-      };
-    }
-
-    const matchingOrders = orders.filter((o) => orderIds.includes(o.id));
-    if (matchingOrders.length === 0) {
-      posSound.error();
-      return {
-        success: false,
-        result: 'failed' as NotificationDeliveryResult,
-        message: 'Tidak ada pesanan valid yang dipilih untuk dikirimkan.',
-      };
-    }
-
-    const messageText = generateSupplierWhatsAppMessage(supplier, matchingOrders);
-    const dateCode = new Date().toISOString().slice(2, 10).replace(/-/g, '');
-    const supplierCode = supplier.id.replace('sup-', 'SUP').toUpperCase();
-    const batchSeq = String(supplierNotificationBatches.filter((b) => b.supplierId === supplier.id).length + 1).padStart(2, '0');
-    const batchId = `BATCH-${supplierCode}-${dateCode}-${batchSeq}`;
-
-    const nowIso = new Date().toISOString();
-    const isSuccess = simulationOutcome === 'success';
-
-    let errorReason = customErrorMessage;
-    if (!isSuccess && !errorReason) {
-      if (simulationOutcome === 'no_internet') {
-        errorReason = 'Gangguan koneksi internet gateway WhatsApp (Connection Timeout 504)';
-      } else if (simulationOutcome === 'failed') {
-        errorReason = 'Gagal mengirim pesan WhatsApp: Layanan gateway sibuk atau nomor tujuan tidak terjangkau (HTTP 400)';
-      } else {
-        errorReason = 'WhatsApp Gateway Response: Unrecognized status code / temporary rejection';
-      }
-    }
-
-    const newBatch: SupplierNotificationBatch = {
-      id: batchId,
-      supplierId: supplier.id,
-      supplierName: supplier.name,
-      supplierPhone: supplier.phone,
-      orderIds,
-      status: simulationOutcome,
-      createdAt: nowIso,
-      sentAt: isSuccess ? nowIso : undefined,
-      sentBy: `${currentUser.name} (${currentUser.role === 'admin' ? 'Superadmin' : 'Supervisor'})`,
-      attemptsCount: 1,
-      lastAttemptResult: simulationOutcome,
-      lastAttemptAt: nowIso,
-      lastErrorMessage: errorReason,
-    };
-
-    const newLog: SupplierDeliveryLogEntry = {
-      id: 'LOG-' + Date.now().toString().slice(-7),
-      batchId,
-      supplierId: supplier.id,
-      supplierName: supplier.name,
-      supplierPhone: supplier.phone,
-      orderIds,
-      orderReceipts: matchingOrders.map((o) => o.poNumber || o.receiptNumber),
-      attemptType: 'send',
-      result: simulationOutcome,
-      messageText,
-      actorName: currentUser.name,
-      actorRole: currentUser.role,
-      timestamp: nowIso,
-      errorMessage: errorReason,
-      rawResponse: simulationOutcome === 'no_internet'
-        ? 'HTTP 504 GATEWAY_TIMEOUT: Route to api.whatsapp.com unreachable'
-        : simulationOutcome === 'failed'
-        ? 'HTTP 400 BAD_REQUEST: Delivery failed at recipient gateway'
-        : simulationOutcome === 'other'
-        ? 'HTTP 429 TOO_MANY_REQUESTS: Rate limit exceeded on provider'
-        : 'HTTP 200 OK: message_id=wamid.HBgM...',
-    };
-
-    setSupplierNotificationBatches((prev) => [newBatch, ...prev]);
-    setSupplierDeliveryLogs((prev) => [newLog, ...prev]);
-
-    // Record Audit
-    addAudit(
-      'NOTIFICATION_SEND',
-      'supplier',
-      supplier.id,
-      `Kirim notifikasi WhatsApp ke ${supplier.name} (${matchingOrders.length} pesanan, Batch: ${batchId}) - Hasil: ${simulationOutcome.toUpperCase()}`
-    );
-
-    if (isSuccess) {
-      posSound.success();
-      return {
-        success: true,
-        result: 'success',
-        batchId,
-        message: `Pesan WhatsApp berhasil dikirim ke ${supplier.name} (${supplier.phone}) untuk ${matchingOrders.length} pesanan.`,
-      };
-    } else {
-      posSound.error();
-      return {
-        success: false,
-        result: simulationOutcome,
-        batchId,
-        message: `Pengiriman WhatsApp ke ${supplier.name} tidak berhasil: ${errorReason}. Pesanan tetap ditandai belum terkirim.`,
-      };
-    }
-  };
-
-  const resendSupplierWhatsAppNotification = (
-    batchId: string,
-    simulationOutcome: NotificationDeliveryResult = 'success',
-    customErrorMessage?: string
-  ) => {
-    if (currentUser.role === 'cashier') {
-      posSound.error();
-      return {
-        success: false,
-        result: 'failed' as NotificationDeliveryResult,
-        message: 'Akses ditolak: Hanya Supervisor atau Superadmin yang diizinkan mengirim ulang notifikasi WhatsApp.',
-      };
-    }
-
-    const batch = supplierNotificationBatches.find((b) => b.id === batchId);
-    if (!batch) {
-      posSound.error();
-      return {
-        success: false,
-        result: 'failed' as NotificationDeliveryResult,
-        message: 'Batch tidak ditemukan.',
-      };
-    }
-
-    const supplier = suppliers.find((s) => s.id === batch.supplierId);
-    if (!supplier) {
-      posSound.error();
-      return {
-        success: false,
-        result: 'failed' as NotificationDeliveryResult,
-        message: 'Supplier tidak ditemukan.',
-      };
-    }
-
-    if (!supplier.phone || supplier.phone.trim() === '') {
-      posSound.error();
-      return {
-        success: false,
-        result: 'failed' as NotificationDeliveryResult,
-        message: `Nomor telepon WhatsApp supplier ${supplier.name} tidak valid.`,
-      };
-    }
-
-    const matchingOrders = orders.filter((o) => batch.orderIds.includes(o.id));
-    const messageText = generateSupplierWhatsAppMessage(supplier, matchingOrders);
-    const nowIso = new Date().toISOString();
-    const isSuccess = simulationOutcome === 'success';
-
-    let errorReason = customErrorMessage;
-    if (!isSuccess && !errorReason) {
-      if (simulationOutcome === 'no_internet') {
-        errorReason = 'Gangguan koneksi internet gateway WhatsApp (Connection Timeout 504)';
-      } else if (simulationOutcome === 'failed') {
-        errorReason = 'Gagal mengirim pesan WhatsApp: Nomor tujuan tidak terjangkau (HTTP 400)';
-      } else {
-        errorReason = 'WhatsApp Gateway Response: Other API error';
-      }
-    }
-
-    setSupplierNotificationBatches((prev) =>
-      prev.map((b) => {
-        if (b.id !== batchId) return b;
-        return {
-          ...b,
-          status: isSuccess ? 'success' : (b.status === 'success' ? 'success' : simulationOutcome),
-          sentAt: isSuccess ? nowIso : b.sentAt,
-          sentBy: `${currentUser.name} (${currentUser.role === 'admin' ? 'Superadmin' : 'Supervisor'})`,
-          attemptsCount: b.attemptsCount + 1,
-          lastAttemptResult: simulationOutcome,
-          lastAttemptAt: nowIso,
-          lastErrorMessage: isSuccess ? undefined : errorReason,
-          supplierPhone: supplier.phone,
-        };
-      })
-    );
-
-    const newLog: SupplierDeliveryLogEntry = {
-      id: 'LOG-' + Date.now().toString().slice(-7),
-      batchId: batch.id,
-      supplierId: supplier.id,
-      supplierName: supplier.name,
-      supplierPhone: supplier.phone,
-      orderIds: batch.orderIds,
-      orderReceipts: matchingOrders.map((o) => o.poNumber || o.receiptNumber),
-      attemptType: 'resend',
-      result: simulationOutcome,
-      messageText,
-      actorName: currentUser.name,
-      actorRole: currentUser.role,
-      timestamp: nowIso,
-      errorMessage: errorReason,
-      rawResponse: simulationOutcome === 'no_internet'
-        ? 'HTTP 504 GATEWAY_TIMEOUT: Route to api.whatsapp.com unreachable'
-        : simulationOutcome === 'failed'
-        ? 'HTTP 400 BAD_REQUEST: Delivery failed at recipient gateway'
-        : simulationOutcome === 'other'
-        ? 'HTTP 500 INTERNAL_ERROR: Unknown gateway response'
-        : 'HTTP 200 OK: message_id=wamid.HBgM...',
-    };
-
-    setSupplierDeliveryLogs((prev) => [newLog, ...prev]);
-
-    // Record Audit
-    addAudit(
-      'NOTIFICATION_RESEND',
-      'supplier',
-      supplier.id,
-      `Kirim ulang notifikasi WhatsApp ke ${supplier.name} (Batch: ${batchId}, Percobaan ke-${batch.attemptsCount + 1}) - Hasil: ${simulationOutcome.toUpperCase()}`
-    );
-
-    if (isSuccess) {
-      posSound.success();
-      return {
-        success: true,
-        result: 'success',
-        message: `Kirim ulang WhatsApp ke ${supplier.name} (${supplier.phone}) berhasil dilakukan.`,
-      };
-    } else {
-      posSound.error();
-      return {
-        success: false,
-        result: simulationOutcome,
-        message: `Kirim ulang WhatsApp ke ${supplier.name} gagal: ${errorReason}.`,
-      };
-    }
-  };
+  // Supplier WhatsApp notifications - extracted to src/context/slices/useSupplierNotificationSlice.ts
+  const {
+    supplierNotificationBatches,
+    supplierDeliveryLogs,
+    sendSupplierWhatsAppNotification,
+    resendSupplierWhatsAppNotification,
+    generateSupplierWhatsAppMessage,
+  } = useSupplierNotificationSlice({
+    currentUser,
+    suppliers,
+    orders,
+    products,
+    selectedBranch,
+    addAudit,
+  });
 
   // Branch-Filtered Data Views
   const branchProducts = products.filter((p) => !p.branchId || p.branchId === selectedBranchId);
