@@ -123,7 +123,7 @@ export function useSupplierNotificationSlice({
         const prod = products.find((p) => p.id === item.productId);
         const itemSupplierId = item.supplierId || prod?.supplierId;
         const matchesSupplier = itemSupplierId === supplier.id && supplier.id !== 'internal';
-        const isConsignment = (item.ownershipType === 'consignment') || (prod?.ownershipType === 'consignment') || Boolean(item.supplierId || prod?.supplierId);
+        const isConsignment = (item.ownershipType === 'consignment') || (prod?.ownershipType === 'consignment');
         return matchesSupplier && isConsignment;
       });
 
@@ -140,7 +140,7 @@ export function useSupplierNotificationSlice({
         const prod = products.find((p) => p.id === item.productId);
         const itemSupplierId = item.supplierId || prod?.supplierId;
         const matchesSupplier = itemSupplierId === supplier.id && supplier.id !== 'internal';
-        const isConsignment = (item.ownershipType === 'consignment') || (prod?.ownershipType === 'consignment') || Boolean(item.supplierId || prod?.supplierId);
+        const isConsignment = (item.ownershipType === 'consignment') || (prod?.ownershipType === 'consignment');
         return matchesSupplier && isConsignment;
       });
       return sum + itemsForSupplier.reduce((iSum, item) => iSum + item.quantity, 0);

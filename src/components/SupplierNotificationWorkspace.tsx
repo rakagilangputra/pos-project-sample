@@ -42,6 +42,7 @@ export const SupplierNotificationWorkspace: React.FC<SupplierNotificationWorkspa
 }) => {
   const {
     suppliers,
+    masterCategories,
     products,
     orders,
     currentUser,
@@ -115,15 +116,41 @@ export const SupplierNotificationWorkspace: React.FC<SupplierNotificationWorkspa
       const prod = products.find((p) => p.id === item.productId);
       const itemSupplierId = item.supplierId || prod?.supplierId;
       const matchesSupplier = itemSupplierId === supplierId && supplierId !== 'internal';
-      const isConsignment = item.ownershipType === 'consignment' || prod?.ownershipType === 'consignment' || Boolean(item.supplierId || prod?.supplierId);
+      const isConsignment = item.ownershipType === 'consignment' || prod?.ownershipType === 'consignment';
       return matchesSupplier && isConsignment;
     });
   };
 
+  // A retained supplier relationship does not make a product consignment.
+  // Keep production and reseller suppliers out of this workflow unless the
+  // supplier is an unlinked legacy record with explicit consignment history.
+  const notificationSuppliers = useMemo(() => {
+    const explicitlyConsignmentSupplierIds = new Set(
+      products
+        .filter((product) => product.ownershipType === 'consignment' && product.supplierId)
+        .map((product) => product.supplierId as string)
+        .concat(
+          orders.flatMap((order) =>
+            order.items
+              .filter((item) => item.ownershipType === 'consignment' && item.supplierId)
+              .map((item) => item.supplierId as string)
+          )
+        )
+        .concat(supplierNotificationBatches.map((batch) => batch.supplierId))
+    );
+
+    return suppliers.filter((supplier) => {
+      if (supplier.isInternal) return false;
+      const masterCategory = masterCategories.find((category) => category.id === supplier.masterCategoryId);
+      if (masterCategory) return masterCategory.categoryType === 'KONSINYASI';
+      return explicitlyConsignmentSupplierIds.has(supplier.id);
+    });
+  }, [masterCategories, products, orders, supplierNotificationBatches, suppliers]);
+
   // Group today's orders by Supplier
   const supplierGroups = useMemo(() => {
     // Find all suppliers that have consignment products
-    return suppliers.map((supplier) => {
+    return notificationSuppliers.map((supplier) => {
       // Find orders that contain consignment items for this supplier
       const eligibleOrders = orders.filter((order) => {
         // Exclude completely voided/cancelled orders without sales impact if desired
@@ -164,7 +191,7 @@ export const SupplierNotificationWorkspace: React.FC<SupplierNotificationWorkspa
         needsAttention: unsentOrders.length > 0 || failedBatchesCount > 0,
       };
     });
-  }, [suppliers, products, orders, supplierNotificationBatches]);
+  }, [notificationSuppliers, products, orders, supplierNotificationBatches]);
 
   // Suppliers with at least one eligible order or batch
   const activeSupplierGroups = useMemo(() => {
@@ -1031,7 +1058,7 @@ export const SupplierNotificationWorkspace: React.FC<SupplierNotificationWorkspa
                       className="text-xs rounded-lg border border-stone-200 py-1.5 px-2 bg-white text-stone-800 focus:outline-none"
                     >
                       <option value="all">Semua Supplier</option>
-                      {suppliers.map((s) => (
+                      {notificationSuppliers.map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.name}
                         </option>

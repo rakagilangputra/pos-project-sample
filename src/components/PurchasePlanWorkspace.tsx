@@ -175,7 +175,7 @@ export const PurchasePlanWorkspace: React.FC = () => {
   // Helper to infer item type for an item or product
   const inferItemType = (prod?: Product, cartItemOwnership?: string): PurchasePlanItemType => {
     if (!prod) return 'direct_purchase';
-    if (prod.ownershipType === 'consignment' || cartItemOwnership === 'consignment' || (prod.supplierId && prod.supplierId !== 'internal')) {
+    if (prod.ownershipType === 'consignment' || cartItemOwnership === 'consignment') {
       return 'consignment';
     }
     if (prod.isMadeToOrder || prod.category === 'Pastry' || prod.category === 'Bakery' || prod.categoryLabel?.toLowerCase().includes('pastry') || prod.categoryLabel?.toLowerCase().includes('roti')) {

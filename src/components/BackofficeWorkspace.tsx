@@ -30,13 +30,14 @@ import {
   Database,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
-import { StoreBranch, User, UserRole, Customer, Product, ProductCategoryItem, Supplier, SupplierCategory, AuditLog } from '../types';
+import { StoreBranch, User, UserRole, Customer, Product, ProductCategoryItem, AuditLog, ProductStatus } from '../types';
 import { FIXED_ROLE_MATRIX, STORE_INFO } from '../data/mockData';
 import { formatIDR, formatDateTime } from '../utils/formatters';
 import { PurchasePlanWorkspace } from './PurchasePlanWorkspace';
 import { MasterCategoryWorkspace } from './MasterCategoryWorkspace';
+import { SupplierManagementWorkspace } from './SupplierManagementWorkspace';
 
-type BackofficeTab = 'branches' | 'access' | 'master_data' | 'audit' | 'purchase_plans' | 'master_categories';
+type BackofficeTab = 'branches' | 'access' | 'master_data' | 'audit' | 'purchase_plans' | 'master_categories' | 'suppliers';
 
 export const BackofficeWorkspace: React.FC = () => {
   const {
@@ -57,7 +58,6 @@ export const BackofficeWorkspace: React.FC = () => {
     categories,
     addCategory,
     suppliers,
-    addSupplier,
     customers,
     addCustomer,
     auditLogs,
@@ -66,7 +66,7 @@ export const BackofficeWorkspace: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<BackofficeTab>('branches');
   const [accessSubTab, setAccessSubTab] = useState<'users' | 'matrix'>('users');
-  const [masterDataType, setMasterDataType] = useState<'products' | 'categories' | 'suppliers' | 'customers'>('products');
+  const [masterDataType, setMasterDataType] = useState<'products' | 'categories' | 'customers'>('products');
 
   // Branch Modal / Drawer State
   const [isBranchDrawerOpen, setIsBranchDrawerOpen] = useState(false);
@@ -98,18 +98,14 @@ export const BackofficeWorkspace: React.FC = () => {
   const [catName, setCatName] = useState('');
   const [catDesc, setCatDesc] = useState('');
 
-  // New Supplier form
-  const [supName, setSupName] = useState('');
-  const [supCat, setSupCat] = useState<SupplierCategory>('KYD');
-  const [supPic, setSupPic] = useState('');
-  const [supPhone, setSupPhone] = useState('');
-
   // New Product form (WITHOUT Stok Awal / stock quantity input)
   const [prodName, setProdName] = useState('');
   const [prodSku, setProdSku] = useState('');
+  const [prodMasterCategoryId, setProdMasterCategoryId] = useState<string>(masterCategories[0]?.id || '');
   const [prodCategory, setProdCategory] = useState(categories[0]?.id || 'roti');
   const [prodPrice, setProdPrice] = useState('15000');
   const [prodThreshold, setProdThreshold] = useState('5');
+  const [prodStatus, setProdStatus] = useState<ProductStatus>('active');
   const [prodOwnership, setProdOwnership] = useState<'own' | 'consignment'>('own');
   const [prodSupplierId, setProdSupplierId] = useState('');
 
@@ -291,26 +287,20 @@ export const BackofficeWorkspace: React.FC = () => {
       addCategory(catName.trim(), catDesc.trim());
       setCatName('');
       setCatDesc('');
-    } else if (masterDataType === 'suppliers') {
-      if (!supName.trim()) return;
-      addSupplier({
-        name: supName.trim(),
-        category: supCat,
-        picName: supPic.trim() || 'PIC Supplier',
-        phone: supPhone.trim() || '0812-0000-0000',
-        balance: 0,
-      });
-      setSupName('');
-      setSupPic('');
-      setSupPhone('');
     } else if (masterDataType === 'products') {
-      if (!prodName.trim() || !prodSku.trim()) return;
+      if (!prodName.trim()) return;
       const catObj = categories.find((c) => c.id === prodCategory);
-      const supObj = suppliers.find((s) => s.id === prodSupplierId);
+      const masterCategory = masterCategories.find((category) => category.id === prodMasterCategoryId);
+      const linkedSuppliers = suppliers.filter((supplier) =>
+        supplier.masterCategoryId === prodMasterCategoryId &&
+        (masterCategory?.categoryType === 'PRODUKSI' ? supplier.isInternal : !supplier.isInternal)
+      );
+      const supObj = linkedSuppliers.find((supplier) => supplier.id === prodSupplierId);
+      if (!masterCategory || !supObj) return;
 
       addProduct({
         name: prodName.trim(),
-        sku: prodSku.trim().toUpperCase(),
+        masterCategoryId: masterCategory.id,
         category: prodCategory,
         categoryLabel: catObj ? catObj.name : 'Roti Manis',
         price: parseInt(prodPrice, 10) || 0,
@@ -319,9 +309,10 @@ export const BackofficeWorkspace: React.FC = () => {
         lowStockThreshold: parseInt(prodThreshold, 10) || 5,
         isMadeToOrder: false,
         image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&auto=format&fit=crop&q=80',
-        ownershipType: prodOwnership,
-        supplierId: prodOwnership === 'consignment' ? supObj?.id : undefined,
-        supplierName: prodOwnership === 'consignment' ? supObj?.name : undefined,
+        ownershipType: masterCategory.categoryType === 'KONSINYASI' ? 'consignment' : 'own',
+        supplierId: supObj.id,
+        supplierName: supObj.name,
+        status: prodStatus,
       });
       setProdName('');
       setProdSku('');
@@ -456,6 +447,20 @@ export const BackofficeWorkspace: React.FC = () => {
                 >
                   <Layers className="h-4 w-4" />
                   <span>Master Kategori</span>
+                </button>
+
+                <button
+                  id="backoffice-tab-suppliers"
+                  type="button"
+                  onClick={() => setActiveTab('suppliers')}
+                  className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition ${
+                    activeTab === 'suppliers'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <ShoppingBag className="h-4 w-4" />
+                  <span>Mitra Supplier</span>
                 </button>
               </>
             )}
@@ -905,17 +910,6 @@ export const BackofficeWorkspace: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setMasterDataType('suppliers')}
-                    className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-                      masterDataType === 'suppliers'
-                        ? 'bg-white text-gray-900 shadow-xs'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Supplier ({suppliers.length})
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => setMasterDataType('customers')}
                     className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
                       masterDataType === 'customers'
@@ -952,7 +946,7 @@ export const BackofficeWorkspace: React.FC = () => {
                       className="inline-flex items-center gap-2 rounded-xl bg-gray-900 px-4 py-2 text-xs font-bold text-white hover:bg-black transition active:scale-95 shadow-2xs"
                     >
                       <Plus className="h-3.5 w-3.5" />
-                      <span>+ Tambah {masterDataType === 'products' ? 'Produk (Stok 0)' : masterDataType === 'categories' ? 'Kategori' : masterDataType === 'suppliers' ? 'Supplier' : 'Pelanggan'}</span>
+                      <span>+ Tambah {masterDataType === 'products' ? 'Produk (Stok 0)' : masterDataType === 'categories' ? 'Kategori' : 'Pelanggan'}</span>
                     </button>
                   )}
                 </div>
@@ -969,12 +963,13 @@ export const BackofficeWorkspace: React.FC = () => {
                           <th className="px-4 py-3">Harga Jual</th>
                           <th className="px-4 py-3">Stok Saat Ini</th>
                           <th className="px-4 py-3">Kepemilikan</th>
+                          <th className="px-4 py-3">Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 bg-white font-medium">
                         {products.length === 0 ? (
                           <tr>
-                            <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                            <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
                               Belum ada master produk pada cabang ini.
                             </td>
                           </tr>
@@ -1000,6 +995,15 @@ export const BackofficeWorkspace: React.FC = () => {
                                     Milik Sendiri
                                   </span>
                                 )}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold border ${
+                                  p.status === 'inactive'
+                                    ? 'bg-slate-100 text-slate-600 border-slate-200'
+                                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                }`}>
+                                  {p.status === 'inactive' ? 'Inactive' : 'Active'}
+                                </span>
                               </td>
                             </tr>
                           ))
@@ -1032,48 +1036,6 @@ export const BackofficeWorkspace: React.FC = () => {
                               <td className="px-4 py-3 text-base">{c.icon || '🏷️'}</td>
                             </tr>
                           ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                {/* Table for Suppliers */}
-                {masterDataType === 'suppliers' && (
-                  <div className="overflow-x-auto rounded-2xl border border-gray-100">
-                    <table className="w-full text-left text-xs text-gray-700">
-                      <thead className="bg-[#FAF8F5] text-[11px] font-black uppercase tracking-wider text-gray-600 border-b border-gray-100">
-                        <tr>
-                          <th className="px-4 py-3">Nama Supplier</th>
-                          <th className="px-4 py-3">Kategori</th>
-                          <th className="px-4 py-3">PIC</th>
-                          <th className="px-4 py-3">Kontak / Telepon</th>
-                          <th className="px-4 py-3">Jadwal Settlement</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100 bg-white font-medium">
-                        {suppliers.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
-                              Belum ada supplier pada cabang ini.
-                            </td>
-                          </tr>
-                        ) : (
-                          suppliers.map((s) => (
-                            <tr key={s.id} className="hover:bg-gray-50/50">
-                              <td className="px-4 py-3 font-bold text-gray-900">{s.name}</td>
-                              <td className="px-4 py-3">
-                                <span className="rounded-lg bg-amber-50 px-2 py-0.5 font-bold text-amber-800">
-                                  {s.category || 'KYD'}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3">{s.picName}</td>
-                              <td className="px-4 py-3 text-gray-500">{s.phone}</td>
-                              <td className="px-4 py-3 capitalize text-gray-600">
-                                {s.scheduleType === 'weekly' ? 'Mingguan' : '2x Sebulan'}
-                              </td>
-                            </tr>
-                          ))
-                        )}
                       </tbody>
                     </table>
                   </div>
@@ -1211,6 +1173,13 @@ export const BackofficeWorkspace: React.FC = () => {
         {activeTab === 'master_categories' && (
           <div className="rounded-3xl border-2 border-[#E5DACE] bg-white overflow-hidden shadow-xs min-h-[720px] p-6">
             <MasterCategoryWorkspace />
+          </div>
+        )}
+
+        {/* ================= TAB 7: MITRA SUPPLIER (SUPERADMIN ONLY) ================= */}
+        {activeTab === 'suppliers' && (
+          <div className="rounded-3xl border-2 border-[#E5DACE] bg-white overflow-hidden shadow-xs min-h-[720px] p-6">
+            <SupplierManagementWorkspace />
           </div>
         )}
         </div>
@@ -1552,7 +1521,7 @@ export const BackofficeWorkspace: React.FC = () => {
           <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-3xl bg-white shadow-2xl border border-gray-100 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between border-b border-amber-100 bg-amber-50/80 px-6 py-4">
               <h3 className="text-base font-bold text-gray-900">
-                + Tambah {masterDataType === 'products' ? 'Produk Baru' : masterDataType === 'categories' ? 'Kategori Produk' : masterDataType === 'suppliers' ? 'Supplier Mitra' : 'Pelanggan'}
+                + Tambah {masterDataType === 'products' ? 'Produk Baru' : masterDataType === 'categories' ? 'Kategori Produk' : 'Pelanggan'}
               </h3>
               <button
                 type="button"
@@ -1594,77 +1563,29 @@ export const BackofficeWorkspace: React.FC = () => {
                 </>
               )}
 
-              {masterDataType === 'suppliers' && (
-                <>
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
-                      Nama Supplier *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={supName}
-                      onChange={(e) => setSupName(e.target.value)}
-                      placeholder="Contoh: Dapur Kue Basah Bu Siti"
-                      className="w-full rounded-2xl border border-gray-200 px-4 py-2.5 text-xs font-bold text-gray-900 focus:border-amber-500 focus:outline-none"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
-                        Kategori Supplier (Master Kategori)
-                      </label>
-                      <select
-                        value={supCat}
-                        onChange={(e) => setSupCat(e.target.value as SupplierCategory)}
-                        className="w-full rounded-2xl border border-gray-200 px-4 py-2.5 text-xs font-bold text-gray-900 focus:border-amber-500 focus:outline-none"
-                      >
-                        {masterCategories && masterCategories.length > 0 ? (
-                          masterCategories.map((mc) => (
-                            <option key={mc.id} value={mc.name}>
-                              [{mc.categoryType}] {mc.name}
-                            </option>
-                          ))
-                        ) : (
-                          <>
-                            <option value="Kue Basah Tradisional">[KONSINYASI] Kue Basah Tradisional</option>
-                            <option value="Keripik & Snack Kering UMKM">[KONSINYASI] Keripik & Snack Kering UMKM</option>
-                            <option value="Roti Manis & Roti Tawar">[PRODUKSI] Roti Manis & Roti Tawar</option>
-                            <option value="Minuman Kemasan & Botol">[BELI (RESELLER)] Minuman Kemasan & Botol</option>
-                          </>
-                        )}
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
-                        Nama PIC
-                      </label>
-                      <input
-                        type="text"
-                        value={supPic}
-                        onChange={(e) => setSupPic(e.target.value)}
-                        placeholder="Ibu Siti"
-                        className="w-full rounded-2xl border border-gray-200 px-4 py-2.5 text-xs font-semibold text-gray-900 focus:border-amber-500 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
-                      Nomor Telepon PIC
-                    </label>
-                    <input
-                      type="text"
-                      value={supPhone}
-                      onChange={(e) => setSupPhone(e.target.value)}
-                      placeholder="0812-3456-7890"
-                      className="w-full rounded-2xl border border-gray-200 px-4 py-2.5 text-xs font-semibold text-gray-900 focus:border-amber-500 focus:outline-none"
-                    />
-                  </div>
-                </>
-              )}
-
               {masterDataType === 'products' && (
                 <>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                      Master Kategori *
+                    </label>
+                    <select
+                      required
+                      value={prodMasterCategoryId}
+                      onChange={(e) => {
+                        setProdMasterCategoryId(e.target.value);
+                        setProdSupplierId('');
+                      }}
+                      className="w-full rounded-2xl border border-gray-200 px-4 py-2.5 text-xs font-bold text-gray-900 focus:border-amber-500 focus:outline-none"
+                    >
+                      {masterCategories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          [{category.categoryType}] {category.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div className="space-y-1">
                     <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
                       Nama Produk *
@@ -1682,16 +1603,11 @@ export const BackofficeWorkspace: React.FC = () => {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
-                        SKU / Barcode *
+                        SKU / Barcode
                       </label>
-                      <input
-                        type="text"
-                        required
-                        value={prodSku}
-                        onChange={(e) => setProdSku(e.target.value)}
-                        placeholder="RTI-88"
-                        className="w-full rounded-2xl border border-gray-200 px-4 py-2.5 text-xs font-bold uppercase text-gray-900 focus:border-amber-500 focus:outline-none"
-                      />
+                      <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-2.5 text-xs font-semibold text-gray-500">
+                        Dibuat otomatis berdasarkan Supplier saat disimpan.
+                      </div>
                     </div>
 
                     <div className="space-y-1">
@@ -1744,6 +1660,20 @@ export const BackofficeWorkspace: React.FC = () => {
                     </div>
                   </div>
 
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                      Status Produk
+                    </label>
+                    <select
+                      value={prodStatus}
+                      onChange={(e) => setProdStatus(e.target.value as ProductStatus)}
+                      className="w-full rounded-2xl border border-gray-200 px-4 py-2.5 text-xs font-bold text-gray-900 focus:border-amber-500 focus:outline-none"
+                    >
+                      <option value="active">Active — dapat dijual</option>
+                      <option value="inactive">Inactive — simpan sebagai nonaktif</option>
+                    </select>
+                  </div>
+
                   {/* Stock policy notice without any initial stock inputs */}
                   <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900 flex items-center gap-2">
                     <Info className="h-4 w-4 text-amber-600 shrink-0" />
@@ -1752,55 +1682,31 @@ export const BackofficeWorkspace: React.FC = () => {
                     </span>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-1">
                     <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
-                      Tipe Kepemilikan Produk
+                      Supplier *
                     </label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setProdOwnership('own')}
-                        className={`rounded-2xl border p-2.5 text-center text-xs font-bold transition ${
-                          prodOwnership === 'own'
-                            ? 'border-amber-600 bg-amber-50 text-amber-900'
-                            : 'border-gray-200 bg-white text-gray-600'
-                        }`}
-                      >
-                        Produk Milik Sendiri
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setProdOwnership('consignment')}
-                        className={`rounded-2xl border p-2.5 text-center text-xs font-bold transition ${
-                          prodOwnership === 'consignment'
-                            ? 'border-amber-600 bg-amber-50 text-amber-900'
-                            : 'border-gray-200 bg-white text-gray-600'
-                        }`}
-                      >
-                        Titipan Konsinyasi
-                      </button>
-                    </div>
-                  </div>
-
-                  {prodOwnership === 'consignment' && (
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
-                        Pilih Supplier Mitra Konsinyasi *
-                      </label>
-                      <select
-                        value={prodSupplierId}
-                        onChange={(e) => setProdSupplierId(e.target.value)}
-                        className="w-full rounded-2xl border border-gray-200 px-4 py-2.5 text-xs font-bold text-gray-900 focus:border-amber-500 focus:outline-none"
-                      >
-                        <option value="">Pilih Supplier...</option>
-                        {suppliers.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name} ({s.category || 'Mitra'})
+                    <select
+                      required
+                      value={prodSupplierId}
+                      onChange={(e) => setProdSupplierId(e.target.value)}
+                      className="w-full rounded-2xl border border-gray-200 px-4 py-2.5 text-xs font-bold text-gray-900 focus:border-amber-500 focus:outline-none"
+                    >
+                      <option value="">Pilih Supplier sesuai Master Kategori...</option>
+                      {suppliers
+                        .filter((supplier) =>
+                          supplier.masterCategoryId === prodMasterCategoryId &&
+                          (masterCategories.find((category) => category.id === prodMasterCategoryId)?.categoryType === 'PRODUKSI'
+                            ? supplier.isInternal
+                            : !supplier.isInternal)
+                        )
+                        .map((supplier) => (
+                          <option key={supplier.id} value={supplier.id}>
+                            {supplier.isInternal ? 'Internal' : 'Supplier'}: {supplier.name} ({supplier.id})
                           </option>
                         ))}
-                      </select>
-                    </div>
-                  )}
+                    </select>
+                  </div>
                 </>
               )}
 

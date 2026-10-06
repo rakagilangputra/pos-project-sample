@@ -10,7 +10,7 @@ import {
   Sparkles,
   ShieldAlert,
 } from 'lucide-react';
-import { Product, Category, Supplier, ProductOwnershipType, CommissionMethod, CommissionBasis } from '../../types';
+import { Product, Category, Supplier, ProductOwnershipType, CommissionMethod, CommissionBasis, ProductStatus } from '../../types';
 import { formatIDR } from '../../utils/formatters';
 
 interface EditProductInfoModalProps {
@@ -51,6 +51,7 @@ export const EditProductInfoModal: React.FC<EditProductInfoModalProps> = ({
   const [lowStockThreshold, setLowStockThreshold] = useState((product.lowStockThreshold || 5).toString());
   const [description, setDescription] = useState(product.description || '');
   const [image, setImage] = useState(product.image || BAKERY_SAMPLE_IMAGES[0].url);
+  const [status, setStatus] = useState<ProductStatus>(product.status || 'active');
 
   // Ownership & Consignment
   const [ownershipType, setOwnershipType] = useState<ProductOwnershipType>(product.ownershipType || 'own');
@@ -72,6 +73,7 @@ export const EditProductInfoModal: React.FC<EditProductInfoModalProps> = ({
       setLowStockThreshold((product.lowStockThreshold || 5).toString());
       setDescription(product.description || '');
       setImage(product.image || BAKERY_SAMPLE_IMAGES[0].url);
+      setStatus(product.status || 'active');
       setOwnershipType(product.ownershipType || 'own');
       setSupplierId(product.supplierId || suppliers[0]?.id || '');
       setCommissionMethod(product.commissionMethod || 'percentage');
@@ -111,7 +113,6 @@ export const EditProductInfoModal: React.FC<EditProductInfoModalProps> = ({
     // CRITICAL: Notice that neither initial stock nor stock quantity is passed or updated here!
     const result = onSave(product.id, {
       name: name.trim(),
-      sku: sku.trim().toUpperCase(),
       category,
       categoryLabel: matchedCat?.name || category,
       price: priceNum,
@@ -119,6 +120,7 @@ export const EditProductInfoModal: React.FC<EditProductInfoModalProps> = ({
       lowStockThreshold: thresholdNum,
       description: description.trim(),
       image,
+      status,
       ownershipType,
       ...(ownershipType === 'consignment'
         ? {
@@ -129,8 +131,10 @@ export const EditProductInfoModal: React.FC<EditProductInfoModalProps> = ({
             commissionBasis,
           }
         : {
-            supplierId: undefined,
-            supplierName: undefined,
+            // Store-owned reseller and production products still retain their
+            // supplier relationship; only commission fields are cleared.
+            supplierId: product.supplierId,
+            supplierName: product.supplierName,
             commissionMethod: undefined,
             commissionValue: undefined,
             commissionBasis: undefined,
@@ -213,14 +217,13 @@ export const EditProductInfoModal: React.FC<EditProductInfoModalProps> = ({
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-black text-[#2D241E]">SKU / Kode Produk *</label>
+              <label className="text-xs font-black text-[#2D241E]">SKU / Kode Produk (Tetap)</label>
               <input
                 type="text"
                 required
-                disabled={isBranchReadOnly}
+                disabled
                 value={sku}
-                onChange={(e) => setSku(e.target.value)}
-                className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3.5 py-2 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none uppercase disabled:bg-gray-100"
+                className="w-full rounded-xl border-2 border-[#E5DACE] bg-gray-100 px-3.5 py-2 text-xs font-bold text-[#2D241E] uppercase"
               />
             </div>
           </div>
@@ -258,6 +261,19 @@ export const EditProductInfoModal: React.FC<EditProductInfoModalProps> = ({
                 className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3.5 py-2 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none disabled:bg-gray-100"
               />
             </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-black text-[#2D241E]">Status Produk</label>
+            <select
+              disabled={isBranchReadOnly}
+              value={status}
+              onChange={(e) => setStatus(e.target.value as ProductStatus)}
+              className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3 py-2 text-xs font-semibold text-[#2D241E] focus:border-[#D97706] focus:outline-none disabled:bg-gray-100"
+            >
+              <option value="active">Active — dapat dijual</option>
+              <option value="inactive">Inactive — tidak tersedia di POS</option>
+            </select>
           </div>
 
           {/* Price Customizable & Low Stock Threshold */}

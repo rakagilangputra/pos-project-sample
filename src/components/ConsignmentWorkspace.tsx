@@ -67,6 +67,7 @@ export type SupplierLedgerRow =
 export const ConsignmentWorkspace: React.FC = () => {
   const {
     suppliers,
+    masterCategories,
     products,
     commissionLedger,
     settlementCycles,
@@ -74,6 +75,23 @@ export const ConsignmentWorkspace: React.FC = () => {
     currentUser,
     verifySupervisorPin,
   } = usePOS();
+
+  const consignmentSupplierIds = useMemo(
+    () => new Set([
+      ...commissionLedger.map((entry) => entry.supplierId),
+      ...settlementCycles.map((cycle) => cycle.supplierId),
+    ]),
+    [commissionLedger, settlementCycles]
+  );
+  const consignmentSuppliers = useMemo(
+    () => suppliers.filter((supplier) => {
+      const masterCategory = masterCategories.find((category) => category.id === supplier.masterCategoryId);
+      if (supplier.isInternal) return false;
+      if (masterCategory) return masterCategory.categoryType === 'KONSINYASI';
+      return consignmentSupplierIds.has(supplier.id);
+    }),
+    [suppliers, masterCategories, consignmentSupplierIds]
+  );
 
   // Local View Navigation (Ringkasan default, Buku Besar Komisi, Settlement, Mitra Supplier)
   const [activeView, setActiveView] = useState<ConsignmentLocalView>('summary');
@@ -133,9 +151,9 @@ export const ConsignmentWorkspace: React.FC = () => {
 
   // Grouped Supplier Ledger for Accordion List (Sales & Settlement Records)
   const groupedSupplierLedger = useMemo(() => {
-    let targetSuppliers = suppliers;
+    let targetSuppliers = consignmentSuppliers;
     if (selectedSupplierId !== 'all') {
-      targetSuppliers = suppliers.filter((s) => s.id === selectedSupplierId);
+      targetSuppliers = consignmentSuppliers.filter((s) => s.id === selectedSupplierId);
     }
 
     const todayStr = new Date().toISOString().slice(0, 10);
@@ -219,7 +237,7 @@ export const ConsignmentWorkspace: React.FC = () => {
         totalKomisiToko,
       };
     });
-  }, [suppliers, selectedSupplierId, filteredLedger, settlementCycles, datePeriod, searchQuery]);
+  }, [consignmentSuppliers, selectedSupplierId, filteredLedger, settlementCycles, datePeriod, searchQuery]);
 
   // Auto-expand suppliers that have rows or all suppliers on initial load
   useEffect(() => {
@@ -227,9 +245,9 @@ export const ConsignmentWorkspace: React.FC = () => {
     if (withRows.length > 0) {
       setExpandedSupplierIds(withRows);
     } else {
-      setExpandedSupplierIds(suppliers.map((s) => s.id));
+      setExpandedSupplierIds(consignmentSuppliers.map((s) => s.id));
     }
-  }, [suppliers, selectedSupplierId, datePeriod]);
+  }, [consignmentSuppliers, selectedSupplierId, datePeriod]);
 
   const toggleSupplierAccordion = (supplierId: string) => {
     setExpandedSupplierIds((prev) =>
@@ -240,7 +258,7 @@ export const ConsignmentWorkspace: React.FC = () => {
   };
 
   const handleExpandAll = () => {
-    setExpandedSupplierIds(suppliers.map((s) => s.id));
+    setExpandedSupplierIds(consignmentSuppliers.map((s) => s.id));
   };
 
   const handleCollapseAll = () => {
@@ -263,7 +281,7 @@ export const ConsignmentWorkspace: React.FC = () => {
 
   // Supplier Recap Table
   const supplierRecap = useMemo(() => {
-    return suppliers.map((sup) => {
+    return consignmentSuppliers.map((sup) => {
       const supEntries = filteredLedger.filter((e) => e.supplierId === sup.id && e.status !== 'reversed');
       const netSales = supEntries.reduce((s, e) => s + e.netAmount, 0);
       const commission = supEntries.reduce((s, e) => s + e.commissionAmount, 0);
@@ -276,7 +294,7 @@ export const ConsignmentWorkspace: React.FC = () => {
         payable,
       };
     });
-  }, [suppliers, filteredLedger]);
+  }, [consignmentSuppliers, filteredLedger]);
 
   // Filtered Settlement Cycles
   const filteredCycles = useMemo(() => {
@@ -302,7 +320,7 @@ export const ConsignmentWorkspace: React.FC = () => {
       return;
     }
 
-    const currentCycleSupplier = suppliers.find((s) => s.id === paymentCycle.supplierId);
+    const currentCycleSupplier = consignmentSuppliers.find((s) => s.id === paymentCycle.supplierId);
     const currentSupplierPiutang = currentCycleSupplier?.balance || 0;
     const totalCoverage = numericPayAmount + currentSupplierPiutang;
 
@@ -422,7 +440,7 @@ export const ConsignmentWorkspace: React.FC = () => {
             }`}
           >
             <Building2 className="h-3.5 w-3.5" />
-            <span>Mitra Supplier ({suppliers.length})</span>
+            <span>Mitra Supplier ({consignmentSuppliers.length})</span>
           </button>
         </div>
 
@@ -522,7 +540,7 @@ export const ConsignmentWorkspace: React.FC = () => {
                 Rekapitulasi Penjualan & Hutang Per Mitra Supplier
               </h3>
               <span className="text-xs text-[#8C7B6C]">
-                {suppliers.length} Mitra Terdaftar
+                {consignmentSuppliers.length} Mitra Terdaftar
               </span>
             </div>
 
@@ -589,7 +607,7 @@ export const ConsignmentWorkspace: React.FC = () => {
                 className="rounded-xl border border-[#E5DACE] bg-[#FDFBF7] px-3 py-2 text-xs font-bold text-[#2D241E] focus:border-purple-600 focus:outline-none"
               >
                 <option value="all">Semua Mitra Supplier</option>
-                {suppliers.map((s) => (
+                {consignmentSuppliers.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>
@@ -957,7 +975,7 @@ export const ConsignmentWorkspace: React.FC = () => {
                               onClick={() => {
                                 setPaymentCycle(cycle);
                                 setPayMethod('transfer');
-                                const sup = suppliers.find((s) => s.id === cycle.supplierId);
+                                const sup = consignmentSuppliers.find((s) => s.id === cycle.supplierId);
                                 const piutang = sup?.balance || 0;
                                 const defaultPay = Math.max(0, cycle.storeNetAfterCommission - piutang);
                                 setPayAmount(defaultPay.toString());
@@ -1009,7 +1027,7 @@ export const ConsignmentWorkspace: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto">
-            {suppliers.map((sup) => {
+            {consignmentSuppliers.map((sup) => {
               const activeProdCount = products.filter(
                 (p) => p.ownershipType === 'consignment' && p.supplierId === sup.id
               ).length;
@@ -1190,7 +1208,7 @@ export const ConsignmentWorkspace: React.FC = () => {
 
               {/* Field under Metode Pembayaran: Nominal Pembayaran */}
               {(() => {
-                const currentCycleSupplier = suppliers.find((s) => s.id === paymentCycle.supplierId);
+                                const currentCycleSupplier = consignmentSuppliers.find((s) => s.id === paymentCycle.supplierId);
                 const currentSupplierPiutang = currentCycleSupplier?.balance || 0;
                 const numericPay = Number(payAmount) || 0;
                 const totalCoverage = numericPay + currentSupplierPiutang;
@@ -1366,6 +1384,7 @@ export const ConsignmentWorkspace: React.FC = () => {
       <AddSupplierModal
         isOpen={isAddSupplierOpen || editingSupplier !== null}
         supplierToEdit={editingSupplier}
+        initialMasterCategoryId={masterCategories.find((category) => category.categoryType === 'KONSINYASI')?.id}
         onClose={() => {
           setIsAddSupplierOpen(false);
           setEditingSupplier(null);

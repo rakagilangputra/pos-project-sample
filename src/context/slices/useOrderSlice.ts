@@ -144,7 +144,7 @@ export function useOrderSlice({
         image: product.image,
         isMadeToOrder: true,
         stockAvailable: product.stock,
-        ownershipType: itemInput.ownershipType || (itemInput.supplierId && itemInput.supplierId !== 'internal' ? 'consignment' : (product.ownershipType || 'own')),
+        ownershipType: itemInput.ownershipType || product.ownershipType || 'own',
         supplierId: itemInput.supplierId !== undefined ? (itemInput.supplierId === 'internal' ? undefined : itemInput.supplierId) : product.supplierId,
         supplierName: itemInput.supplierName !== undefined ? itemInput.supplierName : product.supplierName,
         commissionMethod: product.commissionMethod,

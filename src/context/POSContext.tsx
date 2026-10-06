@@ -33,6 +33,8 @@ import {
   RawMaterial,
   ProductExpiryBatch,
   ProductExpiryType,
+  NewProductInput,
+  NewSupplierInput,
 } from '../types';
 import {
   INITIAL_USERS,
@@ -58,6 +60,11 @@ import { useOrgActions, useOrgState } from './slices/useOrgSlice';
 import { useCartSlice } from './slices/useCartSlice';
 import { useInventorySlice } from './slices/useInventorySlice';
 import { useGoodsReceivingSlice } from './slices/useGoodsReceivingSlice';
+import {
+  getNextProductSku,
+  getNextSupplierId,
+  getNormalizedExactMasterCategoryId,
+} from '../utils/identifiers';
 
 interface POSContextType {
   // Store Branches & Multi-Branch Management
@@ -121,7 +128,7 @@ interface POSContextType {
 
   // Product Master (POS-US-029 & POS-US-072)
   products: Product[];
-  addProduct: (productData: Omit<Product, 'id'>) => { success: boolean; product?: Product; message: string };
+  addProduct: (productData: NewProductInput) => { success: boolean; product?: Product; message: string };
   updateProductInfo: (
     productId: string,
     info: Partial<Omit<Product, 'id' | 'branchId' | 'stock' | 'inTransitStock' | 'badStock'>>
@@ -180,8 +187,9 @@ interface POSContextType {
 
   // Supplier Master (POS-US-030)
   suppliers: Supplier[];
-  addSupplier: (supplierData: Omit<Supplier, 'id' | 'createdAt'>) => { success: boolean; supplier?: Supplier; message: string };
+  addSupplier: (supplierData: NewSupplierInput) => { success: boolean; supplier?: Supplier; message: string };
   updateSupplier: (id: string, supplierData: Partial<Supplier>) => { success: boolean; supplier?: Supplier; message: string };
+  getSuppliersForMasterCategory: (masterCategoryId: string) => Supplier[];
 
   // Consignment Commission & Settlements (POS-US-031, POS-US-032, POS-US-034, POS-US-035)
   commissionLedger: CommissionLedgerEntry[];
@@ -459,6 +467,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 ...initMatch,
                 ...item,
                 ownershipType: item.ownershipType || initMatch.ownershipType || 'own',
+                status: item.status || initMatch.status || 'active',
                 supplierId: item.supplierId || initMatch.supplierId,
                 supplierName: item.supplierName || initMatch.supplierName,
                 commissionMethod: item.commissionMethod || initMatch.commissionMethod,
@@ -466,7 +475,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 commissionBasis: item.commissionBasis || initMatch.commissionBasis,
               });
             } else {
-              result.push(item);
+              result.push({ ...item, status: item.status || 'active' });
             }
           }
 
@@ -482,7 +491,10 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       } catch {}
     }
-    return INITIAL_PRODUCTS;
+    return INITIAL_PRODUCTS.map((product) => ({
+      ...product,
+      status: product.status || 'active',
+    }));
   });
 
   useEffect(() => {
@@ -682,6 +694,47 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     updateRawMaterial,
     deleteRawMaterial,
   } = useCatalogSlice({ selectedBranchId, currentUserName: currentUser.name, addAudit });
+
+  // Enrich legacy suppliers without changing their IDs or existing category
+  // labels. Only normalized-exact, unique matches are accepted. Also ensure
+  // every PRODUKSI Master Kategori has one internal supplier record so the
+  // universal Master Kategori -> Supplier -> SKU hierarchy remains intact.
+  useEffect(() => {
+    setSuppliers((previous) => {
+      let changed = false;
+      const next = previous.map((supplier) => {
+        const masterCategoryId = getNormalizedExactMasterCategoryId(supplier, masterCategories);
+        if (!masterCategoryId || supplier.masterCategoryId === masterCategoryId) return supplier;
+        changed = true;
+        return { ...supplier, masterCategoryId };
+      });
+
+      for (const masterCategory of masterCategories) {
+        if (masterCategory.categoryType !== 'PRODUKSI') continue;
+        const hasInternalSupplier = next.some(
+          (supplier) => supplier.masterCategoryId === masterCategory.id && supplier.isInternal
+        );
+        if (hasInternalSupplier) continue;
+
+        const id = getNextSupplierId(masterCategory.id, next);
+        next.push({
+          id,
+          masterCategoryId: masterCategory.id,
+          isInternal: true,
+          name: `Produksi Internal - ${masterCategory.name}`,
+          category: masterCategory.name,
+          categories: [masterCategory.name],
+          picName: 'Internal Produksi',
+          phone: '-',
+          balance: 0,
+          createdAt: new Date().toISOString(),
+        });
+        changed = true;
+      }
+
+      return changed ? next : previous;
+    });
+  }, [masterCategories]);
 
   // User login/switching, branch selection + CRUD/status, user CRUD/status and
   // customer creation — extracted to src/context/slices/useOrgSlice.ts.
@@ -899,34 +952,65 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Master Kategori CRUD: extracted to src/context/slices/useCatalogSlice.ts
 
   // Product Master (POS-US-029)
-  const addProduct = (productData: Omit<Product, 'id'>) => {
+  const addProduct = (productData: NewProductInput) => {
     const trimmedName = productData.name.trim();
-    const trimmedSku = productData.sku.trim().toUpperCase();
+    const masterCategory = masterCategories.find((category) => category.id === productData.masterCategoryId);
+    const supplier = suppliers.find((candidate) => candidate.id === productData.supplierId);
 
     if (!trimmedName) {
       return { success: false, message: 'Nama produk wajib diisi!' };
     }
-    if (!trimmedSku) {
-      return { success: false, message: 'Kode produk / SKU wajib diisi!' };
+    if (!masterCategory) {
+      return { success: false, message: 'Master Kategori produk tidak ditemukan!' };
+    }
+    if (!supplier) {
+      return { success: false, message: 'Supplier produk tidak ditemukan!' };
+    }
+    if (supplier.masterCategoryId !== masterCategory.id) {
+      return { success: false, message: 'Supplier tidak sesuai dengan Master Kategori yang dipilih!' };
+    }
+    if (masterCategory.categoryType === 'PRODUKSI' && !supplier.isInternal) {
+      return { success: false, message: 'Produk PRODUKSI harus menggunakan Supplier Produksi Internal!' };
+    }
+    if (masterCategory.categoryType !== 'PRODUKSI' && supplier.isInternal) {
+      return { success: false, message: 'Supplier Produksi Internal hanya dapat digunakan untuk kategori PRODUKSI!' };
     }
 
-    const isDuplicateSku = products.some(
-      (p) => p.sku.toLowerCase() === trimmedSku.toLowerCase()
-    );
+    const ownershipType = masterCategory.categoryType === 'KONSINYASI' ? 'consignment' : 'own';
+    const sku = getNextProductSku(supplier.id, products);
+    const isDuplicateSku = products.some((product) => product.sku.toLowerCase() === sku.toLowerCase());
     if (isDuplicateSku) {
-      return { success: false, message: `Kode SKU "${trimmedSku}" sudah terdaftar!` };
+      return { success: false, message: `SKU otomatis "${sku}" sudah terdaftar. Silakan coba lagi.` };
     }
+
+    const {
+      supplierId: _supplierId,
+      supplierName: _supplierName,
+      status: requestedStatus,
+      commissionMethod,
+      commissionValue,
+      commissionBasis,
+      ...productFields
+    } = productData;
 
     const id = 'prod-' + Date.now().toString().slice(-6);
     const newProd: Product = {
-      ...productData,
+      ...productFields,
       id,
       branchId: selectedBranchId,
       name: trimmedName,
-      sku: trimmedSku,
+      masterCategoryId: masterCategory.id,
+      sku,
       stock: 0, // POS-US-062: Product master is created with zero stock; first stock comes only from submitted receipt
       lowStockThreshold: Math.max(0, productData.lowStockThreshold || 3),
       price: Math.max(0, productData.price || 0),
+      ownershipType,
+      status: requestedStatus || 'active',
+      supplierId: supplier.id,
+      supplierName: supplier.name,
+      commissionMethod: ownershipType === 'consignment' ? commissionMethod : undefined,
+      commissionValue: ownershipType === 'consignment' ? commissionValue : undefined,
+      commissionBasis: ownershipType === 'consignment' ? commissionBasis : undefined,
     };
 
     setProducts((prev) => [newProd, ...prev]);
@@ -944,10 +1028,14 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Raw Material CRUD: extracted to src/context/slices/useCatalogSlice.ts
 
   // Supplier Master (POS-US-030)
-  const addSupplier = (supplierData: Omit<Supplier, 'id' | 'createdAt'>) => {
+  const addSupplier = (supplierData: NewSupplierInput) => {
     const trimmedName = supplierData.name.trim();
+    const masterCategory = masterCategories.find((category) => category.id === supplierData.masterCategoryId);
     if (!trimmedName) {
       return { success: false, message: 'Nama supplier wajib diisi!' };
+    }
+    if (!masterCategory) {
+      return { success: false, message: 'Master Kategori supplier tidak ditemukan!' };
     }
     const isDuplicate = suppliers.some(
       (s) => s.name.toLowerCase() === trimmedName.toLowerCase()
@@ -956,11 +1044,11 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, message: `Supplier "${trimmedName}" sudah terdaftar!` };
     }
 
-    const id = 'sup-' + Date.now().toString().slice(-5);
+    const id = getNextSupplierId(masterCategory.id, suppliers);
     const newSup: Supplier = {
       ...supplierData,
       id,
-      branchId: selectedBranchId,
+      branchId: supplierData.isInternal ? undefined : (supplierData.branchId || selectedBranchId),
       name: trimmedName,
       picName: supplierData.picName.trim(),
       phone: supplierData.phone.trim(),
@@ -977,6 +1065,9 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     posSound.beep();
     return { success: true, supplier: newSup, message: `Supplier "${newSup.name}" berhasil disimpan!` };
   };
+
+  const getSuppliersForMasterCategory = (masterCategoryId: string) =>
+    suppliers.filter((supplier) => supplier.masterCategoryId === masterCategoryId);
 
   const updateSupplier = (id: string, supplierData: Partial<Supplier>) => {
     const target = suppliers.find((s) => s.id === id);
@@ -1498,7 +1589,8 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return {
           ...p,
           ...(info.name !== undefined ? { name: info.name.trim() } : {}),
-          ...(info.sku !== undefined ? { sku: info.sku.trim().toUpperCase() } : {}),
+          // SKU is an immutable identifier. Legacy and generated SKUs remain
+          // visible, but edits cannot rewrite historical references.
           ...(info.category !== undefined ? { category: info.category } : {}),
           ...(info.categoryLabel !== undefined ? { categoryLabel: info.categoryLabel } : {}),
           ...(info.price !== undefined ? { price: Math.max(0, info.price) } : {}),
@@ -1506,6 +1598,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           ...(info.lowStockThreshold !== undefined ? { lowStockThreshold: Math.max(0, info.lowStockThreshold) } : {}),
           ...(info.image !== undefined ? { image: info.image } : {}),
           ...(info.description !== undefined ? { description: info.description } : {}),
+          ...(info.status !== undefined ? { status: info.status } : {}),
           ...(info.ownershipType !== undefined ? { ownershipType: info.ownershipType } : {}),
           ...(info.supplierId !== undefined ? { supplierId: info.supplierId } : {}),
           ...(info.supplierName !== undefined ? { supplierName: info.supplierName } : {}),
@@ -1795,6 +1888,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         suppliers: branchSuppliers,
         addSupplier,
         updateSupplier,
+        getSuppliersForMasterCategory,
         commissionLedger: branchCommissionLedger,
         settlementCycles: branchSettlementCycles,
         recordSettlementPayment,

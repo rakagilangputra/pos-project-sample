@@ -455,7 +455,7 @@ export function useGoodsReceivingSlice({
       // Determine itemType fallback
       let itemType: PurchasePlanItemType = line.itemType || 'direct_purchase';
       if (!line.itemType) {
-        if (prod.ownershipType === 'consignment' || (prod.supplierId && prod.supplierId !== 'internal')) {
+        if (prod.ownershipType === 'consignment') {
           itemType = 'consignment';
         } else if (prod.isMadeToOrder) {
           itemType = 'in_house';
@@ -636,7 +636,7 @@ export function useGoodsReceivingSlice({
 
         let itemType: PurchasePlanItemType = line.itemType || 'direct_purchase';
         if (!line.itemType) {
-          if (prod.ownershipType === 'consignment' || (prod.supplierId && prod.supplierId !== 'internal')) {
+          if (prod.ownershipType === 'consignment') {
             itemType = 'consignment';
           } else if (prod.isMadeToOrder) {
             itemType = 'in_house';

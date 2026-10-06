@@ -8,6 +8,7 @@ interface AddSupplierModalProps {
   onClose: () => void;
   onSupplierCreated?: (supplierId: string) => void;
   supplierToEdit?: Supplier | null;
+  initialMasterCategoryId?: string;
 }
 
 export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
@@ -15,8 +16,9 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
   onClose,
   onSupplierCreated,
   supplierToEdit,
+  initialMasterCategoryId,
 }) => {
-  const { addSupplier, updateSupplier, masterCategories, suppliers } = useSuppliers();
+  const { addSupplier, updateSupplier, masterCategories } = useSuppliers();
   const [name, setName] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [picName, setPicName] = useState('');
@@ -29,12 +31,13 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Active categories from Master Kategori Backoffice (Filtered strictly to KONSINYASI only)
+  // Active categories from Master Kategori Backoffice. Supplier creation is
+  // supported for every Master Kategori type; the selected ID is canonical.
   const availableMasterCategories: MasterCategory[] = (masterCategories && masterCategories.length > 0
     ? masterCategories
     : ([
         {
-          id: 'KAT-PROD-01',
+          id: 'KAT-001',
           name: 'Roti Manis & Roti Tawar',
           categoryType: 'PRODUKSI',
           branchIds: ['branch-senopati', 'branch-kemang'],
@@ -42,7 +45,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
           createdAt: '2026-01-15T08:00:00Z',
         },
         {
-          id: 'KAT-KSN-01',
+          id: 'KAT-002',
           name: 'Kue Basah Tradisional',
           categoryType: 'KONSINYASI',
           branchIds: ['branch-senopati'],
@@ -50,7 +53,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
           createdAt: '2026-02-01T09:30:00Z',
         },
         {
-          id: 'KAT-RSL-01',
+          id: 'KAT-003',
           name: 'Minuman Kemasan & Botol',
           categoryType: 'BELI (RESELLER)',
           branchIds: ['branch-senopati', 'branch-kemang', 'branch-bintaro'],
@@ -58,7 +61,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
           createdAt: '2026-02-10T11:15:00Z',
         },
         {
-          id: 'KAT-PROD-02',
+          id: 'KAT-004',
           name: 'Artisan Pastry & Croissant',
           categoryType: 'PRODUKSI',
           branchIds: ['branch-senopati', 'branch-kemang'],
@@ -66,7 +69,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
           createdAt: '2026-02-20T14:00:00Z',
         },
         {
-          id: 'KAT-KSN-02',
+          id: 'KAT-005',
           name: 'Keripik & Snack Kering UMKM',
           categoryType: 'KONSINYASI',
           branchIds: ['branch-senopati', 'branch-kemang'],
@@ -74,29 +77,13 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
           createdAt: '2026-03-05T10:00:00Z',
         },
       ] as MasterCategory[])
-  ).filter((c) => c.categoryType === 'KONSINYASI');
-
-  // Helper: check if a category is already linked to another supplier (1:1 rule)
-  const getAssignedSupplierForCategory = (catName: string): Supplier | undefined => {
-    return suppliers.find(
-      (s) =>
-        s.id !== supplierToEdit?.id &&
-        (s.category?.trim().toLowerCase() === catName.trim().toLowerCase() ||
-          s.categories?.some((c) => c.trim().toLowerCase() === catName.trim().toLowerCase()))
-    );
-  };
+  );
 
   useEffect(() => {
     if (supplierToEdit) {
       setName(supplierToEdit.name || '');
-      if (supplierToEdit.category) {
-        const primaryCat = supplierToEdit.category.split(',')[0].trim();
-        setSelectedCategory(primaryCat);
-      } else if (supplierToEdit.categories && supplierToEdit.categories.length > 0) {
-        setSelectedCategory(supplierToEdit.categories[0]);
-      } else {
-        setSelectedCategory('');
-      }
+      const linkedCategory = availableMasterCategories.find((category) => category.id === supplierToEdit.masterCategoryId);
+      setSelectedCategory(linkedCategory?.id || '');
       setPicName(supplierToEdit.picName || '');
       setPhone(supplierToEdit.phone || '');
       setAddress(supplierToEdit.address || '');
@@ -105,11 +92,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
       setBankAccountHolder(supplierToEdit.bankAccountHolder || '');
     } else {
       setName('');
-      // Default to first UNASSIGNED master category
-      const firstAvailable = availableMasterCategories.find(
-        (c) => !getAssignedSupplierForCategory(c.name)
-      );
-      setSelectedCategory(firstAvailable ? firstAvailable.name : '');
+      setSelectedCategory(initialMasterCategoryId || availableMasterCategories[0]?.id || '');
       setPicName('');
       setPhone('');
       setAddress('');
@@ -119,7 +102,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
     }
     setErrorMsg('');
     setSuccessMsg('');
-  }, [supplierToEdit, isOpen, suppliers]);
+  }, [supplierToEdit, isOpen, masterCategories, initialMasterCategoryId]);
 
   if (!isOpen) return null;
 
@@ -138,17 +121,14 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
       return;
     }
 
-    if (!selectedCategory) {
+    if (!selectedCategory && !supplierToEdit) {
       setErrorMsg('Pilih satu Master Kategori yang masih tersedia!');
       return;
     }
 
-    // Enforce 1:1 rule: A Master Category can only have one Supplier
-    const assignedSupplier = getAssignedSupplierForCategory(selectedCategory);
-    if (assignedSupplier) {
-      setErrorMsg(
-        `Master Kategori "${selectedCategory}" sudah terhubung dengan mitra "${assignedSupplier.name}". 1 Master Kategori hanya boleh terhubung dengan 1 Mitra Supplier!`
-      );
+    const selectedMasterCategory = availableMasterCategories.find((category) => category.id === selectedCategory);
+    if (selectedCategory && !selectedMasterCategory) {
+      setErrorMsg('Master Kategori tidak ditemukan.');
       return;
     }
 
@@ -156,20 +136,26 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
     if (supplierToEdit) {
       res = updateSupplier(supplierToEdit.id, {
         name: trimmedName,
-        category: selectedCategory,
-        categories: [selectedCategory],
         picName: picName.trim(),
         phone: phone.trim(),
         address: address.trim() || undefined,
         bankName: bankName.trim() || undefined,
         bankAccountNumber: bankAccountNumber.trim() || undefined,
         bankAccountHolder: bankAccountHolder.trim() || undefined,
+        ...(selectedMasterCategory
+          ? {
+              masterCategoryId: selectedMasterCategory.id,
+              category: selectedMasterCategory.name,
+              categories: [selectedMasterCategory.name],
+            }
+          : {}),
       });
     } else {
       res = addSupplier({
+        masterCategoryId: selectedMasterCategory.id,
         name: trimmedName,
-        category: selectedCategory,
-        categories: [selectedCategory],
+        category: selectedMasterCategory.name,
+        categories: [selectedMasterCategory.name],
         picName: picName.trim(),
         phone: phone.trim(),
         address: address.trim() || undefined,
@@ -206,7 +192,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
     }
   };
 
-  const activeCategoryObj = availableMasterCategories.find((c) => c.name === selectedCategory);
+  const activeCategoryObj = availableMasterCategories.find((c) => c.id === selectedCategory);
 
   return (
     <div
@@ -256,11 +242,11 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
             </div>
           )}
 
-          {/* Master Kategori (Single selection from Master Kategori Backoffice - 1:1 Rule) */}
+          {/* Master Kategori relationship */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label htmlFor="supplier-category-select" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-                Master Kategori <span className="text-rose-500">*</span>
+                Master Kategori {!supplierToEdit && <span className="text-rose-500">*</span>}
               </label>
               {activeCategoryObj && (
                 <span className={`rounded-md px-2 py-0.5 text-[10px] font-black border ${getTypeBadgeStyle(activeCategoryObj.categoryType)}`}>
@@ -272,34 +258,31 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
             {/* Main Select Dropdown */}
             <select
               id="supplier-category-select"
-              required
+              required={!supplierToEdit}
               value={selectedCategory}
               onChange={(e) => handleSelectCategory(e.target.value)}
               className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white px-4 py-2.5 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none cursor-pointer shadow-2xs"
             >
-              <option value="" disabled>-- Pilih 1 Master Kategori (Khusus Konsinyasi) --</option>
+              <option value="" disabled>-- Pilih Master Kategori --</option>
               {availableMasterCategories.map((c) => {
-                const assignedSupplier = getAssignedSupplierForCategory(c.name);
-                const isAssigned = !!assignedSupplier;
-
                 return (
                   <option
                     key={c.id}
-                    value={c.name}
-                    disabled={isAssigned}
-                    className={isAssigned ? 'text-gray-400 bg-gray-100 font-normal' : 'text-gray-900 font-bold'}
+                    value={c.id}
+                    className="text-gray-900 font-bold"
                   >
-                    [{c.categoryType}] {c.name} {isAssigned ? `(Sudah Digunakan - ${assignedSupplier?.name})` : ''}
+                    [{c.categoryType}] {c.name}
                   </option>
                 );
               })}
             </select>
 
-            {/* Helper notice explaining 1:1 relation rule */}
+            {/* Helper notice explaining the one-to-many relationship */}
             <div className="flex items-start gap-1.5 rounded-xl bg-amber-50/80 border border-amber-200/80 px-3 py-2 text-[11px] text-amber-900 font-medium">
               <Info className="h-3.5 w-3.5 text-amber-700 shrink-0 mt-0.5" />
               <span>
-                <strong>Aturan Relasi 1:1:</strong> Satu Master Kategori hanya dapat terhubung dengan 1 Mitra Supplier. Kategori yang telah terdaftar pada supplier lain tidak dapat dipilih kembali.
+                <strong>Aturan Relasi 1:N:</strong> Satu Master Kategori dapat memiliki banyak supplier. ID supplier akan dibuat otomatis berdasarkan ID Master Kategori.
+                {supplierToEdit && !supplierToEdit.masterCategoryId && ' Supplier lama tanpa relasi dapat tetap disimpan tanpa mengubah relasi historisnya.'}
               </span>
             </div>
           </div>
