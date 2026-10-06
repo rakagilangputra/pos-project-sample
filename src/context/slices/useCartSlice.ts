@@ -84,6 +84,10 @@ export function useCartSlice({
       posSound.error();
       return { success: false, warning: 'Buka sesi kasir terlebih dahulu sebelum memulai transaksi!' };
     }
+    if (product.status === 'inactive') {
+      posSound.error();
+      return { success: false, warning: `${product.name} sedang nonaktif dan tidak dapat dijual.` };
+    }
 
     let warning: string | undefined;
     if (product.stock <= 0) {
@@ -319,6 +323,17 @@ export function useCartSlice({
     if (!currentSession || currentSession.status !== 'active') {
       posSound.error();
       return { success: false, message: 'Tidak ada sesi kasir yang aktif' };
+    }
+    const inactiveCartItem = cart.find((item) => {
+      const product = products.find((candidate) => candidate.id === item.productId);
+      return product?.status === 'inactive';
+    });
+    if (inactiveCartItem) {
+      posSound.error();
+      return {
+        success: false,
+        message: `Produk ${inactiveCartItem.productName} sudah nonaktif dan harus dihapus dari keranjang sebelum pembayaran.`,
+      };
     }
 
     const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);

@@ -12,7 +12,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
-import { ProductOwnershipType, CommissionMethod, CommissionBasis, Product } from '../types';
+import { ProductOwnershipType, CommissionMethod, CommissionBasis, Product, ProductStatus } from '../types';
 import { formatIDR } from '../utils/formatters';
 
 interface AddProductModalProps {
@@ -37,11 +37,11 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
   onOpenAddCategory,
   onOpenAddSupplier,
 }) => {
-  const { categories, suppliers, addProduct, currentUser, verifySupervisorPin } = usePOS();
+  const { categories, suppliers, masterCategories, addProduct, currentUser, verifySupervisorPin } = usePOS();
 
   // Basic info
   const [name, setName] = useState('');
-  const [sku, setSku] = useState('');
+  const [masterCategoryId, setMasterCategoryId] = useState(masterCategories[0]?.id || '');
   const [category, setCategory] = useState(categories.find((c) => c.id !== 'all')?.id || 'roti');
   const [price, setPrice] = useState<string>('15000');
   const [isPriceCustomizable, setIsPriceCustomizable] = useState(false);
@@ -49,10 +49,11 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
   const [isMadeToOrder, setIsMadeToOrder] = useState(false);
   const [image, setImage] = useState(BAKERY_SAMPLE_IMAGES[0].url);
   const [description, setDescription] = useState('');
+  const [status, setStatus] = useState<ProductStatus>('active');
 
   // Ownership & Consignment (POS-US-029)
   const [ownershipType, setOwnershipType] = useState<ProductOwnershipType>('own');
-  const [supplierId, setSupplierId] = useState<string>(suppliers[0]?.id || '');
+  const [supplierId, setSupplierId] = useState<string>('');
   const [commissionMethod, setCommissionMethod] = useState<CommissionMethod>('percentage');
   const [commissionValue, setCommissionValue] = useState<string>('15'); // 15% or IDR 3000
   const [commissionBasis, setCommissionBasis] = useState<CommissionBasis>('net');
@@ -65,11 +66,11 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSuggestSku = () => {
-    const prefix = category.substring(0, 3).toUpperCase();
-    const randomNum = Math.floor(100 + Math.random() * 900);
-    setSku(`${prefix}-${randomNum}`);
-  };
+  const selectedMasterCategory = masterCategories.find((masterCategory) => masterCategory.id === masterCategoryId);
+  const filteredSuppliers = suppliers.filter((supplier) =>
+    supplier.masterCategoryId === masterCategoryId &&
+    (selectedMasterCategory?.categoryType === 'PRODUKSI' ? supplier.isInternal : !supplier.isInternal)
+  );
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,17 +92,12 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
     }
 
     const trimmedName = name.trim();
-    const trimmedSku = sku.trim().toUpperCase();
     const numPrice = parseInt(price || '0', 10);
     const numLowStock = parseInt(lowStockThreshold || '5', 10);
     const numCommValue = parseFloat(commissionValue || '0');
 
     if (!trimmedName) {
       setErrorMsg('Nama produk wajib diisi!');
-      return;
-    }
-    if (!trimmedSku) {
-      setErrorMsg('Kode SKU / barcode produk wajib diisi!');
       return;
     }
     if (numPrice < 0) {
@@ -112,19 +108,19 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
     const catItem = categories.find((c) => c.id === category);
     const catLabel = catItem ? catItem.name : 'Roti & Bakery';
 
-    let selectedSup = suppliers.find((s) => s.id === supplierId);
-    if (ownershipType === 'consignment' && !selectedSup && suppliers.length > 0) {
-      selectedSup = suppliers[0];
-    }
-
-    if (ownershipType === 'consignment' && !selectedSup) {
-      setErrorMsg('Pilih supplier mitra titipan konsinyasi!');
+    const selectedSup = filteredSuppliers.find((supplier) => supplier.id === supplierId);
+    if (!selectedMasterCategory || !selectedSup) {
+      setErrorMsg('Pilih Master Kategori dan Supplier yang sesuai!');
       return;
     }
 
+    const derivedOwnershipType: ProductOwnershipType = selectedMasterCategory.categoryType === 'KONSINYASI'
+      ? 'consignment'
+      : 'own';
+
     const res = addProduct({
       name: trimmedName,
-      sku: trimmedSku,
+      masterCategoryId,
       category,
       categoryLabel: catLabel,
       price: numPrice,
@@ -134,15 +130,16 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
       isMadeToOrder,
       image: image || BAKERY_SAMPLE_IMAGES[0].url,
       description: description.trim() || undefined,
-      ownershipType,
-      supplierId: ownershipType === 'consignment' ? selectedSup?.id : undefined,
-      supplierName: ownershipType === 'consignment' ? selectedSup?.name : undefined,
-      commissionMethod: ownershipType === 'consignment' ? commissionMethod : undefined,
-      commissionValue: ownershipType === 'consignment' ? numCommValue : undefined,
+      ownershipType: derivedOwnershipType,
+      supplierId: selectedSup.id,
+      supplierName: selectedSup.name,
+      commissionMethod: derivedOwnershipType === 'consignment' ? commissionMethod : undefined,
+      commissionValue: derivedOwnershipType === 'consignment' ? numCommValue : undefined,
       commissionBasis:
-        ownershipType === 'consignment' && commissionMethod === 'percentage'
+        derivedOwnershipType === 'consignment' && commissionMethod === 'percentage'
           ? commissionBasis
           : undefined,
+      status,
     });
 
     if (!res.success) {
@@ -201,6 +198,52 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
               <span>{successMsg}</span>
             </div>
           )}
+
+          <div className="rounded-2xl border-2 border-[#E5DACE] bg-white p-4 space-y-3">
+            <div className="space-y-1">
+              <label className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">Master Kategori *</label>
+              <select
+                value={masterCategoryId}
+                onChange={(e) => {
+                  setMasterCategoryId(e.target.value);
+                  setSupplierId('');
+                }}
+                className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3 py-2 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none"
+              >
+                {masterCategories.map((masterCategory) => (
+                  <option key={masterCategory.id} value={masterCategory.id}>
+                    [{masterCategory.categoryType}] {masterCategory.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">Supplier *</label>
+              <select
+                value={supplierId}
+                onChange={(e) => setSupplierId(e.target.value)}
+                className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3 py-2 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none"
+              >
+                <option value="">Pilih Supplier sesuai Master Kategori...</option>
+                {filteredSuppliers.map((supplier) => (
+                  <option key={supplier.id} value={supplier.id}>
+                    {supplier.isInternal ? 'Internal' : 'Supplier'}: {supplier.name} ({supplier.id})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">Status Produk</label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as ProductStatus)}
+                className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3 py-2 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none"
+              >
+                <option value="active">Active — dapat dijual</option>
+                <option value="inactive">Inactive — simpan sebagai nonaktif</option>
+              </select>
+            </div>
+          </div>
 
           {/* Section: Ownership Type (Milik Sendiri vs Konsinyasi) */}
           <div className="rounded-2xl border-2 border-[#E5DACE] bg-white p-4 space-y-2">
@@ -382,25 +425,13 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-                  Kode Produk / SKU <span className="text-rose-500">*</span>
+                  Kode Produk / SKU
                 </label>
-                <button
-                  type="button"
-                  onClick={handleSuggestSku}
-                  className="text-[11px] font-bold text-[#D97706] hover:underline"
-                >
-                  Generate Acak
-                </button>
+                <span className="text-[10px] font-bold text-[#8C7B6C]">Dibuat otomatis</span>
               </div>
-              <input
-                id="product-sku-input"
-                type="text"
-                required
-                value={sku}
-                onChange={(e) => setSku(e.target.value)}
-                placeholder="ROT-101"
-                className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white px-4 py-2.5 text-sm font-bold uppercase text-[#2D241E] focus:border-[#D97706] focus:outline-none"
-              />
+              <div className="rounded-2xl border-2 border-dashed border-[#E5DACE] bg-[#FDFBF7] px-4 py-2.5 text-xs font-semibold text-[#8C7B6C]">
+                SKU akan mengikuti Supplier yang dipilih dan dibuat saat produk disimpan.
+              </div>
             </div>
 
             {/* Category */}

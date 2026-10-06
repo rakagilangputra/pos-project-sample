@@ -20,7 +20,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
-import { ProductOwnershipType, CommissionMethod, CommissionBasis, MasterCategory, ProductExpiryType } from '../types';
+import { ProductOwnershipType, CommissionMethod, CommissionBasis, MasterCategory, ProductExpiryType, ProductStatus } from '../types';
 import { AddCategoryModal } from './AddCategoryModal';
 import { GoodsReceivingWorkspace } from './GoodsReceivingWorkspace';
 import { ProductStockTable } from './stock/ProductStockTable';
@@ -67,19 +67,19 @@ export const StockWorkspace: React.FC = () => {
       ? masterCategories
       : [
           {
-            id: 'KAT-PROD-01',
+            id: 'KAT-001',
             name: 'Roti Manis & Roti Tawar',
             categoryType: 'PRODUKSI' as const,
             createdAt: '2026-01-15T08:00:00Z',
           },
           {
-            id: 'KAT-KSN-01',
+            id: 'KAT-002',
             name: 'Kue Basah Tradisional',
             categoryType: 'KONSINYASI' as const,
             createdAt: '2026-02-01T09:30:00Z',
           },
           {
-            id: 'KAT-RSL-01',
+            id: 'KAT-003',
             name: 'Minuman Kemasan & Botol',
             categoryType: 'BELI (RESELLER)' as const,
             createdAt: '2026-02-10T11:15:00Z',
@@ -104,41 +104,16 @@ export const StockWorkspace: React.FC = () => {
 
   // Dynamic Mitra Suppliers based on selected Master Kategori (Step 2)
   const filteredSuppliers = useMemo(() => {
-    if (!selectedMasterCat) return suppliers;
-    const catNameLower = selectedMasterCat.name.toLowerCase();
-    return suppliers.filter((s) => {
-      const supCatLower = (s.category || '').toLowerCase();
-      const inCategories = s.categories?.some(
-        (c) => c.toLowerCase().includes(catNameLower) || catNameLower.includes(c.toLowerCase())
-      );
-      return supCatLower.includes(catNameLower) || catNameLower.includes(supCatLower) || inCategories;
-    });
+    if (!selectedMasterCat) return [];
+    const linked = suppliers.filter((supplier) => supplier.masterCategoryId === selectedMasterCat.id);
+    return selectedMasterCat.categoryType === 'PRODUKSI'
+      ? linked.filter((supplier) => supplier.isInternal)
+      : linked.filter((supplier) => !supplier.isInternal);
   }, [selectedMasterCat, suppliers]);
 
   const handleMasterCategoryChange = (catId: string) => {
     setSelectedMasterCategoryId(catId);
-    const cat = availableMasterCategories.find((c) => c.id === catId);
-    if (cat) {
-      if (cat.categoryType === 'PRODUKSI') {
-        setNewSupplierId('internal');
-      } else {
-        const catNameLower = cat.name.toLowerCase();
-        const matched = suppliers.find((s) => {
-          const supCatLower = (s.category || '').toLowerCase();
-          const inCategories = s.categories?.some(
-            (c) => c.toLowerCase().includes(catNameLower) || catNameLower.includes(c.toLowerCase())
-          );
-          return supCatLower.includes(catNameLower) || catNameLower.includes(supCatLower) || inCategories;
-        });
-        if (matched) {
-          setNewSupplierId(matched.id);
-        } else if (suppliers.length > 0) {
-          setNewSupplierId(suppliers[0].id);
-        } else {
-          setNewSupplierId('internal');
-        }
-      }
-    }
+    setNewSupplierId('');
   };
 
   // Local View Tab: 'products' (default), 'categories', 'transfers', 'bad_stock', 'receiving', 'history'
@@ -156,7 +131,6 @@ export const StockWorkspace: React.FC = () => {
 
   // Full-page Product Creation Form State (for Master Catalog)
   const [newName, setNewName] = useState('');
-  const [newSku, setNewSku] = useState('');
   const [newCategory, setNewCategory] = useState(categories.find((c) => c.id !== 'all')?.id || 'roti');
   const [newPrice, setNewPrice] = useState<string>('15000');
   const [isPriceCustomizable, setIsPriceCustomizable] = useState(false);
@@ -164,10 +138,17 @@ export const StockWorkspace: React.FC = () => {
   const [newLowStockThreshold, setNewLowStockThreshold] = useState<string>('5');
   const [newImage, setNewImage] = useState(BAKERY_SAMPLE_IMAGES[0].url);
   const [newDescription, setNewDescription] = useState('');
+  const [newProductStatus, setNewProductStatus] = useState<ProductStatus>('active');
 
   // Ownership & Consignment
   const [newOwnershipType, setNewOwnershipType] = useState<ProductOwnershipType>('own');
   const [newSupplierId, setNewSupplierId] = useState<string>(suppliers[0]?.id || '');
+
+  useEffect(() => {
+    if (!newSupplierId || !filteredSuppliers.some((supplier) => supplier.id === newSupplierId)) {
+      setNewSupplierId(filteredSuppliers[0]?.id || '');
+    }
+  }, [filteredSuppliers, newSupplierId]);
   const [newCommissionMethod, setNewCommissionMethod] = useState<CommissionMethod>('percentage');
   const [newCommissionValue, setNewCommissionValue] = useState<string>('15');
   const [newCommissionBasis, setNewCommissionBasis] = useState<CommissionBasis>('net');
@@ -201,13 +182,6 @@ export const StockWorkspace: React.FC = () => {
     setActiveView('bad_stock');
   };
 
-  // SKU suggestion for product creation
-  const handleSuggestSku = () => {
-    const prefix = newCategory.substring(0, 3).toUpperCase();
-    const randomNum = Math.floor(100 + Math.random() * 900);
-    setNewSku(`${prefix}-${randomNum}`);
-  };
-
   // Submit Add Product (Full Page)
   const handleSaveProduct = (e: React.FormEvent) => {
     e.preventDefault();
@@ -227,17 +201,12 @@ export const StockWorkspace: React.FC = () => {
     }
 
     const trimmedName = newName.trim();
-    const trimmedSku = newSku.trim().toUpperCase();
     const numPrice = parseInt(newPrice || '0', 10);
     const numStock = 0;
     const numLowStock = 5;
 
     if (!trimmedName) {
       setFormError('Nama produk wajib diisi!');
-      return;
-    }
-    if (!trimmedSku) {
-      setFormError('Kode SKU / barcode produk wajib diisi!');
       return;
     }
     if (isNaN(numPrice) || numPrice < 0) {
@@ -253,13 +222,17 @@ export const StockWorkspace: React.FC = () => {
       ? catItem.name
       : 'Roti & Bakery';
 
-    const selectedSup = suppliers.find((s) => s.id === newSupplierId);
-    const isConsignment = Boolean(selectedSup && newSupplierId !== 'internal');
+    const selectedSup = filteredSuppliers.find((supplier) => supplier.id === newSupplierId);
+    if (!selectedMasterCat || !selectedSup) {
+      setFormError('Pilih Master Kategori dan Supplier yang sesuai terlebih dahulu.');
+      return;
+    }
+    const isConsignment = selectedMasterCat.categoryType === 'KONSINYASI';
 
     setIsSubmittingProduct(true);
     const res = addProduct({
       name: trimmedName,
-      sku: trimmedSku,
+      masterCategoryId: selectedMasterCat.id,
       category: isMadeToOrderCat ? 'custom_cake' : newCategory,
       categoryLabel: catLabel,
       price: numPrice,
@@ -270,8 +243,9 @@ export const StockWorkspace: React.FC = () => {
       image: newImage || BAKERY_SAMPLE_IMAGES[0].url,
       description: newDescription.trim() || undefined,
       ownershipType: isConsignment ? 'consignment' : 'own',
-      supplierId: isConsignment ? selectedSup?.id : undefined,
-      supplierName: isConsignment ? selectedSup?.name : (newSupplierId === 'internal' ? 'Produksi Sendiri' : undefined),
+      supplierId: selectedSup.id,
+      supplierName: selectedSup.name,
+      status: newProductStatus,
       expiryType: newExpiryType,
       shelfLifeDays: newExpiryType === 'daily' ? 1 : Math.max(1, parseInt(newShelfLifeDays, 10) || 3),
     });
@@ -285,9 +259,9 @@ export const StockWorkspace: React.FC = () => {
     setFormSuccess(res.message);
     setTimeout(() => {
       setNewName('');
-      setNewSku('');
       setNewPrice('');
       setNewDescription('');
+      setNewProductStatus('active');
       setSupervisorPin('');
       setFormSuccess('');
       setIsFullPageAddProduct(false);
@@ -430,25 +404,11 @@ export const StockWorkspace: React.FC = () => {
                     onChange={(e) => setNewSupplierId(e.target.value)}
                     className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white px-3.5 py-2.5 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none shadow-xs"
                   >
-                    {(selectedMasterCat?.categoryType === 'PRODUKSI' || filteredSuppliers.length === 0) && (
-                      <option value="internal">🏠 Produksi Sendiri (Dapur Utama Internal)</option>
-                    )}
-
                     {filteredSuppliers.map((sup) => (
                       <option key={sup.id} value={sup.id}>
                         🏷️ {sup.name} ({sup.category || selectedMasterCat?.name})
                       </option>
                     ))}
-
-                    {filteredSuppliers.length === 0 && suppliers.map((sup) => (
-                      <option key={sup.id} value={sup.id}>
-                        🏷️ {sup.name} ({sup.category || 'Mitra Lain'})
-                      </option>
-                    ))}
-
-                    {selectedMasterCat?.categoryType !== 'PRODUKSI' && filteredSuppliers.length > 0 && (
-                      <option value="internal">🏠 Produksi Sendiri (Dapur Utama Internal)</option>
-                    )}
                   </select>
                   <p className="text-[10px] text-[#8C7B6C]">
                     {filteredSuppliers.length > 0
@@ -509,26 +469,14 @@ export const StockWorkspace: React.FC = () => {
                 {/* Kode SKU */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <label htmlFor="product-sku-input" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-                      Kode SKU <span className="text-rose-500">*</span>
+                    <label htmlFor="product-sku-preview" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
+                      Kode SKU
                     </label>
-                    <button
-                      type="button"
-                      onClick={handleSuggestSku}
-                      className="text-[11px] font-bold text-[#D97706] hover:underline"
-                    >
-                      + Buat Otomatis
-                    </button>
+                    <span className="text-[10px] font-bold text-[#8C7B6C]">Dibuat otomatis</span>
                   </div>
-                  <input
-                    id="product-sku-input"
-                    type="text"
-                    required
-                    value={newSku}
-                    onChange={(e) => setNewSku(e.target.value)}
-                    placeholder="Contoh: ROT-001"
-                    className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white px-3.5 py-2.5 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none uppercase shadow-xs"
-                  />
+                  <div id="product-sku-preview" className="rounded-2xl border-2 border-dashed border-[#E5DACE] bg-[#FDFBF7] px-3.5 py-2.5 text-xs font-semibold text-[#8C7B6C]">
+                    SKU akan mengikuti Supplier yang dipilih dan dibuat saat produk disimpan.
+                  </div>
                 </div>
 
                 {/* Harga Jual */}
@@ -551,6 +499,21 @@ export const StockWorkspace: React.FC = () => {
                     />
                   </div>
                 </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="product-status-select" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
+                  Status Produk
+                </label>
+                <select
+                  id="product-status-select"
+                  value={newProductStatus}
+                  onChange={(e) => setNewProductStatus(e.target.value as ProductStatus)}
+                  className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white px-3.5 py-2.5 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none shadow-xs"
+                >
+                  <option value="active">Active — dapat dijual</option>
+                  <option value="inactive">Inactive — simpan sebagai nonaktif</option>
+                </select>
               </div>
 
               {/* Row 4: Tipe Masa Kedaluwarsa Produk (Requirement 1) */}

@@ -82,6 +82,7 @@ export type ProductOwnershipType = 'own' | 'consignment';
 export type CommissionMethod = 'fixed' | 'percentage';
 export type CommissionBasis = 'gross' | 'net';
 export type ProductExpiryType = 'daily' | 'multi_day';
+export type ProductStatus = 'active' | 'inactive';
 
 export interface Product {
   id: string;
@@ -108,6 +109,10 @@ export interface Product {
 
   // Ownership & Consignment fields (POS-US-029)
   ownershipType: ProductOwnershipType; // 'own' | 'consignment'
+  // Missing on legacy records; missing means active for backward compatibility.
+  status?: ProductStatus;
+  // Missing on legacy records; new products retain the selected HQ category.
+  masterCategoryId?: string;
   supplierId?: string;
   supplierName?: string;
   commissionMethod?: CommissionMethod; // 'fixed' | 'percentage'
@@ -336,6 +341,11 @@ export type WeeklyFrequency = 'once' | 'twice' | 'three_times';
 export interface Supplier {
   id: string;
   branchId?: string;
+  // Canonical relationship to the HQ Master Kategori. Legacy suppliers may not
+  // have this field until a normalized-exact compatibility match is found.
+  masterCategoryId?: string;
+  // Internal production suppliers are not consignment partners.
+  isInternal?: boolean;
   name: string;
   category?: string; // e.g. "Roti Manis, Pastry & Croissant"
   categories?: string[]; // Tagged product categories from Stok Kategori (e.g. ['Roti Manis', 'Cakes & Tart'])
@@ -357,6 +367,22 @@ export interface Supplier {
   createdAt: string;
   updatedAt?: string;
 }
+
+/** Input used by new supplier creation. New suppliers must be category-scoped. */
+export type NewSupplierInput = Omit<Supplier, 'id' | 'createdAt' | 'masterCategoryId'> & {
+  masterCategoryId: string;
+};
+
+/** Input used by new product creation. SKU is generated centrally. */
+export type NewProductInput = Omit<
+  Product,
+  'id' | 'sku' | 'supplierId' | 'supplierName' | 'status'
+> & {
+  masterCategoryId: string;
+  supplierId: string;
+  supplierName?: string;
+  status?: ProductStatus;
+};
 
 // POS-US-031: Consignment Commission Ledger
 export type CommissionLedgerStatus = 'accrued' | 'included' | 'settled' | 'reversed';

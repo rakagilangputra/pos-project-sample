@@ -251,6 +251,7 @@ export const ProductStockTable: React.FC<ProductStockTableProps> = ({
                 <th className="py-3 px-3">Produk & SKU</th>
                 <th className="py-3 px-3">Kategori</th>
                 <th className="py-3 px-3">Tipe Produk</th>
+                <th className="py-3 px-3 text-center">Status</th>
                 <th className="py-3 px-3 text-right">Harga Jual</th>
                 <th className="py-3 px-3 text-center">Stok Siap Jual</th>
                 <th className="py-3 px-3 text-center">Dalam Pengiriman</th>
@@ -311,6 +312,17 @@ export const ProductStockTable: React.FC<ProductStockTableProps> = ({
                           Ready Stock
                         </span>
                       )}
+                    </td>
+
+                    {/* Selling Price */}
+                    <td className="py-2.5 px-3 text-center">
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black ${
+                        prod.status === 'inactive'
+                          ? 'bg-slate-100 text-slate-600 border border-slate-200'
+                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      }`}>
+                        {prod.status === 'inactive' ? 'Inactive' : 'Active'}
+                      </span>
                     </td>
 
                     {/* Selling Price */}

@@ -48,6 +48,7 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
   const filteredProducts = products.filter((prod) => {
     // MTO products are exclusively created in Pesanan workspace
     if (prod.isMadeToOrder) return false;
+    if (prod.status === 'inactive') return false;
 
     // Category match
     if (selectedCategory !== 'all' && prod.category !== selectedCategory) {
