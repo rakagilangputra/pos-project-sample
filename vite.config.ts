@@ -5,6 +5,8 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
+    // GitHub Pages serves this project beneath the repository path.
+    base: '/pos-project-sample/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
