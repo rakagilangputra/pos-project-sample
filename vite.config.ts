@@ -5,8 +5,8 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    // Netlify serves the site at the domain root; GitHub Pages uses the repo path.
-    base: process.env.NETLIFY ? '/' : '/pos-project-sample/',
+    // Netlify and Vercel serve the site at the domain root; GitHub Pages uses the repo path.
+    base: process.env.NETLIFY || process.env.VERCEL ? '/' : '/pos-project-sample/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
