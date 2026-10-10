@@ -38,6 +38,8 @@ interface ReceiptItemRowState {
   plannedQuantity?: number;
   plannedBuyPrice?: number;
   plannedLineTotal?: number;
+  supplierId?: string;
+  supplierName?: string;
   // Sub-batch multi expiry dates (Option A)
   expiryBatches?: GoodsReceiptItemBatch[];
 }
@@ -49,6 +51,7 @@ export const GoodsReceivingWorkspace: React.FC = () => {
     products,
     rawMaterials = [],
     currentUser,
+    branches,
     receivingDraft,
     setReceivingDraft,
     submitGoodsReceipt,
@@ -57,6 +60,15 @@ export const GoodsReceivingWorkspace: React.FC = () => {
     unlockPurchasePlanFromReceipt,
     selectedBranchId,
   } = usePOS();
+
+  const mainBranch = useMemo(
+    () => branches.find((branch) => branch.isMainBranch)
+      || branches.find((branch) => branch.id === 'branch-senopati')
+      || branches.find((branch) => branch.status === 'active')
+      || branches[0],
+    [branches]
+  );
+  const isMainBranch = selectedBranchId === mainBranch?.id;
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
@@ -103,14 +115,15 @@ export const GoodsReceivingWorkspace: React.FC = () => {
     return products.filter((p) => p.ownershipType !== 'consignment');
   }, [products]);
 
-  // Eligible purchase plans for current branch (Direncanakan, or currently selected)
+  // Reseller plans are centrally received at Cabang Utama only.
   const eligiblePurchasePlans = useMemo(() => {
+    if (!isMainBranch) return [];
     return purchasePlans.filter((p) => {
-      const branchMatches = !p.branchId || p.branchId === selectedBranchId;
+      const branchMatches = !p.branchId || p.branchId === mainBranch?.id;
       const statusMatches = (p.status === 'Direncanakan' && !p.receivingLocked) || p.id === selectedPlanId;
       return branchMatches && statusMatches;
     });
-  }, [purchasePlans, selectedBranchId, selectedPlanId]);
+  }, [isMainBranch, mainBranch?.id, purchasePlans, selectedPlanId]);
 
   // Selected plan object
   const activePlanObj = useMemo(() => {
@@ -174,7 +187,7 @@ export const GoodsReceivingWorkspace: React.FC = () => {
     if (plan) {
       // Lock plan internally while the receiving draft is open
       lockPurchasePlanForReceipt(plan.id);
-      setSupplierId(plan.supplierId);
+      setSupplierId(plan.supplierId || 'multi');
 
       // Pre-fill lines with planned values and actual quantity initially 0
       const defaultExp = arrivalDate || new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
@@ -191,6 +204,8 @@ export const GoodsReceivingWorkspace: React.FC = () => {
         plannedQuantity: l.plannedQuantity,
         plannedBuyPrice: l.plannedBuyPrice,
         plannedLineTotal: l.lineTotal,
+          supplierId: l.supplierId,
+          supplierName: l.supplierName,
         expiryBatches: [
           {
             batchNumber: 'BCH-01',
@@ -504,6 +519,8 @@ export const GoodsReceivingWorkspace: React.FC = () => {
           plannedQuantity: item.plannedQuantity,
           plannedBuyPrice: item.plannedBuyPrice,
           actualBuyPrice: item.actualBuyPrice,
+          supplierId: item.supplierId,
+          supplierName: item.supplierName,
           expiryBatches: resolvedBatches,
         };
       });
@@ -519,8 +536,8 @@ export const GoodsReceivingWorkspace: React.FC = () => {
         purchasePlanId: activePlanObj.id,
         totalPlannedValue: activePlanObj.totalPlannedValue,
         arrivalDate,
-        supplierId: sup.id,
-        supplierName: sup.name,
+        supplierId: activePlanObj.supplierId || 'multi',
+        supplierName: activePlanObj.supplierName || 'Multi Supplier Reseller',
         receivedBy,
         items: formattedItems,
         totalQuantity,
@@ -925,7 +942,7 @@ export const GoodsReceivingWorkspace: React.FC = () => {
                       </label>
                       {eligiblePurchasePlans.length === 0 ? (
                         <div className="rounded-xl bg-white p-3 text-xs text-rose-700 border border-rose-200 font-medium">
-                          Tidak ada Rencana Pembelian berstatus <strong>Direncanakan</strong> untuk cabang ini. Silakan buat Rencana Pembelian baru terlebih dahulu di menu <em>Backoffice HQ &gt; Rencana Pembelian</em>, atau beralih ke mode <strong>Manual</strong>.
+                          {!isMainBranch ? <>Penerimaan Rencana Pembelian reseller hanya dapat dilakukan di <strong>{mainBranch?.name || 'Cabang Utama'}</strong>.</> : <>Tidak ada Rencana Pembelian berstatus <strong>Direncanakan</strong> untuk Cabang Utama. Silakan buat rencana di menu <em>Backoffice HQ &gt; Rencana Pembelian</em>, atau beralih ke mode <strong>Manual</strong>.</>}
                         </div>
                       ) : (
                         <select
@@ -974,6 +991,7 @@ export const GoodsReceivingWorkspace: React.FC = () => {
                       sumberPenerimaan === 'Dari Rencana Pembelian' && selectedPlanId ? 'bg-gray-100 opacity-80 cursor-not-allowed' : 'bg-[#FDFBF7]'
                     }`}
                   >
+                    {sumberPenerimaan === 'Dari Rencana Pembelian' && selectedPlanId && <option value="multi">Multi Supplier Reseller</option>}
                     {suppliers.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
@@ -1140,6 +1158,11 @@ export const GoodsReceivingWorkspace: React.FC = () => {
                             <div className="text-[11px] font-mono text-[#8C7B6C]">
                               SKU: {item.plannedSku || '-'}
                             </div>
+                            {item.supplierName && (
+                              <div className="text-[10px] font-semibold text-purple-700">
+                                Supplier: {item.supplierName}
+                              </div>
+                            )}
                             <div className="flex items-center justify-between pt-1 border-t border-dashed border-gray-200 text-xs">
                               <span className="font-bold text-blue-900">
                                 Rencana: {item.plannedQuantity ?? 0} pcs

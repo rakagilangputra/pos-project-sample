@@ -331,13 +331,15 @@ interface POSContextType {
   purchasePlans: PurchasePlan[];
   addPurchasePlan: (data: {
     namaRencana: string;
-    branchId: string;
-    masterCategoryId: string;
-    supplierId: string;
     lines: {
       productId: string;
       plannedQuantity: number;
       plannedBuyPrice: number;
+      pickupDate: string;
+      sourceBranchIds?: string[];
+      sourceBranchNames?: string[];
+      sourceOrderIds?: string[];
+      masterCategoryId?: string;
       itemType?: PurchasePlanItemType;
       sourcePoRef?: string;
       supplierId?: string;
@@ -346,7 +348,6 @@ interface POSContextType {
     }[];
     notes?: string;
     sourceOrderIds?: string[];
-    attachedPoNumbers?: string[];
   }) => { success: boolean; plan?: PurchasePlan; message: string };
   updatePurchasePlan: (
     id: string,
@@ -356,6 +357,11 @@ interface POSContextType {
         productId: string;
         plannedQuantity: number;
         plannedBuyPrice: number;
+        pickupDate: string;
+        sourceBranchIds?: string[];
+        sourceBranchNames?: string[];
+        sourceOrderIds?: string[];
+        masterCategoryId?: string;
         itemType?: PurchasePlanItemType;
         sourcePoRef?: string;
         supplierId?: string;
@@ -364,7 +370,6 @@ interface POSContextType {
       }[];
       notes?: string;
       sourceOrderIds?: string[];
-      attachedPoNumbers?: string[];
     }
   ) => { success: boolean; plan?: PurchasePlan; message: string };
   cancelPurchasePlan: (id: string, reason?: string) => { success: boolean; message: string };

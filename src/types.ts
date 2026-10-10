@@ -11,6 +11,8 @@ export interface StoreBranch {
   assignedSupervisorIds?: string[];
   receiptHeader?: string;
   status: 'active' | 'inactive';
+  /** Marks the centralized receiving and distribution branch. */
+  isMainBranch?: boolean;
   createdAt: string;
   updatedAt?: string;
 }
@@ -473,6 +475,8 @@ export interface GoodsReceiptItem {
   plannedBuyPrice?: number;
   plannedLineTotal?: number;
   condition?: 'Sesuai Rencana' | 'Berbeda' | 'Tidak Direncanakan' | 'Tidak Diterima';
+  supplierId?: string;
+  supplierName?: string;
   expiryBatches?: GoodsReceiptItemBatch[];
 }
 
@@ -509,7 +513,7 @@ export interface GoodsReceiptRecord {
   updatedAt?: string;
 }
 
-// POS-US-073, POS-US-074, POS-US-075: Rencana Pembelian (Owned Purchases Only)
+// POS-US-073, POS-US-074, POS-US-075: Centralized reseller Rencana Pembelian
 export type PurchasePlanStatus =
   | 'Direncanakan'
   | 'Terealisasi'
@@ -526,6 +530,13 @@ export interface PurchasePlanProductLine {
   plannedQuantity: number; // positive whole number >= 1
   plannedBuyPrice: number; // >= 0
   lineTotal: number; // plannedQuantity * plannedBuyPrice
+  /** Pickup date selected for this purchase recommendation. */
+  pickupDate?: string;
+  /** Read-only branch demand sources; quantity is already aggregated in plannedQuantity. */
+  sourceBranchIds?: string[];
+  sourceBranchNames?: string[];
+  sourceOrderIds?: string[];
+  masterCategoryId?: string;
   itemType?: PurchasePlanItemType;
   sourcePoRef?: string;
   supplierId?: string;
@@ -539,6 +550,7 @@ export interface PurchasePlan {
   branchId: string;
   branchCode: string;
   branchName: string;
+  /** Legacy summary fields; new plans may contain multiple suppliers. */
   supplierId: string;
   supplierName: string;
   supplierCategory: string; // Read-only snapshot from supplier master
