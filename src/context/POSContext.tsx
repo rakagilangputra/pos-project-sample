@@ -332,7 +332,8 @@ interface POSContextType {
   addPurchasePlan: (data: {
     namaRencana: string;
     branchId: string;
-    supplierId?: string;
+    masterCategoryId: string;
+    supplierId: string;
     lines: {
       productId: string;
       plannedQuantity: number;
@@ -351,7 +352,6 @@ interface POSContextType {
     id: string,
     data: {
       namaRencana?: string;
-      supplierId?: string;
       lines?: {
         productId: string;
         plannedQuantity: number;
@@ -937,6 +937,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     currentUser,
     products,
     setProducts,
+    masterCategories,
     suppliers,
     rawMaterials,
     stockTransfers,
@@ -1593,12 +1594,16 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           // visible, but edits cannot rewrite historical references.
           ...(info.category !== undefined ? { category: info.category } : {}),
           ...(info.categoryLabel !== undefined ? { categoryLabel: info.categoryLabel } : {}),
+          ...(info.masterCategoryId !== undefined ? { masterCategoryId: info.masterCategoryId } : {}),
           ...(info.price !== undefined ? { price: Math.max(0, info.price) } : {}),
+          ...('buyPrice' in info ? { buyPrice: info.buyPrice === undefined ? undefined : Math.max(0, info.buyPrice) } : {}),
           ...(info.isPriceCustomizable !== undefined ? { isPriceCustomizable: info.isPriceCustomizable } : {}),
           ...(info.lowStockThreshold !== undefined ? { lowStockThreshold: Math.max(0, info.lowStockThreshold) } : {}),
           ...(info.image !== undefined ? { image: info.image } : {}),
           ...(info.description !== undefined ? { description: info.description } : {}),
           ...(info.status !== undefined ? { status: info.status } : {}),
+          ...(info.expiryType !== undefined ? { expiryType: info.expiryType } : {}),
+          ...(info.shelfLifeDays !== undefined ? { shelfLifeDays: Math.max(1, info.shelfLifeDays) } : {}),
           ...(info.ownershipType !== undefined ? { ownershipType: info.ownershipType } : {}),
           ...(info.supplierId !== undefined ? { supplierId: info.supplierId } : {}),
           ...(info.supplierName !== undefined ? { supplierName: info.supplierName } : {}),

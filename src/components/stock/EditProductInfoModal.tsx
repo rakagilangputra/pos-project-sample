@@ -1,21 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import {
-  X,
-  Edit3,
-  Building2,
-  AlertCircle,
-  Tag,
-  Percent,
-  Coins,
-  Sparkles,
-  ShieldAlert,
-} from 'lucide-react';
-import { Product, Category, Supplier, ProductOwnershipType, CommissionMethod, CommissionBasis, ProductStatus } from '../../types';
-import { formatIDR } from '../../utils/formatters';
+import React, { useEffect, useMemo, useState } from 'react';
+import { AlertCircle, Building2, Clock, Edit3, ShieldAlert, X, Zap } from 'lucide-react';
+import { Category, MasterCategory, Product, ProductExpiryType, ProductStatus, Supplier } from '../../types';
 
 interface EditProductInfoModalProps {
   product: Product | null;
   categories: Category[];
+  masterCategories: MasterCategory[];
   suppliers: Supplier[];
   branchName: string;
   isBranchReadOnly: boolean;
@@ -23,407 +13,115 @@ interface EditProductInfoModalProps {
   onClose: () => void;
 }
 
-const BAKERY_SAMPLE_IMAGES = [
-  { label: 'Roti Manis', url: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&auto=format&fit=crop&q=80' },
-  { label: 'Croissant Butter', url: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=400&auto=format&fit=crop&q=80' },
-  { label: 'Bolu / Cake Tart', url: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=400&auto=format&fit=crop&q=80' },
-  { label: 'Kue Basah / Lemper', url: 'https://images.unsplash.com/photo-1541544741938-0af808871cc0?w=400&auto=format&fit=crop&q=80' },
-  { label: 'Kue Kering Toples', url: 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=400&auto=format&fit=crop&q=80' },
-  { label: 'Kopi & Minuman', url: 'https://images.unsplash.com/photo-1517256064527-09c73fc73e38?w=400&auto=format&fit=crop&q=80' },
-];
-
-export const EditProductInfoModal: React.FC<EditProductInfoModalProps> = ({
-  product,
-  categories,
-  suppliers,
-  branchName,
-  isBranchReadOnly,
-  onSave,
-  onClose,
-}) => {
-  if (!product) return null;
-
-  const [name, setName] = useState(product.name);
-  const [sku, setSku] = useState(product.sku);
-  const [category, setCategory] = useState(product.category);
-  const [price, setPrice] = useState(product.price.toString());
-  const [isPriceCustomizable, setIsPriceCustomizable] = useState(Boolean(product.isPriceCustomizable));
-  const [lowStockThreshold, setLowStockThreshold] = useState((product.lowStockThreshold || 5).toString());
-  const [description, setDescription] = useState(product.description || '');
-  const [image, setImage] = useState(product.image || BAKERY_SAMPLE_IMAGES[0].url);
-  const [status, setStatus] = useState<ProductStatus>(product.status || 'active');
-
-  // Ownership & Consignment
-  const [ownershipType, setOwnershipType] = useState<ProductOwnershipType>(product.ownershipType || 'own');
-  const [supplierId, setSupplierId] = useState<string>(product.supplierId || suppliers[0]?.id || '');
-  const [commissionMethod, setCommissionMethod] = useState<CommissionMethod>(product.commissionMethod || 'percentage');
-  const [commissionValue, setCommissionValue] = useState<string>((product.commissionValue || 15).toString());
-  const [commissionBasis, setCommissionBasis] = useState<CommissionBasis>(product.commissionBasis || 'net');
-
+export const EditProductInfoModal: React.FC<EditProductInfoModalProps> = ({ product, categories, masterCategories, suppliers, branchName, isBranchReadOnly, onSave, onClose }) => {
+  const [name, setName] = useState('');
+  const [sku, setSku] = useState('');
+  const [masterCategoryId, setMasterCategoryId] = useState('');
+  const [supplierId, setSupplierId] = useState('');
+  const [category, setCategory] = useState('');
+  const [price, setPrice] = useState('');
+  const [buyPrice, setBuyPrice] = useState('');
+  const [status, setStatus] = useState<ProductStatus>('active');
+  const [expiryType, setExpiryType] = useState<ProductExpiryType>('daily');
+  const [shelfLifeDays, setShelfLifeDays] = useState('3');
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const fallbackMasterCategoryId = useMemo(() => {
+    if (!product) return masterCategories[0]?.id || '';
+    if (product.masterCategoryId && masterCategories.some((item) => item.id === product.masterCategoryId)) return product.masterCategoryId;
+    return suppliers.find((item) => item.id === product.supplierId)?.masterCategoryId || masterCategories[0]?.id || '';
+  }, [masterCategories, product, suppliers]);
+
+  const filteredSuppliers = useMemo(() => {
+    const master = masterCategories.find((item) => item.id === masterCategoryId);
+    if (!master) return [];
+    const linked = suppliers.filter((item) => item.masterCategoryId === master.id);
+    return master.categoryType === 'PRODUKSI' ? linked.filter((item) => item.isInternal) : linked.filter((item) => !item.isInternal);
+  }, [masterCategories, masterCategoryId, suppliers]);
+
   useEffect(() => {
-    if (product) {
-      setName(product.name);
-      setSku(product.sku);
-      setCategory(product.category);
-      setPrice(product.price.toString());
-      setIsPriceCustomizable(Boolean(product.isPriceCustomizable));
-      setLowStockThreshold((product.lowStockThreshold || 5).toString());
-      setDescription(product.description || '');
-      setImage(product.image || BAKERY_SAMPLE_IMAGES[0].url);
-      setStatus(product.status || 'active');
-      setOwnershipType(product.ownershipType || 'own');
-      setSupplierId(product.supplierId || suppliers[0]?.id || '');
-      setCommissionMethod(product.commissionMethod || 'percentage');
-      setCommissionValue((product.commissionValue || 15).toString());
-      setCommissionBasis(product.commissionBasis || 'net');
-      setErrorMsg('');
-    }
-  }, [product, suppliers]);
+    if (!product) return;
+    const initialMasterCategoryId = product.masterCategoryId || fallbackMasterCategoryId;
+    setName(product.name);
+    setSku(product.sku);
+    setMasterCategoryId(initialMasterCategoryId);
+    setSupplierId(product.supplierId || suppliers.find((item) => item.masterCategoryId === initialMasterCategoryId)?.id || '');
+    setCategory(product.category);
+    setPrice(String(product.price));
+    setBuyPrice(product.buyPrice === undefined ? '' : String(product.buyPrice));
+    setStatus(product.status || 'active');
+    setExpiryType(product.expiryType || 'daily');
+    setShelfLifeDays(String(product.shelfLifeDays || 3));
+    setErrorMsg('');
+  }, [fallbackMasterCategoryId, product, suppliers]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) {
-      setErrorMsg('Nama produk wajib diisi.');
-      return;
-    }
-    if (!sku.trim()) {
-      setErrorMsg('SKU produk wajib diisi.');
-      return;
-    }
+  useEffect(() => {
+    if (!filteredSuppliers.some((item) => item.id === supplierId)) setSupplierId(filteredSuppliers[0]?.id || '');
+  }, [filteredSuppliers, supplierId]);
 
-    const priceNum = parseFloat(price);
-    if (isNaN(priceNum) || priceNum < 0) {
-      setErrorMsg('Harga jual produk tidak valid.');
-      return;
-    }
+  if (!product) return null;
 
-    const thresholdNum = parseInt(lowStockThreshold, 10);
-    if (isNaN(thresholdNum) || thresholdNum < 0) {
-      setErrorMsg('Batas peringatan stok menipis tidak valid.');
-      return;
-    }
+  const handleMasterCategoryChange = (value: string) => {
+    setMasterCategoryId(value);
+    const master = masterCategories.find((item) => item.id === value);
+    const nextSuppliers = suppliers.filter((item) => item.masterCategoryId === value && (master?.categoryType === 'PRODUKSI' ? item.isInternal : !item.isInternal));
+    setSupplierId(nextSuppliers[0]?.id || '');
+  };
 
-    const matchedCat = categories.find((c) => c.id === category);
-    const matchedSupplier = suppliers.find((s) => s.id === supplierId);
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    setErrorMsg('');
+    if (!name.trim()) return setErrorMsg('Nama produk wajib diisi.');
+    const priceNumber = Number(price);
+    const buyPriceNumber = buyPrice.trim() === '' ? undefined : Number(buyPrice);
+    const shelfLifeNumber = Number(shelfLifeDays);
+    if (!Number.isFinite(priceNumber) || priceNumber < 0) return setErrorMsg('Harga jual harus berupa angka nol atau lebih.');
+    if (buyPriceNumber !== undefined && (!Number.isFinite(buyPriceNumber) || buyPriceNumber < 0)) return setErrorMsg('Harga beli harus berupa angka nol atau lebih.');
+    if (expiryType === 'multi_day' && (!Number.isInteger(shelfLifeNumber) || shelfLifeNumber < 2)) return setErrorMsg('Masa simpan harus minimal 2 hari.');
+    const master = masterCategories.find((item) => item.id === masterCategoryId);
+    const supplier = suppliers.find((item) => item.id === supplierId);
+    const categoryItem = categories.find((item) => item.id === category);
+    if (!master || !supplier || supplier.masterCategoryId !== master.id) return setErrorMsg('Pilih Master Kategori dan Supplier yang sesuai.');
 
     setIsSubmitting(true);
-    // CRITICAL: Notice that neither initial stock nor stock quantity is passed or updated here!
     const result = onSave(product.id, {
-      name: name.trim(),
-      category,
-      categoryLabel: matchedCat?.name || category,
-      price: priceNum,
-      isPriceCustomizable,
-      lowStockThreshold: thresholdNum,
-      description: description.trim(),
-      image,
-      status,
-      ownershipType,
-      ...(ownershipType === 'consignment'
-        ? {
-            supplierId,
-            supplierName: matchedSupplier?.name || 'Mitra Konsinyasi',
-            commissionMethod,
-            commissionValue: parseFloat(commissionValue) || 0,
-            commissionBasis,
-          }
-        : {
-            // Store-owned reseller and production products still retain their
-            // supplier relationship; only commission fields are cleared.
-            supplierId: product.supplierId,
-            supplierName: product.supplierName,
-            commissionMethod: undefined,
-            commissionValue: undefined,
-            commissionBasis: undefined,
-          }),
+      name: name.trim(), masterCategoryId: master.id, supplierId: supplier.id, supplierName: supplier.name,
+      category, categoryLabel: categoryItem?.name || category, price: priceNumber, buyPrice: buyPriceNumber, status,
+      expiryType, shelfLifeDays: expiryType === 'daily' ? 1 : shelfLifeNumber,
     });
-
     setIsSubmitting(false);
-
-    if (!result.success) {
-      setErrorMsg(result.message);
-    } else {
-      onClose();
-    }
+    if (!result.success) setErrorMsg(result.message); else onClose();
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-fadeIn">
-      <div className="flex w-full max-w-2xl max-h-[90vh] flex-col rounded-3xl bg-[#FDFBF7] border-2 border-[#E5DACE] shadow-2xl overflow-hidden">
-        {/* Header */}
+      <div className="flex w-full max-w-2xl max-h-[90vh] flex-col overflow-hidden rounded-3xl border-2 border-[#E5DACE] bg-[#FDFBF7] shadow-2xl">
         <div className="flex items-center justify-between border-b border-[#E5DACE] bg-white px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-100 text-[#D97706] border border-amber-200">
-              <Edit3 className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-black text-base text-[#2D241E]">
-                  Edit Informasi Produk
-                </h3>
-                <span className="rounded-lg bg-purple-50 text-purple-800 border border-purple-200 px-2 py-0.5 text-[10px] font-black uppercase">
-                  Superadmin Only
-                </span>
-              </div>
-              <p className="text-xs text-[#8C7B6C] flex items-center gap-1.5 mt-0.5">
-                <Building2 className="h-3.5 w-3.5" />
-                <span>Cabang Aktif: {branchName}</span>
-                <span>•</span>
-                <span className="text-emerald-700 font-semibold">Master Data (Stok Fisik Tidak Diubah)</span>
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-xl border border-[#E5DACE] bg-white text-[#8C7B6C] hover:bg-[#F5EFEB] hover:text-[#2D241E] transition"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-amber-200 bg-amber-100 text-[#D97706]"><Edit3 className="h-5 w-5" /></div><div><div className="flex items-center gap-2"><h3 className="font-black text-base text-[#2D241E]">Edit Informasi Produk</h3><span className="rounded-lg border border-purple-200 bg-purple-50 px-2 py-0.5 text-[10px] font-black uppercase text-purple-800">Superadmin Only</span></div><p className="mt-0.5 flex items-center gap-1.5 text-xs text-[#8C7B6C]"><Building2 className="h-3.5 w-3.5" />Cabang Aktif: {branchName}<span>•</span><span className="font-semibold text-emerald-700">Master Data (Stok Fisik Tidak Diubah)</span></p></div></div>
+          <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-xl border border-[#E5DACE] bg-white text-[#8C7B6C] hover:bg-[#F5EFEB]"><X className="h-4 w-4" /></button>
         </div>
-
-        {/* Read-Only Warning if Branch Inactive */}
-        {isBranchReadOnly && (
-          <div className="bg-rose-50 border-b border-rose-200 px-6 py-2.5 text-xs text-rose-800 flex items-center gap-2">
-            <ShieldAlert className="h-4 w-4 shrink-0 text-rose-600" />
-            <span>Cabang ini nonaktif. Perubahan informasi master produk dinonaktifkan.</span>
+        {isBranchReadOnly && <div className="flex items-center gap-2 border-b border-rose-200 bg-rose-50 px-6 py-2.5 text-xs text-rose-800"><ShieldAlert className="h-4 w-4 shrink-0 text-rose-600" />Cabang ini nonaktif. Perubahan informasi master produk dinonaktifkan.</div>}
+        <form id="edit-product-form" onSubmit={handleSubmit} className="flex-1 space-y-4 overflow-y-auto p-6">
+          {errorMsg && <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"><AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />{errorMsg}</div>}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Master Kategori *"><select disabled={isBranchReadOnly} value={masterCategoryId} onChange={(e) => handleMasterCategoryChange(e.target.value)} className={controlClass} required>{masterCategories.map((item) => <option key={item.id} value={item.id}>[{item.categoryType}] {item.name}</option>)}</select></Field>
+            <Field label="Mitra Supplier *"><select disabled={isBranchReadOnly} value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className={controlClass} required>{filteredSuppliers.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.id})</option>)}</select></Field>
+            <Field label="Nama Produk *"><input disabled={isBranchReadOnly} required value={name} onChange={(e) => setName(e.target.value)} className={controlClass} /></Field>
+            <Field label="Produk Kategori *"><select disabled={isBranchReadOnly} required value={category} onChange={(e) => setCategory(e.target.value)} className={controlClass}>{categories.filter((item) => item.id !== 'all').map((item) => <option key={item.id} value={item.id}>{item.icon ? `${item.icon} ` : ''}{item.name}</option>)}<option value="mto">Made-to-Order</option></select></Field>
+            <Field label="SKU / Kode Produk (Tetap)"><input disabled value={sku} className={`${controlClass} bg-gray-100`} /></Field>
+            <Field label="Status Produk"><select disabled={isBranchReadOnly} value={status} onChange={(e) => setStatus(e.target.value as ProductStatus)} className={controlClass}><option value="active">Active — dapat dijual</option><option value="inactive">Inactive — simpan sebagai nonaktif</option></select></Field>
+            <Field label="Harga Jual (Rp) *"><input disabled={isBranchReadOnly} type="number" min="0" step="1" required value={price} onChange={(e) => setPrice(e.target.value)} className={controlClass} /></Field>
+            <Field label="Harga Beli (Rp) (opsional)"><input disabled={isBranchReadOnly} type="number" min="0" step="1" value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} placeholder="Contoh: 9000" className={controlClass} /></Field>
           </div>
-        )}
-
-        {/* Form Body */}
-        <form id="edit-product-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
-          {errorMsg && (
-            <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-xs text-rose-800 flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
-
-          {/* Product Name & SKU */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-xs font-black text-[#2D241E]">Nama Produk *</label>
-              <input
-                type="text"
-                required
-                disabled={isBranchReadOnly}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3.5 py-2 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none disabled:bg-gray-100"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-black text-[#2D241E]">SKU / Kode Produk (Tetap)</label>
-              <input
-                type="text"
-                required
-                disabled
-                value={sku}
-                className="w-full rounded-xl border-2 border-[#E5DACE] bg-gray-100 px-3.5 py-2 text-xs font-bold text-[#2D241E] uppercase"
-              />
-            </div>
-          </div>
-
-          {/* Category & Price */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-xs font-black text-[#2D241E]">Kategori Master *</label>
-              <select
-                disabled={isBranchReadOnly}
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3 py-2 text-xs font-semibold text-[#2D241E] focus:border-[#D97706] focus:outline-none disabled:bg-gray-100"
-              >
-                {categories
-                  .filter((c) => c.id !== 'all')
-                  .map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-black text-[#2D241E]">Harga Jual Standar (Rp) *</label>
-              <input
-                type="number"
-                min="0"
-                step="500"
-                required
-                disabled={isBranchReadOnly}
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3.5 py-2 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none disabled:bg-gray-100"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-black text-[#2D241E]">Status Produk</label>
-            <select
-              disabled={isBranchReadOnly}
-              value={status}
-              onChange={(e) => setStatus(e.target.value as ProductStatus)}
-              className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3 py-2 text-xs font-semibold text-[#2D241E] focus:border-[#D97706] focus:outline-none disabled:bg-gray-100"
-            >
-              <option value="active">Active — dapat dijual</option>
-              <option value="inactive">Inactive — tidak tersedia di POS</option>
-            </select>
-          </div>
-
-          {/* Price Customizable & Low Stock Threshold */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-            <label className="flex items-center gap-2.5 rounded-xl border border-[#E5DACE] bg-white p-3 cursor-pointer hover:bg-amber-50/50">
-              <input
-                type="checkbox"
-                disabled={isBranchReadOnly}
-                checked={isPriceCustomizable}
-                onChange={(e) => setIsPriceCustomizable(e.target.checked)}
-                className="h-4 w-4 rounded-sm text-[#D97706] focus:ring-[#D97706]"
-              />
-              <div>
-                <span className="text-xs font-bold text-[#2D241E] block">Harga Fleksibel Kasir</span>
-                <span className="text-[10px] text-[#8C7B6C]">Kasir dapat mengubah harga saat transaksi</span>
-              </div>
-            </label>
-
-            <div className="space-y-1">
-              <label className="text-xs font-black text-[#2D241E]">Batas Peringatan Stok Menipis</label>
-              <input
-                type="number"
-                min="0"
-                required
-                disabled={isBranchReadOnly}
-                value={lowStockThreshold}
-                onChange={(e) => setLowStockThreshold(e.target.value)}
-                className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3.5 py-2 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none disabled:bg-gray-100"
-              />
-            </div>
-          </div>
-
-          {/* Description */}
-          <div className="space-y-1">
-            <label className="text-xs font-black text-[#2D241E]">Deskripsi Produk</label>
-            <textarea
-              rows={2}
-              disabled={isBranchReadOnly}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Catatan tekstur rasa, komposisi, atau panduan penyajian..."
-              className="w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3.5 py-2 text-xs font-medium text-[#2D241E] focus:border-[#D97706] focus:outline-none disabled:bg-gray-100"
-            />
-          </div>
-
-          {/* Ownership & Consignment (POS-US-029) */}
-          <div className="rounded-2xl border-2 border-[#E5DACE] bg-white p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black text-[#2D241E]">Kepemilikan Produk & Konsinyasi</span>
-              <span className="text-[10px] text-[#8C7B6C]">POS-US-029</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                disabled={isBranchReadOnly}
-                onClick={() => setOwnershipType('own')}
-                className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition ${
-                  ownershipType === 'own'
-                    ? 'bg-amber-100 text-amber-900 border border-amber-300 shadow-xs'
-                    : 'bg-[#FDFBF7] text-[#6D5D50] border border-[#E5DACE] hover:bg-amber-50'
-                }`}
-              >
-                <span>Produk Dapur Sendiri</span>
-              </button>
-
-              <button
-                type="button"
-                disabled={isBranchReadOnly}
-                onClick={() => setOwnershipType('consignment')}
-                className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition ${
-                  ownershipType === 'consignment'
-                    ? 'bg-purple-100 text-purple-900 border border-purple-300 shadow-xs'
-                    : 'bg-[#FDFBF7] text-[#6D5D50] border border-[#E5DACE] hover:bg-purple-50'
-                }`}
-              >
-                <span>🤝 Titipan Konsinyasi Mitra</span>
-              </button>
-            </div>
-
-            {ownershipType === 'consignment' && (
-              <div className="pt-2 border-t border-[#E5DACE] space-y-3">
-                <div className="space-y-1">
-                  <label className="text-[11px] font-black text-purple-950">Mitra Supplier *</label>
-                  <select
-                    disabled={isBranchReadOnly}
-                    value={supplierId}
-                    onChange={(e) => setSupplierId(e.target.value)}
-                    className="w-full rounded-xl border border-purple-200 bg-[#FDFBF7] px-3 py-1.5 text-xs font-semibold text-[#2D241E] focus:outline-none"
-                  >
-                    {suppliers.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-black text-purple-950">Metode Komisi</label>
-                    <select
-                      disabled={isBranchReadOnly}
-                      value={commissionMethod}
-                      onChange={(e) => setCommissionMethod(e.target.value as CommissionMethod)}
-                      className="w-full rounded-xl border border-purple-200 bg-[#FDFBF7] px-2.5 py-1.5 text-xs font-semibold text-[#2D241E] focus:outline-none"
-                    >
-                      <option value="percentage">Persentase (%)</option>
-                      <option value="fixed_amount">Nominal Tetap (Rp/pcs)</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-black text-purple-950">
-                      Nilai Komisi {commissionMethod === 'percentage' ? '(%)' : '(Rp)'}
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      disabled={isBranchReadOnly}
-                      value={commissionValue}
-                      onChange={(e) => setCommissionValue(e.target.value)}
-                      className="w-full rounded-xl border border-purple-200 bg-[#FDFBF7] px-2.5 py-1.5 text-xs font-bold text-[#2D241E] focus:outline-none"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          <div className="space-y-2.5 border-t border-[#E5DACE] pt-3"><div className="flex items-center justify-between"><label className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-[#8C7B6C]"><Clock className="h-3.5 w-3.5 text-[#D97706]" />Tipe Masa Kedaluwarsa Produk *</label><span className="text-[10px] font-bold text-[#8C7B6C]">Pilih salah satu dari 2 tipe</span></div><div className="grid grid-cols-1 gap-3 md:grid-cols-2"><ExpiryOption selected={expiryType === 'daily'} onClick={() => setExpiryType('daily')} title="Expired Secara Harian" badge="1 Hari (Fresh)" icon={<Zap className="h-3.5 w-3.5 text-[#D97706]" />} description="Produk berumur simpan harian dan dapat dimusnahkan saat closing bila tidak terjual." /><ExpiryOption selected={expiryType === 'multi_day'} onClick={() => setExpiryType('multi_day')} title="Expired di Atas dari Satu Hari" badge="> 1 Hari (Awet)" icon={<Clock className="h-3.5 w-3.5 text-blue-600" />} description="Tanggal expiry dapat disesuaikan saat penerimaan barang dan pesanan." /></div>{expiryType === 'multi_day' && <div className="flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50/40 p-3"><label className="text-xs font-bold text-blue-950">Masa Simpan (Hari)</label><input disabled={isBranchReadOnly} type="number" min="2" max="365" value={shelfLifeDays} onChange={(e) => setShelfLifeDays(e.target.value)} className="w-24 rounded-xl border border-blue-300 bg-white px-3 py-1.5 text-xs font-bold" /><span className="text-[10px] text-[#8C7B6C]">Acuan expiry saat penerimaan atau pesanan baru.</span></div>}</div>
         </form>
-
-        {/* Footer with Bottom-Right Tutup and Simpan buttons */}
-        <div className="flex items-center justify-end gap-2 border-t border-[#E5DACE] bg-white px-6 py-4">
-          <button
-            type="submit"
-            form="edit-product-form"
-            disabled={isBranchReadOnly || isSubmitting}
-            className="rounded-xl bg-[#D97706] px-5 py-2.5 text-xs font-black text-white hover:bg-amber-700 shadow-xs active:scale-95 transition disabled:opacity-50"
-          >
-            {isSubmitting ? 'Menyimpan...' : 'Simpan Perubahan'}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border border-[#E5DACE] bg-[#FDFBF7] px-5 py-2.5 text-xs font-bold text-[#6D5D50] hover:bg-[#E5DACE] active:scale-95 transition"
-          >
-            Tutup
-          </button>
-        </div>
+        <div className="flex justify-end gap-2 border-t border-[#E5DACE] bg-white px-6 py-4"><button type="submit" form="edit-product-form" disabled={isBranchReadOnly || isSubmitting} className="rounded-xl bg-[#D97706] px-5 py-2.5 text-xs font-black text-white hover:bg-amber-700 disabled:opacity-50">{isSubmitting ? 'Menyimpan...' : 'Simpan Perubahan'}</button><button type="button" onClick={onClose} className="rounded-xl border border-[#E5DACE] bg-[#FDFBF7] px-5 py-2.5 text-xs font-bold text-[#6D5D50]">Tutup</button></div>
       </div>
     </div>
   );
 };
+
+const controlClass = 'w-full rounded-xl border-2 border-[#E5DACE] bg-white px-3.5 py-2 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none disabled:bg-gray-100';
+const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => <div className="space-y-1"><label className="text-xs font-black text-[#2D241E]">{label}</label>{children}</div>;
+const ExpiryOption: React.FC<{ selected: boolean; onClick: () => void; title: string; badge: string; icon: React.ReactNode; description: string }> = ({ selected, onClick, title, badge, icon, description }) => <div onClick={onClick} className={`relative cursor-pointer rounded-2xl border-2 p-3.5 transition-all ${selected ? 'border-[#D97706] bg-amber-50/70 shadow-xs' : 'border-[#E5DACE] bg-white hover:border-[#D97706]/40'}`}><div className="flex items-start justify-between gap-2"><div className="flex items-center gap-2"><input type="radio" checked={selected} onChange={onClick} className="h-4 w-4 text-[#D97706]" /><span className="flex items-center gap-1.5 text-xs font-black text-[#2D241E]">{icon}{title}</span></div><span className="shrink-0 rounded-md border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-900">{badge}</span></div><p className="mt-2 text-[11px] leading-relaxed text-[#8C7B6C]">{description}</p></div>;

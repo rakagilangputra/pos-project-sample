@@ -4,9 +4,11 @@ import { posSound } from '../../utils/formatters';
 import { INITIAL_GOODS_RECEIPTS, INITIAL_PURCHASE_PLANS } from '../../data/mockData';
 import type {
   GoodsReceiptRecord,
+  MasterCategory,
   Product,
   ProductExpiryBatch,
   PurchasePlan,
+  PurchasePlanStatus,
   PurchasePlanItemType,
   PurchasePlanProductLine,
   RawMaterial,
@@ -26,6 +28,7 @@ interface UseGoodsReceivingSliceDeps {
   currentUser: User;
   products: Product[];
   setProducts: Dispatch<SetStateAction<Product[]>>;
+  masterCategories: MasterCategory[];
   suppliers: Supplier[];
   rawMaterials: RawMaterial[];
   stockTransfers: StockTransferRecord[];
@@ -55,6 +58,7 @@ export function useGoodsReceivingSlice({
   currentUser,
   products,
   setProducts,
+  masterCategories,
   suppliers,
   rawMaterials,
   stockTransfers,
@@ -95,13 +99,19 @@ export function useGoodsReceivingSlice({
     }
   }, [receivingDraft]);
 
-  // POS-US-073, POS-US-074, POS-US-075: Rencana Pembelian (Owned Purchases Only)
+  // POS-US-073, POS-US-074, POS-US-075: Reseller purchase planning
   const [purchasePlans, setPurchasePlans] = useState<PurchasePlan[]>(() => {
     const saved = localStorage.getItem('pos_purchase_plans_v1');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((plan: PurchasePlan) => ({
+            ...plan,
+            status: plan.status === ('Terkait Penerimaan' as PurchasePlanStatus) ? 'Direncanakan' : plan.status,
+            receivingLocked: plan.receivingLocked || plan.status === ('Terkait Penerimaan' as PurchasePlanStatus),
+          }));
+        }
       } catch {}
     }
     return INITIAL_PURCHASE_PLANS;
@@ -329,6 +339,7 @@ export function useGoodsReceivingSlice({
             return {
               ...p,
               status: 'Terealisasi',
+              receivingLocked: false,
               linkedReceiptId: id,
               linkedReceiptNumber: receiptNumber,
               updatedAt: now.toISOString(),
@@ -375,7 +386,8 @@ export function useGoodsReceivingSlice({
   const addPurchasePlan = (data: {
     namaRencana: string;
     branchId: string;
-    supplierId?: string;
+    masterCategoryId: string;
+    supplierId: string;
     lines: {
       productId: string;
       plannedQuantity: number;
@@ -409,14 +421,17 @@ export function useGoodsReceivingSlice({
       return { success: false, message: 'Nama Rencana Pembelian wajib diisi!' };
     }
 
-    // 4. Validate Supplier (fallback to Multi-Sumber if not specified or 'multi')
-    const targetSupplier = (data.supplierId && data.supplierId !== 'multi'
-      ? suppliers.find((s) => s.id === data.supplierId)
-      : null) || {
-      id: 'multi',
-      name: 'Multi-Sumber / Terpadu',
-      category: 'Campuran (In-House, Konsinyasi & Pembelian Langsung)',
-    };
+    // 4. Validate reseller Master Kategori and supplier
+    const masterCategory = masterCategories.find((category) => category.id === data.masterCategoryId);
+    if (!masterCategory || masterCategory.categoryType !== 'BELI (RESELLER)') {
+      posSound.error();
+      return { success: false, message: 'Pilih Master Kategori dengan tipe BELI (RESELLER)!' };
+    }
+    const targetSupplier = suppliers.find((supplier) => supplier.id === data.supplierId);
+    if (!targetSupplier || targetSupplier.masterCategoryId !== masterCategory.id) {
+      posSound.error();
+      return { success: false, message: 'Mitra supplier tidak sesuai dengan Master Kategori reseller!' };
+    }
 
     // 5. Validate Product Lines
     if (!data.lines || data.lines.length === 0) {
@@ -438,6 +453,11 @@ export function useGoodsReceivingSlice({
       if (!prod) {
         posSound.error();
         return { success: false, message: `Produk pada baris #${i + 1} tidak ditemukan!` };
+      }
+
+      if (prod.supplierId !== targetSupplier.id) {
+        posSound.error();
+        return { success: false, message: `Produk pada baris #${i + 1} bukan produk dari supplier yang dipilih!` };
       }
 
       const qty = Math.floor(Number(line.plannedQuantity));
@@ -517,6 +537,7 @@ export function useGoodsReceivingSlice({
       supplierId: targetSupplier.id,
       supplierName: targetSupplier.name,
       supplierCategory: targetSupplier.category || 'Umum',
+      masterCategoryId: masterCategory.id,
       lines: formattedLines,
       totalPlannedValue,
       status: 'Direncanakan',
@@ -547,12 +568,11 @@ export function useGoodsReceivingSlice({
     };
   };
 
-  // Edit Purchase Plan (Superadmin Only, Only 'Direncanakan', Branch is IMMUTABLE)
+  // Edit Purchase Plan (Superadmin Only, reseller header is immutable)
   const updatePurchasePlan = (
     id: string,
     data: {
       namaRencana?: string;
-      supplierId?: string;
       lines?: {
         productId: string;
         plannedQuantity: number;
@@ -579,31 +599,12 @@ export function useGoodsReceivingSlice({
       return { success: false, message: 'Rencana Pembelian tidak ditemukan!' };
     }
 
-    if (targetPlan.status !== 'Direncanakan') {
+    if (targetPlan.status !== 'Direncanakan' || targetPlan.receivingLocked) {
       posSound.error();
       return {
         success: false,
-        message: `Rencana Pembelian ${id} berstatus "${targetPlan.status}" dan tidak dapat diubah lagi!`,
+        message: `Rencana Pembelian ${id} sedang tidak dapat diubah (status: ${targetPlan.status}).`,
       };
-    }
-
-    let updatedSupplierId = targetPlan.supplierId;
-    let updatedSupplierName = targetPlan.supplierName;
-    let updatedSupplierCategory = targetPlan.supplierCategory;
-
-    if (data.supplierId && data.supplierId !== targetPlan.supplierId) {
-      if (data.supplierId === 'multi') {
-        updatedSupplierId = 'multi';
-        updatedSupplierName = 'Multi-Sumber / Terpadu';
-        updatedSupplierCategory = 'Campuran (In-House, Konsinyasi & Pembelian Langsung)';
-      } else {
-        const sup = suppliers.find((s) => s.id === data.supplierId);
-        if (sup) {
-          updatedSupplierId = sup.id;
-          updatedSupplierName = sup.name;
-          updatedSupplierCategory = sup.category || 'Umum';
-        }
-      }
     }
 
     let updatedLines = targetPlan.lines;
@@ -620,6 +621,10 @@ export function useGoodsReceivingSlice({
         if (!prod) {
           posSound.error();
           return { success: false, message: `Produk pada baris #${i + 1} tidak ditemukan!` };
+        }
+        if (prod.supplierId !== targetPlan.supplierId) {
+          posSound.error();
+          return { success: false, message: `Produk pada baris #${i + 1} bukan produk dari supplier rencana!` };
         }
 
         const qty = Math.floor(Number(line.plannedQuantity));
@@ -674,9 +679,6 @@ export function useGoodsReceivingSlice({
     const updatedPlan: PurchasePlan = {
       ...targetPlan,
       namaRencana: data.namaRencana !== undefined ? data.namaRencana.trim() : targetPlan.namaRencana,
-      supplierId: updatedSupplierId,
-      supplierName: updatedSupplierName,
-      supplierCategory: updatedSupplierCategory,
       lines: updatedLines,
       totalPlannedValue,
       notes: data.notes !== undefined ? data.notes.trim() : targetPlan.notes,
@@ -717,7 +719,7 @@ export function useGoodsReceivingSlice({
       return { success: false, message: 'Rencana Pembelian tidak ditemukan!' };
     }
 
-    if (targetPlan.status !== 'Direncanakan') {
+    if (targetPlan.status !== 'Direncanakan' || targetPlan.receivingLocked) {
       posSound.error();
       return {
         success: false,
@@ -760,7 +762,7 @@ export function useGoodsReceivingSlice({
     if (!targetPlan) {
       return { success: false, message: 'Rencana Pembelian tidak ditemukan!' };
     }
-    if (targetPlan.status !== 'Direncanakan') {
+    if (targetPlan.status !== 'Direncanakan' || targetPlan.receivingLocked) {
       return {
         success: false,
         message: `Rencana Pembelian ${id} tidak tersedia (status: ${targetPlan.status}).`,
@@ -769,7 +771,7 @@ export function useGoodsReceivingSlice({
 
     const now = new Date();
     setPurchasePlans((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, status: 'Terkait Penerimaan', updatedAt: now.toISOString() } : p))
+      prev.map((p) => (p.id === id ? { ...p, receivingLocked: true, updatedAt: now.toISOString() } : p))
     );
 
     return { success: true, message: 'Rencana Pembelian dikunci untuk proses penerimaan barang.' };
@@ -778,10 +780,10 @@ export function useGoodsReceivingSlice({
   // Unlock Purchase Plan if Goods Receipt draft is discarded
   const unlockPurchasePlanFromReceipt = (id: string) => {
     const targetPlan = purchasePlans.find((p) => p.id === id);
-    if (targetPlan && targetPlan.status === 'Terkait Penerimaan') {
+    if (targetPlan && targetPlan.receivingLocked) {
       const now = new Date();
       setPurchasePlans((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, status: 'Direncanakan', updatedAt: now.toISOString() } : p))
+        prev.map((p) => (p.id === id ? { ...p, receivingLocked: false, updatedAt: now.toISOString() } : p))
       );
     }
     return { success: true, message: 'Rencana Pembelian dikembalikan ke status Direncanakan.' };

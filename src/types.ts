@@ -92,6 +92,8 @@ export interface Product {
   category: ProductCategory;
   categoryLabel: string;
   price: number;
+  /** Optional master-product purchase price reference; receiving stores actual buy prices separately. */
+  buyPrice?: number;
   isPriceCustomizable: boolean;
   stock: number;
   inTransitStock?: number;
@@ -510,7 +512,6 @@ export interface GoodsReceiptRecord {
 // POS-US-073, POS-US-074, POS-US-075: Rencana Pembelian (Owned Purchases Only)
 export type PurchasePlanStatus =
   | 'Direncanakan'
-  | 'Terkait Penerimaan'
   | 'Terealisasi'
   | 'Dibatalkan';
 
@@ -541,9 +542,13 @@ export interface PurchasePlan {
   supplierId: string;
   supplierName: string;
   supplierCategory: string; // Read-only snapshot from supplier master
+  /** Master category selected for new reseller purchase plans. Optional for legacy records. */
+  masterCategoryId?: string;
   lines: PurchasePlanProductLine[];
   totalPlannedValue: number;
   status: PurchasePlanStatus;
+  /** Internal receiving lock; never shown as a user-facing status. */
+  receivingLocked?: boolean;
   linkedReceiptId?: string;
   linkedReceiptNumber?: string;
   notes?: string;

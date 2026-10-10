@@ -50,6 +50,7 @@ export const PurchasePlanWorkspace: React.FC = () => {
     currentUser,
     branches,
     suppliers,
+    masterCategories,
     products,
     purchasePlans,
     orders,
@@ -76,7 +77,8 @@ export const PurchasePlanWorkspace: React.FC = () => {
   // Form State (Create / Edit)
   const [formNamaRencana, setFormNamaRencana] = useState('');
   const [formBranchId, setFormBranchId] = useState('');
-  const [formSupplierId, setFormSupplierId] = useState('multi');
+  const [formMasterCategoryId, setFormMasterCategoryId] = useState('');
+  const [formSupplierId, setFormSupplierId] = useState('');
   const [formNotes, setFormNotes] = useState('');
   const [formLines, setFormLines] = useState<ProductLineInput[]>([]);
   const [formSourceOrderIds, setFormSourceOrderIds] = useState<string[]>([]);
@@ -98,14 +100,75 @@ export const PurchasePlanWorkspace: React.FC = () => {
   const [cancelReason, setCancelReason] = useState('');
   const [cancelError, setCancelError] = useState('');
 
-  // Active customer orders eligible for attaching to purchase plan (excluding voided/cancelled)
-  const availableOrdersForPlanning = useMemo(() => {
-    return orders.filter((o) => o.orderStatus !== 'voided' && o.orderStatus !== 'cancelled');
-  }, [orders]);
+  const resellerMasterCategories = useMemo(
+    () => masterCategories.filter((category) => category.categoryType === 'BELI (RESELLER)'),
+    [masterCategories]
+  );
+  const resellerSuppliers = useMemo(
+    () => suppliers.filter((supplier) => resellerMasterCategories.some((category) => category.id === supplier.masterCategoryId)),
+    [resellerMasterCategories, suppliers]
+  );
 
-  // Available products
-  const allProducts = products;
-  const ownedProducts = products;
+  const formSelectedMasterCategory = useMemo(
+    () => resellerMasterCategories.find((category) => category.id === formMasterCategoryId),
+    [formMasterCategoryId, resellerMasterCategories]
+  );
+
+  const formSupplierOptions = useMemo(
+    () => suppliers.filter((supplier) => supplier.masterCategoryId === formMasterCategoryId),
+    [formMasterCategoryId, suppliers]
+  );
+
+  const supplierProducts = useMemo(
+    () => products.filter((product) => product.supplierId === formSupplierId),
+    [formSupplierId, products]
+  );
+
+  const mtoDemandByProduct = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const demand = new Map<string, { quantity: number; nearestPickupDate?: string; orderIds: string[] }>();
+    orders
+      .filter((order) =>
+        order.isMadeToOrder &&
+        order.orderStatus !== 'cancelled' &&
+        order.orderStatus !== 'voided' &&
+        order.orderStatus !== 'picked_up' &&
+        order.orderStatus !== 'ready_for_pickup' &&
+        Boolean(order.pickupDate) &&
+        (order.pickupDate || '') >= today &&
+        order.branchId === formBranchId
+      )
+      .sort((a, b) => (a.pickupDate || '').localeCompare(b.pickupDate || ''))
+      .forEach((order) => {
+        order.items.forEach((item) => {
+          const product = products.find((candidate) => candidate.id === item.productId);
+          if (!product || product.supplierId !== formSupplierId) return;
+          const current = demand.get(product.id) || { quantity: 0, nearestPickupDate: order.pickupDate, orderIds: [] };
+          current.quantity += item.quantity;
+          current.nearestPickupDate = current.nearestPickupDate && current.nearestPickupDate < (order.pickupDate || '')
+            ? current.nearestPickupDate
+            : order.pickupDate;
+          if (!current.orderIds.includes(order.id)) current.orderIds.push(order.id);
+          demand.set(product.id, current);
+        });
+      });
+    return demand;
+  }, [formBranchId, formSupplierId, orders, products]);
+
+  const sortedSupplierProducts = useMemo(
+    () => [...supplierProducts].sort((a, b) => {
+      const aDate = mtoDemandByProduct.get(a.id)?.nearestPickupDate || '9999-12-31';
+      const bDate = mtoDemandByProduct.get(b.id)?.nearestPickupDate || '9999-12-31';
+      return aDate.localeCompare(bDate) || a.name.localeCompare(b.name);
+    }),
+    [mtoDemandByProduct, supplierProducts]
+  );
+  const allProducts = sortedSupplierProducts;
+
+  const availableOrdersForPlanning = useMemo(
+    () => orders.filter((order) => order.orderStatus !== 'voided' && order.orderStatus !== 'cancelled'),
+    [orders]
+  );
 
   // Total estimation of plan form lines
   const calculatedFormTotal = useMemo(() => {
@@ -124,6 +187,12 @@ export const PurchasePlanWorkspace: React.FC = () => {
   // Filtered plans list
   const filteredPlans = useMemo(() => {
     return purchasePlans.filter((plan) => {
+      const compatible = Boolean(
+        plan.masterCategoryId &&
+        resellerMasterCategories.some((category) => category.id === plan.masterCategoryId) &&
+        suppliers.some((supplier) => supplier.id === plan.supplierId && supplier.masterCategoryId === plan.masterCategoryId)
+      );
+      if (!compatible) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchId = plan.id.toLowerCase().includes(q);
@@ -156,21 +225,21 @@ export const PurchasePlanWorkspace: React.FC = () => {
 
       return true;
     });
-  }, [purchasePlans, searchQuery, filterBranchId, filterSupplierId, filterStatus, filterStartDate, filterEndDate]);
+  }, [purchasePlans, resellerMasterCategories, suppliers, searchQuery, filterBranchId, filterSupplierId, filterStatus, filterStartDate, filterEndDate]);
 
   // Statistics counters
   const stats = useMemo(() => {
-    const total = purchasePlans.length;
-    const direncanakan = purchasePlans.filter((p) => p.status === 'Direncanakan').length;
-    const terkait = purchasePlans.filter((p) => p.status === 'Terkait Penerimaan').length;
-    const terealisasi = purchasePlans.filter((p) => p.status === 'Terealisasi').length;
-    const dibatalkan = purchasePlans.filter((p) => p.status === 'Dibatalkan').length;
-    const totalPlannedValue = purchasePlans
+    const visiblePlans = purchasePlans.filter((plan) => Boolean(plan.masterCategoryId && resellerMasterCategories.some((category) => category.id === plan.masterCategoryId) && suppliers.some((supplier) => supplier.id === plan.supplierId && supplier.masterCategoryId === plan.masterCategoryId)));
+    const total = visiblePlans.length;
+    const direncanakan = visiblePlans.filter((p) => p.status === 'Direncanakan').length;
+    const terealisasi = visiblePlans.filter((p) => p.status === 'Terealisasi').length;
+    const dibatalkan = visiblePlans.filter((p) => p.status === 'Dibatalkan').length;
+    const totalPlannedValue = visiblePlans
       .filter((p) => p.status !== 'Dibatalkan')
       .reduce((sum, p) => sum + p.totalPlannedValue, 0);
 
-    return { total, direncanakan, terkait, terealisasi, dibatalkan, totalPlannedValue };
-  }, [purchasePlans]);
+    return { total, direncanakan, terealisasi, dibatalkan, totalPlannedValue };
+  }, [purchasePlans, resellerMasterCategories, suppliers]);
 
   // Helper to infer item type for an item or product
   const inferItemType = (prod?: Product, cartItemOwnership?: string): PurchasePlanItemType => {
@@ -188,11 +257,19 @@ export const PurchasePlanWorkspace: React.FC = () => {
   const handleStartCreate = () => {
     if (!isSuperadmin) return;
     const firstActiveBranch = branches.find((b) => b.status !== 'inactive') || branches[0];
-    const defaultProduct = products[0];
+    const firstResellerCategory = resellerMasterCategories[0];
+    const firstSupplier = suppliers.find((supplier) => supplier.masterCategoryId === firstResellerCategory?.id);
+    const defaultProduct = products.find((product) => product.supplierId === firstSupplier?.id);
+    const defaultDemandQuantity = defaultProduct
+      ? orders
+          .filter((order) => order.branchId === firstActiveBranch?.id && order.isMadeToOrder && order.orderStatus !== 'cancelled' && order.orderStatus !== 'voided' && order.orderStatus !== 'picked_up' && order.orderStatus !== 'ready_for_pickup' && Boolean(order.pickupDate) && (order.pickupDate || '') >= new Date().toISOString().slice(0, 10))
+          .reduce((sum, order) => sum + order.items.filter((item) => item.productId === defaultProduct.id).reduce((itemSum, item) => itemSum + item.quantity, 0), 0)
+      : 0;
 
     setFormNamaRencana('');
     setFormBranchId(firstActiveBranch?.id || '');
-    setFormSupplierId('multi');
+    setFormMasterCategoryId(firstResellerCategory?.id || '');
+    setFormSupplierId(firstSupplier?.id || '');
     setFormNotes('');
     setFormSourceOrderIds([]);
     setFormAttachedPoNumbers([]);
@@ -202,10 +279,10 @@ export const PurchasePlanWorkspace: React.FC = () => {
             {
               tempId: `line-${Date.now()}-1`,
               productId: defaultProduct.id,
-              plannedQuantity: 10,
-              plannedBuyPrice: Math.round(defaultProduct.price * 0.6),
-              itemType: inferItemType(defaultProduct),
-              sourcePoRef: 'Input Manual',
+              plannedQuantity: defaultDemandQuantity || 1,
+              plannedBuyPrice: defaultProduct.buyPrice ?? 0,
+              itemType: 'direct_purchase',
+              sourcePoRef: 'MTO / Input Manual',
               supplierId: defaultProduct.supplierId || suppliers[0]?.id,
             },
           ]
@@ -219,7 +296,7 @@ export const PurchasePlanWorkspace: React.FC = () => {
   // Initialize Edit Form
   const handleStartEdit = (plan: PurchasePlan) => {
     if (!isSuperadmin) return;
-    if (plan.status !== 'Direncanakan') {
+    if (plan.status !== 'Direncanakan' || plan.receivingLocked) {
       alert(`Hanya rencana berstatus "Direncanakan" yang dapat diedit! (Status saat ini: ${plan.status})`);
       return;
     }
@@ -227,6 +304,7 @@ export const PurchasePlanWorkspace: React.FC = () => {
     setSelectedPlanId(plan.id);
     setFormNamaRencana(plan.namaRencana);
     setFormBranchId(plan.branchId); // Locked in UI
+    setFormMasterCategoryId(plan.masterCategoryId || suppliers.find((supplier) => supplier.id === plan.supplierId)?.masterCategoryId || '');
     setFormSupplierId(plan.supplierId);
     setFormNotes(plan.notes || '');
     setFormSourceOrderIds(plan.sourceOrderIds || []);
@@ -256,7 +334,7 @@ export const PurchasePlanWorkspace: React.FC = () => {
 
   // Add line to form
   const handleAddFormLine = (preferredType: PurchasePlanItemType = 'direct_purchase') => {
-    const prodToAdd = products[0];
+    const prodToAdd = sortedSupplierProducts[0];
     if (!prodToAdd) {
       setFormError('Tidak ada produk yang tersedia.');
       return;
@@ -266,10 +344,10 @@ export const PurchasePlanWorkspace: React.FC = () => {
       {
         tempId: `line-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         productId: prodToAdd.id,
-        plannedQuantity: 10,
-        plannedBuyPrice: Math.round(prodToAdd.price * 0.6),
-        itemType: preferredType,
-        sourcePoRef: preferredType === 'adhoc' ? 'Ad-Hoc / Tambahan' : 'Input Manual',
+        plannedQuantity: mtoDemandByProduct.get(prodToAdd.id)?.quantity || 1,
+        plannedBuyPrice: prodToAdd.buyPrice ?? 0,
+        itemType: 'direct_purchase',
+        sourcePoRef: preferredType === 'adhoc' ? 'Stok Tambahan' : 'MTO / Input Manual',
         supplierId: prodToAdd.supplierId || (suppliers[0]?.id),
       },
     ]);
@@ -397,9 +475,6 @@ export const PurchasePlanWorkspace: React.FC = () => {
 
   // Selected supplier in form for category preview
   const formSelectedSupplier = useMemo(() => {
-    if (formSupplierId === 'multi') {
-      return { id: 'multi', name: 'Multi-Sumber / Terpadu', category: 'In-House, Konsinyasi & Supplier Langsung' };
-    }
     return suppliers.find((s) => s.id === formSupplierId);
   }, [suppliers, formSupplierId]);
 
@@ -419,6 +494,17 @@ export const PurchasePlanWorkspace: React.FC = () => {
       return;
     }
 
+    const selectedBranch = branches.find((branch) => branch.id === formBranchId);
+    if (!selectedBranch || selectedBranch.status === 'inactive') {
+      setFormError('Cabang nonaktif tidak dapat digunakan untuk membuat rencana pembelian.');
+      return;
+    }
+
+    if (!formSelectedMasterCategory || !formSupplierId || !formSupplierOptions.some((supplier) => supplier.id === formSupplierId)) {
+      setFormError('Pilih Master Kategori reseller dan Mitra Supplier terlebih dahulu.');
+      return;
+    }
+
     if (formLines.length === 0) {
       setFormError('Minimal harus ada 1 baris item produk!');
       return;
@@ -431,12 +517,24 @@ export const PurchasePlanWorkspace: React.FC = () => {
         setFormError(`Kuantitas pada baris #${i + 1} harus lebih besar dari 0!`);
         return;
       }
+      if (!Number.isFinite(Number(l.plannedBuyPrice)) || Number(l.plannedBuyPrice) < 0) {
+        setFormError(`Harga pembelian pada baris #${i + 1} tidak valid!`);
+        return;
+      }
+      const product = products.find((candidate) => candidate.id === l.productId);
+      if (!product || product.supplierId !== formSupplierId) {
+        setFormError(`Produk pada baris #${i + 1} tidak sesuai dengan supplier yang dipilih!`);
+        return;
+      }
     }
+
+    const mtoOrderIds: string[] = Array.from(new Set<string>(formLines.flatMap((line) => mtoDemandByProduct.get(line.productId)?.orderIds || [])));
 
     if (viewMode === 'create') {
       const res = addPurchasePlan({
         namaRencana: formNamaRencana,
         branchId: formBranchId,
+        masterCategoryId: formMasterCategoryId,
         supplierId: formSupplierId,
         lines: formLines.map((l) => ({
           productId: l.productId,
@@ -448,8 +546,7 @@ export const PurchasePlanWorkspace: React.FC = () => {
           notes: l.notes,
         })),
         notes: formNotes,
-        sourceOrderIds: formSourceOrderIds,
-        attachedPoNumbers: formAttachedPoNumbers,
+        sourceOrderIds: mtoOrderIds,
       });
 
       if (res.success && res.plan) {
@@ -464,7 +561,6 @@ export const PurchasePlanWorkspace: React.FC = () => {
     } else if (viewMode === 'edit' && selectedPlanId) {
       const res = updatePurchasePlan(selectedPlanId, {
         namaRencana: formNamaRencana,
-        supplierId: formSupplierId,
         lines: formLines.map((l) => ({
           productId: l.productId,
           plannedQuantity: Number(l.plannedQuantity),
@@ -475,8 +571,7 @@ export const PurchasePlanWorkspace: React.FC = () => {
           notes: l.notes,
         })),
         notes: formNotes,
-        sourceOrderIds: formSourceOrderIds,
-        attachedPoNumbers: formAttachedPoNumbers,
+        sourceOrderIds: mtoOrderIds,
       });
 
       if (res.success && res.plan) {
@@ -520,13 +615,6 @@ export const PurchasePlanWorkspace: React.FC = () => {
           <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-black text-blue-700 border border-blue-200">
             <Clock className="h-3 w-3" />
             <span>Direncanakan</span>
-          </span>
-        );
-      case 'Terkait Penerimaan':
-        return (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-50 px-2.5 py-1 text-xs font-black text-purple-700 border border-purple-200">
-            <Layers className="h-3 w-3" />
-            <span>Terkait Penerimaan</span>
           </span>
         );
       case 'Terealisasi':
@@ -584,7 +672,7 @@ export const PurchasePlanWorkspace: React.FC = () => {
                     Rencana Pembelian Barang (Purchase Plan)
                   </h2>
                   <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-black text-blue-800 border border-blue-200 uppercase">
-                    Owned Purchases Only
+                    Reseller Purchases
                   </span>
                   <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-800 border border-amber-200 uppercase">
                     Superadmin Only
@@ -645,7 +733,7 @@ export const PurchasePlanWorkspace: React.FC = () => {
                 className="rounded-xl border-2 border-[#E5DACE] bg-white px-3 py-1.5 text-xs font-bold text-[#2D241E] focus:border-amber-600 focus:outline-none"
               >
                 <option value="all">Semua Supplier</option>
-                {suppliers.map((s) => (
+                {resellerSuppliers.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>
@@ -661,7 +749,6 @@ export const PurchasePlanWorkspace: React.FC = () => {
               >
                 <option value="all">Semua Status</option>
                 <option value="Direncanakan">Direncanakan</option>
-                <option value="Terkait Penerimaan">Terkait Penerimaan</option>
                 <option value="Terealisasi">Terealisasi</option>
                 <option value="Dibatalkan">Dibatalkan</option>
               </select>
@@ -790,7 +877,7 @@ export const PurchasePlanWorkspace: React.FC = () => {
                               <Eye className="h-4 w-4" />
                             </button>
 
-                            {plan.status === 'Direncanakan' && isSuperadmin && (
+                            {plan.status === 'Direncanakan' && !plan.receivingLocked && isSuperadmin && (
                               <>
                                 <button
                                   id={`btn-edit-plan-${plan.id}`}
@@ -848,7 +935,7 @@ export const PurchasePlanWorkspace: React.FC = () => {
                     </span>
                     {renderStatusBadge(activePlan.status)}
                     <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-black text-blue-800 border border-blue-200 uppercase">
-                      Owned Purchases
+                      Reseller Purchases
                     </span>
                   </div>
                   <h2 className="text-base font-black text-[#2D241E] mt-1">{activePlan.namaRencana}</h2>
@@ -857,7 +944,7 @@ export const PurchasePlanWorkspace: React.FC = () => {
 
               {/* Action Buttons */}
               <div className="flex items-center gap-2">
-                {activePlan.status === 'Direncanakan' && isSuperadmin && (
+                {activePlan.status === 'Direncanakan' && !activePlan.receivingLocked && isSuperadmin && (
                   <>
                     <button
                       type="button"
@@ -1183,9 +1270,7 @@ export const PurchasePlanWorkspace: React.FC = () => {
                       viewMode === 'edit' ? 'bg-gray-100 cursor-not-allowed opacity-80' : 'bg-[#FDFBF7]'
                     }`}
                   >
-                    {branches
-                      .filter((b) => b.status !== 'inactive' || b.id === formBranchId)
-                      .map((b) => (
+                    {branches.map((b) => (
                         <option key={b.id} value={b.id}>
                           {b.name} ({b.code})
                         </option>
@@ -1193,21 +1278,31 @@ export const PurchasePlanWorkspace: React.FC = () => {
                   </select>
                 </div>
 
+                {/* Reseller Master Category */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-[#2D241E]">Master Kategori Reseller <span className="text-rose-500">*</span></label>
+                  <select id="input-plan-master-category" value={formMasterCategoryId} disabled={viewMode === 'edit'} onChange={(e) => { setFormMasterCategoryId(e.target.value); setFormSupplierId(''); setFormLines([]); }} className="w-full rounded-xl border-2 border-[#E5DACE] bg-[#FDFBF7] px-3 py-2 text-xs font-bold text-[#2D241E] focus:border-amber-600 focus:outline-none disabled:bg-gray-100">
+                    <option value="">-- Pilih Master Kategori Reseller --</option>
+                    {resellerMasterCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                  </select>
+                </div>
+
                 {/* Supplier Selection */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-[#2D241E]">
-                    Mitra Supplier / Sumber Utama <span className="text-rose-500">*</span>
+                    Mitra Supplier <span className="text-rose-500">*</span>
                   </label>
                   <select
                     id="input-plan-supplier"
                     value={formSupplierId}
                     onChange={(e) => setFormSupplierId(e.target.value)}
+                    disabled={viewMode === 'edit' || !formMasterCategoryId}
                     className="w-full rounded-xl border-2 border-[#E5DACE] bg-[#FDFBF7] px-3 py-2 text-xs font-bold text-[#2D241E] focus:border-amber-600 focus:outline-none"
                   >
-                    <option value="multi">
+                    {false && <option value="multi">
                       ⭐ Multi-Sumber / Terpadu (In-House, Konsinyasi & Supplier)
-                    </option>
-                    {suppliers.map((s) => (
+                    </option>}
+                    {formSupplierOptions.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
                       </option>
@@ -1221,12 +1316,13 @@ export const PurchasePlanWorkspace: React.FC = () => {
                     Kategori Sumber <span className="text-[10px] text-gray-500 font-normal">(Read-only)</span>
                   </label>
                   <div className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-3.5 py-2 text-xs font-black text-gray-700 truncate">
-                    {formSelectedSupplier?.category || 'Umum'}
+                    {formSelectedMasterCategory?.name || 'Pilih Master Kategori Reseller'}
                   </div>
                 </div>
               </div>
 
-              {/* Customer PO Attachment Card */}
+              {/* Customer PO Attachment Card is retained only for legacy state; new plans derive MTO demand automatically. */}
+              {false && (
               <div className="rounded-2xl border-2 border-indigo-200 bg-indigo-50/60 p-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -1268,6 +1364,7 @@ export const PurchasePlanWorkspace: React.FC = () => {
                   </div>
                 )}
               </div>
+              )}
 
               {/* Notes */}
               <div className="space-y-1.5">
@@ -1290,7 +1387,7 @@ export const PurchasePlanWorkspace: React.FC = () => {
                     Baris Produk Rencana (Product Lines)
                   </h3>
                   <p className="text-[11px] text-[#8C7B6C]">
-                    Atur item dari Pembelian Langsung, Produksi In-House, Titipan Konsinyasi, atau Tambahan Ad-Hoc.
+                    Produk reseller diurutkan berdasarkan kebutuhan MTO terdekat; jumlah akhir dapat disesuaikan untuk stok tambahan.
                   </p>
                 </div>
 
@@ -1301,12 +1398,12 @@ export const PurchasePlanWorkspace: React.FC = () => {
                     className="flex items-center gap-1 rounded-xl bg-emerald-50 border border-emerald-300 px-2.5 py-1.5 text-xs font-bold text-emerald-900 hover:bg-emerald-100 transition"
                   >
                     <Plus className="h-3.5 w-3.5" />
-                    <span>+ Pembelian Direct</span>
+                    <span>+ Tambah Produk</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleAddFormLine('in_house')}
-                    className="flex items-center gap-1 rounded-xl bg-blue-50 border border-blue-300 px-2.5 py-1.5 text-xs font-bold text-blue-900 hover:bg-blue-100 transition"
+                    className="hidden"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     <span>+ In-House</span>
@@ -1314,7 +1411,7 @@ export const PurchasePlanWorkspace: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => handleAddFormLine('consignment')}
-                    className="flex items-center gap-1 rounded-xl bg-purple-50 border border-purple-300 px-2.5 py-1.5 text-xs font-bold text-purple-900 hover:bg-purple-100 transition"
+                    className="hidden"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     <span>+ Konsinyasi</span>
@@ -1322,7 +1419,7 @@ export const PurchasePlanWorkspace: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleAddAdhocLine}
-                    className="flex items-center gap-1 rounded-xl bg-amber-50 border border-amber-300 px-2.5 py-1.5 text-xs font-bold text-amber-900 hover:bg-amber-100 transition"
+                    className="hidden"
                   >
                     <Sparkles className="h-3.5 w-3.5" />
                     <span>+ Ad-Hoc</span>
@@ -1346,7 +1443,7 @@ export const PurchasePlanWorkspace: React.FC = () => {
                         </span>
 
                         {/* Item Type Select */}
-                        <div className="w-36">
+                        <div className="hidden w-36">
                           <label className="text-[10px] font-bold text-[#8C7B6C] block mb-1">Tipe Item</label>
                           <select
                             value={line.itemType}
@@ -1380,8 +1477,13 @@ export const PurchasePlanWorkspace: React.FC = () => {
                               if (newProd) {
                                 handleUpdateFormLine(
                                   line.tempId,
+                                  'plannedQuantity',
+                                  mtoDemandByProduct.get(newProd.id)?.quantity || 1
+                                );
+                                handleUpdateFormLine(
+                                  line.tempId,
                                   'plannedBuyPrice',
-                                  Math.round(newProd.price * 0.6)
+                                  newProd.buyPrice ?? 0
                                 );
                                 if (newProd.supplierId) {
                                   handleUpdateFormLine(line.tempId, 'supplierId', newProd.supplierId);
@@ -1396,6 +1498,10 @@ export const PurchasePlanWorkspace: React.FC = () => {
                               </option>
                             ))}
                           </select>
+                          {(() => {
+                            const demand = mtoDemandByProduct.get(line.productId);
+                            return demand ? <p className="mt-1 text-[10px] font-semibold text-blue-700">Kebutuhan MTO: {demand.quantity} pcs • Pickup terdekat: {demand.nearestPickupDate}</p> : <p className="mt-1 text-[10px] text-[#8C7B6C]">Tidak ada kebutuhan MTO aktif; sesuaikan untuk stok tambahan.</p>;
+                          })()}
                         </div>
 
                         {/* Supplier (if multi-sumber) */}

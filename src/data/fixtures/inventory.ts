@@ -393,7 +393,6 @@ export const INITIAL_PRODUCTS: Product[] = [
     popular: true,
     image: 'https://images.unsplash.com/photo-1517256064527-09c73fc73e38?w=400&auto=format&fit=crop&q=80',
     description: 'Double shot espresso blend arabika dengan susu segar & aren asli',
-    supplier: 'Barista Counter',
   },
   {
     id: 'prod-18',
@@ -441,6 +440,9 @@ export const INITIAL_PRODUCTS: Product[] = [
     isMadeToOrder: false,
     image: 'https://images.unsplash.com/photo-1548839140-29a749e1bc4e?w=400&auto=format&fit=crop&q=80',
     description: 'Air mineral kemasan botol dingin / suhu ruang',
+    buyPrice: 3500,
+    supplierId: 'sup-rsl-1',
+    supplierName: 'Distributor Reseller Snack & Minuman Jakarta',
     supplier: 'Barista Counter',
   },
 
@@ -478,8 +480,10 @@ export const INITIAL_PRODUCTS: Product[] = [
     baseProductId: 'prod-1',
     image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&auto=format&fit=crop&q=80',
     description: 'Paket kotak snackbox 3 kue + 1 air mineral untuk rapat/acara kantor',
-    supplier: 'In-House Bakery Kitchen',
     ownershipType: 'own',
+    buyPrice: 18000,
+    supplierId: 'sup-rsl-1',
+    supplierName: 'Distributor Reseller Snack & Minuman Jakarta',
   },
 
   // CONSIGNMENT TRADITIONAL KUE BASAH (POS-US-029 & POS-US-030)

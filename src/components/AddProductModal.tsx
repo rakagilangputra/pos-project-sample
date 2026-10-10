@@ -44,6 +44,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
   const [masterCategoryId, setMasterCategoryId] = useState(masterCategories[0]?.id || '');
   const [category, setCategory] = useState(categories.find((c) => c.id !== 'all')?.id || 'roti');
   const [price, setPrice] = useState<string>('15000');
+  const [buyPrice, setBuyPrice] = useState<string>('');
   const [isPriceCustomizable, setIsPriceCustomizable] = useState(false);
   const [lowStockThreshold, setLowStockThreshold] = useState<string>('5');
   const [isMadeToOrder, setIsMadeToOrder] = useState(false);
@@ -93,6 +94,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
 
     const trimmedName = name.trim();
     const numPrice = parseInt(price || '0', 10);
+    const numBuyPrice = buyPrice.trim() === '' ? undefined : parseInt(buyPrice, 10);
     const numLowStock = parseInt(lowStockThreshold || '5', 10);
     const numCommValue = parseFloat(commissionValue || '0');
 
@@ -102,6 +104,10 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
     }
     if (numPrice < 0) {
       setErrorMsg('Harga jual tidak boleh bernilai negatif!');
+      return;
+    }
+    if (numBuyPrice !== undefined && (isNaN(numBuyPrice) || numBuyPrice < 0)) {
+      setErrorMsg('Harga beli harus berupa angka nol atau lebih!');
       return;
     }
 
@@ -124,6 +130,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
       category,
       categoryLabel: catLabel,
       price: numPrice,
+      buyPrice: numBuyPrice,
       isPriceCustomizable,
       stock: 0, // Stock is strictly added via Pembelian & Penerimaan
       lowStockThreshold: numLowStock,
@@ -483,6 +490,26 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
                   onChange={(e) => setPrice(e.target.value)}
                   className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white pl-10 pr-4 py-2.5 text-sm font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none"
                 />
+              </div>
+
+              <div className="space-y-1">
+                <label htmlFor="product-buy-price-input" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
+                  Harga Beli Satuan (IDR) <span className="text-[10px] font-semibold normal-case tracking-normal">(opsional)</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-2.5 text-xs font-bold text-[#8C7B6C]">Rp</span>
+                  <input
+                    id="product-buy-price-input"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={buyPrice}
+                    onChange={(e) => setBuyPrice(e.target.value)}
+                    placeholder="Contoh: 9000"
+                    className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white pl-10 pr-3.5 py-2.5 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none shadow-xs"
+                  />
+                </div>
+                <p className="text-[10px] text-[#8C7B6C]">Referensi master saja; harga aktual dicatat saat penerimaan barang.</p>
               </div>
             </div>
 

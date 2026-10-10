@@ -48,6 +48,7 @@ export const ProductStockTable: React.FC<ProductStockTableProps> = ({
   const {
     products,
     categories,
+    masterCategories,
     suppliers,
     selectedBranch,
     isBranchReadOnly,
@@ -492,6 +493,7 @@ export const ProductStockTable: React.FC<ProductStockTableProps> = ({
         <EditProductInfoModal
           product={editingProduct}
           categories={categories}
+          masterCategories={masterCategories}
           suppliers={suppliers}
           branchName={selectedBranch.name}
           isBranchReadOnly={isBranchReadOnly || selectedBranch.status === 'inactive'}
