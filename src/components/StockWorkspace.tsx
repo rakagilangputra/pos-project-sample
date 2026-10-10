@@ -29,6 +29,7 @@ import { StockTransferView } from './stock/StockTransferView';
 import { BadStockView } from './stock/BadStockView';
 import { StockHistoryView } from './stock/StockHistoryView';
 import { RawMaterialWorkspace } from './stock/RawMaterialWorkspace';
+import { StokSidebar } from './stock/StokSidebar';
 
 export type StockLocalView =
   | 'products'
@@ -181,6 +182,12 @@ export const StockWorkspace: React.FC = () => {
   const handleNavigateToBadStock = (productId?: string) => {
     setPreselectedProductId(productId);
     setActiveView('bad_stock');
+  };
+
+  const handleSelectView = (view: StockLocalView) => {
+    if (view === 'categories') setPreselectedCategoryId(undefined);
+    if (view === 'transfers' || view === 'bad_stock') setPreselectedProductId(undefined);
+    setActiveView(view);
   };
 
   // Submit Add Product (Full Page)
@@ -705,144 +712,9 @@ export const StockWorkspace: React.FC = () => {
   }
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-white border-2 border-[#E5DACE] rounded-[2rem] shadow-sm">
-      {/* -------------------------------------------------------------
-          WORKSPACE HEADER
-          ------------------------------------------------------------- */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b-2 border-[#E5DACE] bg-[#FDFBF7] px-6 py-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-base font-black text-[#2D241E]">
-              Manajemen Stok & Inventaris Produk
-            </h2>
-            <span className="rounded-lg bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 text-xs font-bold flex items-center gap-1">
-              <Building2 className="h-3 w-3" />
-              {selectedBranch.name} ({selectedBranch.city})
-            </span>
-
-            {isInactive && (
-              <span className="rounded-lg bg-rose-100 text-rose-800 border border-rose-200 px-2 py-0.5 text-[11px] font-black flex items-center gap-1">
-                <ShieldAlert className="h-3 w-3" />
-                Mode Hanya Baca (Nonaktif)
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-[#8C7B6C] mt-0.5">
-            Informasi ketersediaan stok cabang, hitung fisik harian, transfer antar-cabang, dan disposisi kedaluwarsa.
-          </p>
-        </div>
-      </div>
-
-      {/* -------------------------------------------------------------
-          TAB NAVIGATION BAR
-          ------------------------------------------------------------- */}
-      <nav className="flex items-center gap-1 border-b-2 border-[#E5DACE] bg-white px-6 overflow-x-auto">
-        <button
-          type="button"
-          onClick={() => setActiveView('products')}
-          className={`flex items-center gap-2 border-b-2 py-3 px-3 text-xs font-black transition whitespace-nowrap ${
-            activeView === 'products'
-              ? 'border-[#D97706] text-[#D97706]'
-              : 'border-transparent text-[#8C7B6C] hover:text-[#2D241E]'
-          }`}
-        >
-          <Package className="h-4 w-4" />
-          <span>Produk (Informasi Stok)</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setPreselectedCategoryId(undefined);
-            setActiveView('categories');
-          }}
-          className={`flex items-center gap-2 border-b-2 py-3 px-3 text-xs font-black transition whitespace-nowrap ${
-            activeView === 'categories'
-              ? 'border-[#D97706] text-[#D97706]'
-              : 'border-transparent text-[#8C7B6C] hover:text-[#2D241E]'
-          }`}
-        >
-          <Calendar className="h-4 w-4" />
-          <span>Rekonsiliasi Kadaluwarsa (Closing)</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setPreselectedProductId(undefined);
-            setActiveView('transfers');
-          }}
-          className={`flex items-center gap-2 border-b-2 py-3 px-3 text-xs font-black transition whitespace-nowrap ${
-            activeView === 'transfers'
-              ? 'border-[#D97706] text-[#D97706]'
-              : 'border-transparent text-[#8C7B6C] hover:text-[#2D241E]'
-          }`}
-        >
-          <Truck className="h-4 w-4" />
-          <span>Transfer Stok</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setPreselectedProductId(undefined);
-            setActiveView('bad_stock');
-          }}
-          className={`flex items-center gap-2 border-b-2 py-3 px-3 text-xs font-black transition whitespace-nowrap ${
-            activeView === 'bad_stock'
-              ? 'border-[#D97706] text-[#D97706]'
-              : 'border-transparent text-[#8C7B6C] hover:text-[#2D241E]'
-          }`}
-        >
-          <AlertTriangle className="h-4 w-4" />
-          <span>Stok Buruk / Kedaluwarsa</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveView('receiving')}
-          className={`flex items-center gap-2 border-b-2 py-3 px-3 text-xs font-black transition whitespace-nowrap ${
-            activeView === 'receiving'
-              ? 'border-[#D97706] text-[#D97706]'
-              : 'border-transparent text-[#8C7B6C] hover:text-[#2D241E]'
-          }`}
-        >
-          <Layers className="h-4 w-4" />
-          <span>Penerimaan Barang</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveView('history')}
-          className={`flex items-center gap-2 border-b-2 py-3 px-3 text-xs font-black transition whitespace-nowrap ${
-            activeView === 'history'
-              ? 'border-[#D97706] text-[#D97706]'
-              : 'border-transparent text-[#8C7B6C] hover:text-[#2D241E]'
-          }`}
-        >
-          <History className="h-4 w-4" />
-          <span>Riwayat Stok</span>
-        </button>
-
-        <button
-          type="button"
-          id="stock-tab-raw-material"
-          onClick={() => setActiveView('raw_materials')}
-          className={`flex items-center gap-2 border-b-2 py-3 px-3 text-xs font-black transition whitespace-nowrap ${
-            activeView === 'raw_materials'
-              ? 'border-[#D97706] text-[#D97706]'
-              : 'border-transparent text-[#8C7B6C] hover:text-[#2D241E]'
-          }`}
-        >
-          <Wheat className="h-4 w-4" />
-          <span>Raw Material (Bahan Baku)</span>
-        </button>
-      </nav>
-
-      {/* -------------------------------------------------------------
-          ACTIVE VIEW CONTENT
-          ------------------------------------------------------------- */}
-      <div className="flex flex-1 overflow-hidden">
+    <div className="flex h-full w-full min-w-0 flex-col gap-3 overflow-hidden lg:flex-row lg:gap-4">
+      {/* Active page content; full-page product creation is preserved above. */}
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-2xl border border-[#E5DACE] bg-white">
         {/* VIEW 1: PRODUK (Stock Information Page) */}
         {activeView === 'products' && (
           <ProductStockTable
@@ -891,6 +763,8 @@ export const StockWorkspace: React.FC = () => {
           <RawMaterialWorkspace onNavigateToReceiving={() => setActiveView('receiving')} />
         )}
       </div>
+
+      <StokSidebar activeView={activeView} onSelectView={handleSelectView} />
 
       {/* Add Category Modal */}
       <AddCategoryModal

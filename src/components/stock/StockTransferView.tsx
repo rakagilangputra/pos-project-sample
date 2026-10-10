@@ -11,7 +11,11 @@ import {
   AlertCircle,
   AlertTriangle,
   Package,
+  Search,
+  RotateCcw,
+  XCircle,
 } from 'lucide-react';
+import type { StockTransferStatus } from '../../types';
 import { usePOS } from '../../context/POSContext';
 import { formatDateTime } from '../../utils/formatters';
 
@@ -19,6 +23,13 @@ interface StockTransferViewProps {
   initialProductId?: string;
   onBackToProducts: () => void;
 }
+
+// Match the local calendar day used by formatDateTime in the record list.
+const transferDate = (timestamp: string) => {
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return '';
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+};
 
 export const StockTransferView: React.FC<StockTransferViewProps> = ({
   initialProductId,
@@ -43,6 +54,28 @@ export const StockTransferView: React.FC<StockTransferViewProps> = ({
   const [quantity, setQuantity] = useState<string>('5');
   const [notes, setNotes] = useState<string>('');
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState<StockTransferStatus | 'all'>('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const isDateRangeInvalid = Boolean(dateFrom && dateTo && dateFrom > dateTo);
+  const filteredTransfers = useMemo(() => stockTransfers.filter((transfer) => {
+    if (isDateRangeInvalid) return false;
+    if (filterStatus !== 'all' && transfer.status !== filterStatus) return false;
+    if (dateFrom || dateTo) {
+      const day = transferDate(transfer.createdAt);
+      if (!day || (dateFrom && day < dateFrom) || (dateTo && day > dateTo)) return false;
+    }
+    const query = search.trim().toLowerCase();
+    return !query || [transfer.transferNo, transfer.productName, transfer.sku, transfer.fromBranchName, transfer.toBranchName].some((value) => String(value || '').toLowerCase().includes(query));
+  }), [stockTransfers, search, filterStatus, dateFrom, dateTo, isDateRangeInvalid]);
+
+  const handleResetFilters = () => {
+    setSearch('');
+    setFilterStatus('all');
+    setDateFrom('');
+    setDateTo('');
+  };
 
   // Ready Stock products in current branch only (MTO excluded!)
   const readyStockProducts = useMemo(() => {
@@ -99,7 +132,7 @@ export const StockTransferView: React.FC<StockTransferViewProps> = ({
   };
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden p-6 space-y-4">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto bg-white p-4 sm:p-6">
       {/* Top Banner / Inactive Mode Notice */}
       {isInactive && (
         <div className="rounded-2xl bg-rose-50 border border-rose-200 p-3.5 text-xs text-rose-800 flex items-center justify-between">
@@ -112,25 +145,23 @@ export const StockTransferView: React.FC<StockTransferViewProps> = ({
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E5DACE] pb-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="font-black text-base text-[#2D241E]">
-              Transfer Stok Antar-Cabang (Mutasi Fisik)
-            </h3>
-            <span className="rounded-md bg-cyan-100 text-cyan-900 px-2 py-0.5 text-[11px] font-bold">
-              {selectedBranch.name}
+      <header className="flex shrink-0 flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-[1_1_500px]">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-xl font-black text-[#2D241E]">Transfer Stok Antar-Cabang (Mutasi Fisik)</h2>
+            <span className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-900">
+              <Building2 className="h-3.5 w-3.5" aria-hidden="true" />
+              {selectedBranch.name} ({selectedBranch.city})
             </span>
           </div>
-          <p className="text-xs text-[#8C7B6C] mt-0.5">
+          <p className="mt-2 text-xs leading-relaxed text-[#8C7B6C]">
             Kirim stok berlebih atau terima kiriman barang antar cabang bakery. Produk Made-to-Order tidak dapat ditransfer.
           </p>
         </div>
-
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {!isCreateOpen && (
             <button
+              id="transfer-create-btn"
               type="button"
               disabled={isInactive}
               onClick={() => {
@@ -139,22 +170,17 @@ export const StockTransferView: React.FC<StockTransferViewProps> = ({
                   setSelectedProductId(readyStockProducts[0].id);
                 }
               }}
-              className="flex items-center gap-1.5 rounded-xl bg-[#D97706] px-4 py-2 text-xs font-black text-white hover:bg-amber-700 shadow-xs active:scale-95 transition disabled:opacity-50"
+              className="flex h-10 items-center gap-2 rounded-lg bg-[#D97706] px-4 text-xs font-black text-white shadow-xs transition hover:bg-amber-700 active:scale-95 disabled:opacity-50"
             >
               <Plus className="h-4 w-4" />
               <span>Buat Transfer Stok</span>
             </button>
           )}
-
-          <button
-            type="button"
-            onClick={onBackToProducts}
-            className="rounded-xl border border-[#E5DACE] bg-white px-4 py-2 text-xs font-bold text-[#6D5D50] hover:bg-[#FDFBF7] transition"
-          >
+          <button type="button" onClick={onBackToProducts} className="flex h-10 items-center rounded-lg border border-[#E5DACE] bg-white px-4 text-xs font-bold text-[#6D5D50] transition hover:bg-[#FDFBF7]">
             Kembali ke Daftar Produk
           </button>
         </div>
-      </div>
+      </header>
 
       {statusMsg && (
         <div
@@ -173,8 +199,41 @@ export const StockTransferView: React.FC<StockTransferViewProps> = ({
         </div>
       )}
 
+      <section aria-label="Filter transfer stok" className="shrink-0 space-y-2">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="relative min-w-0 flex-[2_1_260px]">
+            <span className="sr-only">Cari transfer stok</span>
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8C7B6C]" aria-hidden="true" />
+            <input id="transfer-search" type="text" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari nomor dokumen, produk, atau cabang..." className="h-10 w-full rounded-lg border border-[#E5DACE] bg-white pl-9 pr-3 text-xs font-semibold text-[#2D241E] outline-none placeholder:text-[#8C7B6C] focus:border-[#D97706]" />
+          </label>
+          <label className="min-w-0 flex-[1_1_160px]">
+            <span className="sr-only">Status transfer</span>
+            <select id="transfer-status" value={filterStatus} onChange={(event) => setFilterStatus(event.target.value as StockTransferStatus | 'all')} className="h-10 w-full rounded-lg border border-[#E5DACE] bg-white px-3 text-xs font-semibold text-[#2D241E] outline-none focus:border-[#D97706]">
+              <option value="all">Status: Semua</option>
+              <option value="in_transit">Dalam Pengiriman</option>
+              <option value="received">Diterima</option>
+              <option value="cancelled">Dibatalkan</option>
+            </select>
+          </label>
+          <fieldset className="min-w-0 flex-[2_1_260px]">
+            <legend className="sr-only">Tanggal dokumen transfer</legend>
+            <div className="flex items-center gap-2">
+              <input id="transfer-date-from" type="date" aria-label="Tanggal transfer awal" aria-invalid={isDateRangeInvalid} aria-describedby={isDateRangeInvalid ? 'transfer-date-error' : undefined} value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[#E5DACE] bg-white px-2 text-xs font-semibold text-[#2D241E] outline-none focus:border-[#D97706]" />
+              <span className="text-xs text-[#8C7B6C]">–</span>
+              <input id="transfer-date-to" type="date" aria-label="Tanggal transfer akhir" aria-invalid={isDateRangeInvalid} aria-describedby={isDateRangeInvalid ? 'transfer-date-error' : undefined} value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[#E5DACE] bg-white px-2 text-xs font-semibold text-[#2D241E] outline-none focus:border-[#D97706]" />
+            </div>
+          </fieldset>
+          <button id="transfer-reset-filters" type="button" onClick={handleResetFilters} className="flex h-10 items-center gap-2 rounded-lg border border-[#E5DACE] bg-white px-3 text-xs font-bold text-[#2D241E] hover:bg-[#FDFBF7]">
+            <RotateCcw className="h-4 w-4" aria-hidden="true" />
+            Reset Filter
+          </button>
+        </div>
+        {isDateRangeInvalid && <p id="transfer-date-error" role="alert" className="text-xs font-bold text-rose-700">Tanggal awal tidak boleh lebih besar dari tanggal akhir.</p>}
+      </section>
+
       {/* CREATE TRANSFER FORM (PANEL) */}
       {isCreateOpen && (
+        <div className="shrink-0">
         <form
           onSubmit={handleCreateTransfer}
           className="rounded-2xl border-2 border-[#E5DACE] bg-[#FDFBF7] p-5 space-y-4 shadow-sm"
@@ -291,97 +350,103 @@ export const StockTransferView: React.FC<StockTransferViewProps> = ({
             </button>
           </div>
         </form>
+        </div>
       )}
 
-      {/* LIST OF TRANSFERS */}
-      <div className="flex-1 overflow-y-auto rounded-2xl border-2 border-[#E5DACE] bg-white shadow-xs">
-        {stockTransfers.length === 0 ? (
-          <div className="flex h-64 flex-col items-center justify-center p-8 text-center text-[#8C7B6C]">
-            <Truck className="h-10 w-10 opacity-30 mb-2 text-[#8C7B6C]" />
-            <p className="font-black text-sm text-[#2D241E]">Belum Ada Riwayat Transfer Cabang</p>
-            <p className="text-xs text-[#8C7B6C] max-w-sm mt-1">
-              Klik "Buat Transfer Stok" untuk mengirim produk ready stock ke cabang lain.
+      {/* Existing transfer documents; filters only change what is displayed. */}
+      <div id="transfer-record-list" className="min-h-[240px] min-w-0 flex-1 overflow-auto rounded-xl border border-[#E5DACE] bg-white">
+        {filteredTransfers.length === 0 ? (
+          <div className="flex min-h-[240px] flex-col items-center justify-center p-6 text-center text-[#8C7B6C]">
+            <Truck className="mb-2 h-10 w-10 text-[#8C7B6C] opacity-30" />
+            <p className="text-sm font-black text-[#2D241E]">{stockTransfers.length === 0 ? 'Belum Ada Riwayat Transfer Cabang' : 'Tidak ada transfer yang sesuai filter'}</p>
+            <p className="mt-1 max-w-sm text-xs">
+              {stockTransfers.length === 0 ? 'Klik "Buat Transfer Stok" untuk mengirim produk ready stock ke cabang lain.' : 'Ubah pencarian, status, atau rentang tanggal untuk melihat transfer lainnya.'}
             </p>
           </div>
         ) : (
-          <table className="w-full text-left text-xs border-collapse">
-            <thead className="sticky top-0 z-10 bg-[#FDFBF7] border-b-2 border-[#E5DACE] text-[11px] font-black uppercase text-[#8C7B6C]">
+          <table className="w-full min-w-[1100px] border-collapse text-left text-xs">
+            <thead className="sticky top-0 z-10 border-b border-[#E5DACE] bg-[#FDFBF7] text-[10px] font-bold uppercase tracking-wide text-[#8C7B6C]">
               <tr>
-                <th className="py-3 px-3.5">No. Dokumen</th>
-                <th className="py-3 px-3">Produk</th>
-                <th className="py-3 px-3">Cabang Pengirim</th>
-                <th className="py-3 px-3">Cabang Penerima</th>
-                <th className="py-3 px-3 text-center">Jumlah</th>
-                <th className="py-3 px-3 text-center">Status</th>
-                <th className="py-3 px-3.5 text-right">Aksi</th>
+                <th className="px-4 py-3">No. Dokumen</th>
+                <th className="px-3 py-3">Produk</th>
+                <th className="px-3 py-3">Cabang Pengirim</th>
+                <th className="px-3 py-3">Cabang Penerima</th>
+                <th className="px-3 py-3 text-center">Jumlah</th>
+                <th className="px-3 py-3 text-center">Status</th>
+                <th className="px-4 py-3 text-right">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E5DACE]/60">
-              {stockTransfers.map((trf) => {
+              {filteredTransfers.map((trf) => {
                 const isOutgoing = trf.fromBranchId === selectedBranch.id;
                 const isIncoming = trf.toBranchId === selectedBranch.id;
-
+                const product = products.find((candidate) => candidate.id === trf.productId) || products.find((candidate) => candidate.sku === trf.sku || candidate.name === trf.productName);
+                const sourceBranch = branches.find((branch) => branch.id === trf.fromBranchId);
+                const targetBranch = branches.find((branch) => branch.id === trf.toBranchId);
                 return (
-                  <tr key={trf.id} className="hover:bg-[#FDFBF7]/80 transition">
-                    <td className="py-2.5 px-3.5">
-                      <div className="font-mono font-black text-[#2D241E]">{trf.transferNo}</div>
-                      <div className="text-[10px] text-[#8C7B6C]">{formatDateTime(trf.createdAt)}</div>
+                  <tr key={trf.id} data-transfer-id={trf.id} className="transition hover:bg-[#FDFBF7]/80">
+                    <td className="px-4 py-3.5">
+                      <div className="whitespace-nowrap font-black text-[#2D241E]">{trf.transferNo}</div>
+                      <div className="mt-1 text-[10px] text-[#8C7B6C]">{formatDateTime(trf.createdAt)}</div>
                     </td>
-
-                    <td className="py-2.5 px-3">
-                      <div className="font-black text-[#2D241E]">{trf.productName}</div>
-                      <div className="text-[10px] text-[#8C7B6C] font-mono">{trf.sku}</div>
+                    <td className="px-3 py-3.5">
+                      <div className="flex min-w-[190px] max-w-[260px] items-center gap-3">
+                        <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#E5DACE] bg-[#FDFBF7]">
+                          <Package className="h-5 w-5 text-[#8C7B6C]" aria-hidden="true" />
+                          {product?.image && <img src={product.image} alt={trf.productName} className="absolute inset-0 h-full w-full rounded-lg object-cover" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-black leading-relaxed text-[#2D241E]">{trf.productName}</div>
+                          <div className="mt-1 text-[10px] font-semibold text-[#8C7B6C]">{trf.sku}</div>
+                        </div>
+                      </div>
                     </td>
-
-                    <td className="py-2.5 px-3">
-                      <div className="flex items-center gap-1.5 font-bold text-[#2D241E]">
-                        {isOutgoing && <ArrowUpRight className="h-3.5 w-3.5 text-rose-600" />}
+                    <td className="px-3 py-3.5">
+                      <div className="flex items-start gap-1.5 font-bold text-[#2D241E]">
+                        {isOutgoing && <ArrowUpRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-600" />}
                         <span>{trf.fromBranchName}</span>
                       </div>
-                      <div className="text-[10px] text-[#8C7B6C]">Dibuat: {trf.createdBy}</div>
+                      {sourceBranch?.address && <div className="mt-1 max-w-[210px] text-[10px] leading-relaxed text-[#8C7B6C]">{sourceBranch.address}</div>}
+                      <div className="mt-1 text-[10px] text-[#8C7B6C]">Dibuat: {trf.createdBy}</div>
                     </td>
-
-                    <td className="py-2.5 px-3">
-                      <div className="flex items-center gap-1.5 font-bold text-[#2D241E]">
-                        {isIncoming && <ArrowDownRight className="h-3.5 w-3.5 text-emerald-600" />}
+                    <td className="px-3 py-3.5">
+                      <div className="flex items-start gap-1.5 font-bold text-[#2D241E]">
+                        {isIncoming && <ArrowDownRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />}
                         <span>{trf.toBranchName}</span>
                       </div>
-                      {trf.receivedBy && (
-                        <div className="text-[10px] text-emerald-700">Diterima: {trf.receivedBy}</div>
-                      )}
+                      {targetBranch?.address && <div className="mt-1 max-w-[210px] text-[10px] leading-relaxed text-[#8C7B6C]">{targetBranch.address}</div>}
+                      {trf.receivedBy && <div className="mt-1 text-[10px] text-emerald-700">Diterima: {trf.receivedBy}</div>}
                     </td>
-
-                    <td className="py-2.5 px-3 text-center font-black text-sm text-[#2D241E]">
-                      {trf.quantity} pcs
-                    </td>
-
-                    <td className="py-2.5 px-3 text-center">
+                    <td className="whitespace-nowrap px-3 py-3.5 text-center text-sm font-black tabular-nums text-[#2D241E]">{trf.quantity} pcs</td>
+                    <td className="px-3 py-3.5 text-center">
                       {trf.status === 'in_transit' ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-cyan-100 text-cyan-900 px-2.5 py-0.5 text-[10px] font-black">
+                        <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-[10px] font-black text-cyan-900">
                           <Clock className="h-3 w-3" />
                           Dalam Pengiriman
                         </span>
+                      ) : trf.status === 'cancelled' ? (
+                        <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[10px] font-black text-rose-800">
+                          <XCircle className="h-3 w-3" />
+                          Dibatalkan
+                        </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-900 px-2.5 py-0.5 text-[10px] font-black">
+                        <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-900">
                           <CheckCircle2 className="h-3 w-3" />
                           Diterima
                         </span>
                       )}
                     </td>
-
-                    <td className="py-2.5 px-3.5 text-right">
+                    <td className="px-4 py-3.5 text-right">
                       {isIncoming && trf.status === 'in_transit' ? (
                         <button
                           type="button"
                           disabled={isInactive}
                           onClick={() => handleReceive(trf.id)}
-                          className="rounded-xl bg-emerald-700 px-3 py-1.5 text-xs font-black text-white hover:bg-emerald-800 shadow-xs active:scale-95 transition disabled:opacity-50"
+                          className="whitespace-nowrap rounded-lg bg-emerald-700 px-3 py-2 text-[11px] font-black text-white shadow-xs transition hover:bg-emerald-800 active:scale-95 disabled:opacity-50"
                         >
                           Terima Transfer
                         </button>
-                      ) : (
-                        <span className="text-[11px] text-[#8C7B6C]">Selesai</span>
-                      )}
+                      ) : <span className="text-[11px] text-[#8C7B6C]">{trf.status === 'received' ? 'Selesai' : '—'}</span>}
                     </td>
                   </tr>
                 );
@@ -391,13 +456,9 @@ export const StockTransferView: React.FC<StockTransferViewProps> = ({
         )}
       </div>
 
-      {/* Bottom-Right Tutup button */}
-      <div className="flex items-center justify-end border-t border-[#E5DACE] pt-3">
-        <button
-          type="button"
-          onClick={onBackToProducts}
-          className="rounded-xl border border-[#E5DACE] bg-white px-6 py-2 text-xs font-black text-[#2D241E] hover:bg-[#E5DACE] active:scale-95 transition"
-        >
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+        <p className="text-[11px] text-[#8C7B6C]">Menampilkan {filteredTransfers.length} dari {stockTransfers.length} transfer stok</p>
+        <button type="button" onClick={onBackToProducts} className="rounded-lg border border-[#E5DACE] bg-white px-4 py-2 text-xs font-bold text-[#2D241E] transition hover:bg-[#FDFBF7]">
           Tutup
         </button>
       </div>

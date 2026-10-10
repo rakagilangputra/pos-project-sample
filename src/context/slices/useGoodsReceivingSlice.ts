@@ -121,11 +121,27 @@ export function useGoodsReceivingSlice({
     localStorage.setItem('pos_purchase_plans_v1', JSON.stringify(purchasePlans));
   }, [purchasePlans]);
 
+  const mainBranch = branches.find((branch) => branch.isMainBranch)
+    || branches.find((branch) => branch.id === 'branch-senopati')
+    || branches.find((branch) => branch.status === 'active')
+    || branches[0];
+
   // Submit Goods Receipt (POS-US-059, POS-US-060, POS-US-061)
   const submitGoodsReceipt = (
     receiptData: Omit<GoodsReceiptRecord, 'id' | 'receiptNumber' | 'stockMovementRef' | 'createdAt' | 'status'>
   ) => {
     // 1. Validation
+    const linkedPlan = receiptData.purchasePlanId
+      ? purchasePlans.find((plan) => plan.id === receiptData.purchasePlanId)
+      : undefined;
+    if (linkedPlan && (!mainBranch || selectedBranchId !== mainBranch.id)) {
+      posSound.error();
+      return { success: false, message: `Rencana reseller hanya dapat diterima di ${mainBranch?.name || 'Cabang Utama'}!` };
+    }
+    if (linkedPlan && linkedPlan.status !== 'Direncanakan') {
+      posSound.error();
+      return { success: false, message: `Rencana ${linkedPlan.id} sudah tidak berstatus Direncanakan.` };
+    }
     if (!receiptData.supplierId) {
       posSound.error();
       return { success: false, message: 'Supplier mitra pengirim wajib dipilih!' };
@@ -145,6 +161,21 @@ export function useGoodsReceivingSlice({
           success: false,
           message: `Jumlah stok jual diterima untuk "${item.productName || 'produk'}" harus lebih dari 0!`,
         };
+      }
+      if (linkedPlan) {
+        const product = products.find((candidate) => candidate.id === item.productId);
+        const supplier = product?.supplierId ? suppliers.find((candidate) => candidate.id === product.supplierId) : undefined;
+        const categoryId = product?.masterCategoryId || supplier?.masterCategoryId;
+        const category = categoryId ? masterCategories.find((candidate) => candidate.id === categoryId) : undefined;
+        if (!product || !supplier || category?.categoryType !== 'BELI (RESELLER)') {
+          posSound.error();
+          return { success: false, message: `SKU ${item.productName || item.productId} bukan produk reseller yang valid.` };
+        }
+        const mainCatalogProduct = products.find((candidate) => candidate.branchId === mainBranch?.id && (candidate.sku === item.productSku || candidate.name === item.productName));
+        if (!mainCatalogProduct) {
+          posSound.error();
+          return { success: false, message: `SKU ${item.productName || item.productId} belum memiliki master produk di Cabang Utama.` };
+        }
       }
     }
 
@@ -181,7 +212,7 @@ export function useGoodsReceivingSlice({
     const newRecord: GoodsReceiptRecord = {
       ...receiptData,
       id,
-      branchId: selectedBranchId,
+      branchId: linkedPlan ? mainBranch!.id : selectedBranchId,
       receiptNumber,
       totalQuantity,
       totalPurchaseCost: safeTotalPurchaseCost,
@@ -198,7 +229,9 @@ export function useGoodsReceivingSlice({
     const newStockAdjustments: StockAdjustmentRecord[] = [];
 
     receiptData.items.forEach((item) => {
-      const pIdx = updatedProducts.findIndex((p) => p.id === item.productId);
+      const pIdx = linkedPlan
+        ? updatedProducts.findIndex((p) => p.branchId === mainBranch!.id && (p.sku === item.productSku || p.name === item.productName))
+        : updatedProducts.findIndex((p) => p.id === item.productId);
       if (pIdx >= 0) {
         const prevStock = updatedProducts[pIdx].stock;
         const newStock = prevStock + item.quantityReceived;
@@ -209,7 +242,7 @@ export function useGoodsReceivingSlice({
 
         newStockAdjustments.push({
           id: `adj-rcv-${Date.now()}-${item.productId}`,
-          productId: item.productId,
+          productId: pIdx >= 0 ? updatedProducts[pIdx].id : item.productId,
           productName: item.productName || updatedProducts[pIdx].name,
           type: 'increase',
           quantity: item.quantityReceived,
@@ -255,7 +288,9 @@ export function useGoodsReceivingSlice({
     // Generate and register Expiry Batches for saleable products
     const newBatches: ProductExpiryBatch[] = [];
     receiptData.items.forEach((item) => {
-      const prod = updatedProducts.find((p) => p.id === item.productId);
+      const prod = linkedPlan
+        ? updatedProducts.find((p) => p.branchId === mainBranch!.id && (p.sku === item.productSku || p.name === item.productName))
+        : updatedProducts.find((p) => p.id === item.productId);
       if (prod) {
         if (item.expiryBatches && item.expiryBatches.length > 0) {
           item.expiryBatches.forEach((b, bIdx) => {
@@ -265,11 +300,11 @@ export function useGoodsReceivingSlice({
               newBatches.push({
                 id: `batch-${Date.now()}-${item.productId}-${bIdx}-${Math.random().toString(36).slice(2, 6)}`,
                 batchNumber: b.batchNumber || `BCH-${receiptNumber}-${bIdx + 1}`,
-                productId: item.productId,
+                productId: prod.id,
                 productName: item.productName || prod.name,
                 sku: item.productSku || prod.sku,
-                branchId: selectedBranchId,
-                branchName: selectedBranch.name,
+                branchId: linkedPlan ? mainBranch!.id : selectedBranchId,
+                branchName: linkedPlan ? mainBranch!.name : selectedBranch.name,
                 expiryType: expType,
                 expiryDate: b.expiryDate || now.toISOString().slice(0, 10),
                 initialQuantity: batchQty,
@@ -284,8 +319,8 @@ export function useGoodsReceivingSlice({
                 // `||` fallback is kept so a falsy product value still falls
                 // back to the receipt type.
                 ownershipType: (prod.ownershipType || (receiptData.receiptType === 'Konsinyasi' ? 'consignment' : 'owned')) === 'consignment' ? 'consignment' : 'owned',
-                supplierId: receiptData.supplierId,
-                supplierName: receiptData.supplierName,
+                supplierId: item.supplierId || receiptData.supplierId,
+                supplierName: item.supplierName || receiptData.supplierName,
                 category: prod.category,
                 status: 'active',
                 notes: b.notes || (expType === 'daily' ? 'Batch Expired Harian' : 'Batch Expired Multi-Hari'),
@@ -301,11 +336,11 @@ export function useGoodsReceivingSlice({
           newBatches.push({
             id: `batch-${Date.now()}-${item.productId}-0-${Math.random().toString(36).slice(2, 6)}`,
             batchNumber: `BCH-${receiptNumber}-1`,
-            productId: item.productId,
+            productId: prod.id,
             productName: item.productName || prod.name,
             sku: item.productSku || prod.sku,
-            branchId: selectedBranchId,
-            branchName: selectedBranch.name,
+            branchId: linkedPlan ? mainBranch!.id : selectedBranchId,
+            branchName: linkedPlan ? mainBranch!.name : selectedBranch.name,
             expiryType: expType,
             expiryDate: defaultExp,
             initialQuantity: item.quantityReceived,
@@ -316,8 +351,8 @@ export function useGoodsReceivingSlice({
             unitCost: item.actualBuyPrice || item.buyPrice || 0,
             // Normalize 'own' -> 'owned'; see the note on the batch above.
             ownershipType: (prod.ownershipType || (receiptData.receiptType === 'Konsinyasi' ? 'consignment' : 'owned')) === 'consignment' ? 'consignment' : 'owned',
-            supplierId: receiptData.supplierId,
-            supplierName: receiptData.supplierName,
+            supplierId: item.supplierId || receiptData.supplierId,
+            supplierName: item.supplierName || receiptData.supplierName,
             category: prod.category,
             status: 'active',
             notes: expType === 'daily' ? 'Batch Expired Harian' : 'Batch Expired Multi-Hari',
@@ -379,19 +414,21 @@ export function useGoodsReceivingSlice({
 
   // =========================================================================
   // POS-US-073, POS-US-074, POS-US-075: RENCANA PEMBELIAN (PURCHASE PLANNING)
-  // Superadmin Only - Owned Purchases Only - No stock edits in this module
+  // Superadmin only - centralized reseller purchasing; no stock edits at plan creation
   // =========================================================================
 
   // Create Purchase Plan (Superadmin Only)
   const addPurchasePlan = (data: {
     namaRencana: string;
-    branchId: string;
-    masterCategoryId: string;
-    supplierId: string;
     lines: {
       productId: string;
       plannedQuantity: number;
       plannedBuyPrice: number;
+      pickupDate: string;
+      sourceBranchIds?: string[];
+      sourceBranchNames?: string[];
+      sourceOrderIds?: string[];
+      masterCategoryId?: string;
       itemType?: PurchasePlanItemType;
       sourcePoRef?: string;
       supplierId?: string;
@@ -400,7 +437,6 @@ export function useGoodsReceivingSlice({
     }[];
     notes?: string;
     sourceOrderIds?: string[];
-    attachedPoNumbers?: string[];
   }) => {
     // 1. Permission check
     if (currentUser.role !== 'admin') {
@@ -409,11 +445,11 @@ export function useGoodsReceivingSlice({
     }
 
     // 2. Validate Branch
-    const targetBranch = branches.find((b) => b.id === data.branchId);
-    if (!targetBranch || targetBranch.status === 'inactive') {
+    if (!mainBranch || mainBranch.status === 'inactive') {
       posSound.error();
-      return { success: false, message: 'Cabang aktif wajib dipilih sebelum membuat rencana pembelian!' };
+      return { success: false, message: 'Cabang Utama aktif wajib tersedia sebelum membuat rencana pembelian!' };
     }
+    const targetBranch = mainBranch;
 
     // 3. Validate Plan Name
     if (!data.namaRencana || !data.namaRencana.trim()) {
@@ -421,19 +457,7 @@ export function useGoodsReceivingSlice({
       return { success: false, message: 'Nama Rencana Pembelian wajib diisi!' };
     }
 
-    // 4. Validate reseller Master Kategori and supplier
-    const masterCategory = masterCategories.find((category) => category.id === data.masterCategoryId);
-    if (!masterCategory || masterCategory.categoryType !== 'BELI (RESELLER)') {
-      posSound.error();
-      return { success: false, message: 'Pilih Master Kategori dengan tipe BELI (RESELLER)!' };
-    }
-    const targetSupplier = suppliers.find((supplier) => supplier.id === data.supplierId);
-    if (!targetSupplier || targetSupplier.masterCategoryId !== masterCategory.id) {
-      posSound.error();
-      return { success: false, message: 'Mitra supplier tidak sesuai dengan Master Kategori reseller!' };
-    }
-
-    // 5. Validate Product Lines
+    // 4. Validate product lines from reseller-linked master data.
     if (!data.lines || data.lines.length === 0) {
       posSound.error();
       return { success: false, message: 'Minimal harus ada 1 baris item produk dalam rencana pembelian!' };
@@ -455,13 +479,20 @@ export function useGoodsReceivingSlice({
         return { success: false, message: `Produk pada baris #${i + 1} tidak ditemukan!` };
       }
 
-      if (prod.supplierId !== targetSupplier.id) {
+      const lineSupplier = prod.supplierId ? suppliers.find((supplier) => supplier.id === prod.supplierId) : undefined;
+      const lineCategoryId = prod.masterCategoryId || lineSupplier?.masterCategoryId;
+      const lineCategory = lineCategoryId ? masterCategories.find((category) => category.id === lineCategoryId) : undefined;
+      if (!lineSupplier || !lineCategory || lineCategory.categoryType !== 'BELI (RESELLER)') {
         posSound.error();
-        return { success: false, message: `Produk pada baris #${i + 1} bukan produk dari supplier yang dipilih!` };
+        return { success: false, message: `Produk pada baris #${i + 1} belum terhubung ke supplier reseller dan Master Kategori reseller!` };
+      }
+      if (!line.pickupDate) {
+        posSound.error();
+        return { success: false, message: `Pickup date pada baris #${i + 1} wajib diisi!` };
       }
 
-      const qty = Math.floor(Number(line.plannedQuantity));
-      if (isNaN(qty) || qty <= 0) {
+      const qty = Number(line.plannedQuantity);
+      if (!Number.isInteger(qty) || qty <= 0) {
         posSound.error();
         return {
           success: false,
@@ -469,7 +500,11 @@ export function useGoodsReceivingSlice({
         };
       }
 
-      const price = Math.max(0, Number(line.plannedBuyPrice) || 0);
+      const price = Number(line.plannedBuyPrice);
+      if (!Number.isFinite(price) || price < 0) {
+        posSound.error();
+        return { success: false, message: `Harga beli pada baris #${i + 1} harus berupa angka nol atau lebih.` };
+      }
       const lineTotal = qty * price;
 
       // Determine itemType fallback
@@ -484,10 +519,6 @@ export function useGoodsReceivingSlice({
         }
       }
 
-      const lineSupplier = line.supplierId
-        ? suppliers.find((s) => s.id === line.supplierId)
-        : (prod.supplierId ? suppliers.find((s) => s.id === prod.supplierId) : undefined);
-
       formattedLines.push({
         id: `rpl-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
         productId: prod.id,
@@ -497,6 +528,11 @@ export function useGoodsReceivingSlice({
         plannedQuantity: qty,
         plannedBuyPrice: price,
         lineTotal,
+        pickupDate: line.pickupDate,
+        sourceBranchIds: line.sourceBranchIds,
+        sourceBranchNames: line.sourceBranchNames,
+        sourceOrderIds: line.sourceOrderIds,
+        masterCategoryId: lineCategory.id,
         itemType,
         sourcePoRef: line.sourcePoRef,
         supplierId: lineSupplier?.id || line.supplierId,
@@ -528,22 +564,22 @@ export function useGoodsReceivingSlice({
     const planId = `${prefix}${seq}`;
 
     // 8. Create Plan object (DO NOT ADD OR EDIT STOCK QUANTITY HERE)
+    const supplierIds = Array.from(new Set(formattedLines.map((line) => line.supplierId).filter(Boolean)));
+    const supplierNames = Array.from(new Set(formattedLines.map((line) => line.supplierName).filter(Boolean)));
     const newPlan: PurchasePlan = {
       id: planId,
       namaRencana: data.namaRencana.trim(),
       branchId: targetBranch.id,
       branchCode: targetBranch.code,
       branchName: targetBranch.name,
-      supplierId: targetSupplier.id,
-      supplierName: targetSupplier.name,
-      supplierCategory: targetSupplier.category || 'Umum',
-      masterCategoryId: masterCategory.id,
+      supplierId: supplierIds.length === 1 ? supplierIds[0]! : 'multi',
+      supplierName: supplierNames.length === 1 ? supplierNames[0]! : `${supplierNames.length} supplier reseller`,
+      supplierCategory: 'BELI (RESELLER)',
       lines: formattedLines,
       totalPlannedValue,
       status: 'Direncanakan',
       notes: data.notes?.trim() || undefined,
       sourceOrderIds: data.sourceOrderIds,
-      attachedPoNumbers: data.attachedPoNumbers,
       createdBy: currentUser.id,
       createdByName: `${currentUser.name} (${currentUser.role})`,
       createdAt: now.toISOString(),
@@ -557,7 +593,7 @@ export function useGoodsReceivingSlice({
       'CREATE_PURCHASE_PLAN',
       'purchase_plan',
       planId,
-      `Superadmin ${currentUser.name} membuat Rencana Pembelian ${planId} (${newPlan.namaRencana}) di ${targetBranch.name} untuk supplier ${targetSupplier.name} senilai Rp ${totalPlannedValue.toLocaleString('id-ID')}`
+      `Superadmin ${currentUser.name} membuat Rencana Pembelian ${planId} (${newPlan.namaRencana}) untuk penerimaan terpusat di ${targetBranch.name} senilai Rp ${totalPlannedValue.toLocaleString('id-ID')}`
     );
 
     posSound.cashRegister();
@@ -577,6 +613,11 @@ export function useGoodsReceivingSlice({
         productId: string;
         plannedQuantity: number;
         plannedBuyPrice: number;
+        pickupDate: string;
+        sourceBranchIds?: string[];
+        sourceBranchNames?: string[];
+        sourceOrderIds?: string[];
+        masterCategoryId?: string;
         itemType?: PurchasePlanItemType;
         sourcePoRef?: string;
         supplierId?: string;
@@ -585,7 +626,6 @@ export function useGoodsReceivingSlice({
       }[];
       notes?: string;
       sourceOrderIds?: string[];
-      attachedPoNumbers?: string[];
     }
   ) => {
     if (currentUser.role !== 'admin') {
@@ -622,13 +662,20 @@ export function useGoodsReceivingSlice({
           posSound.error();
           return { success: false, message: `Produk pada baris #${i + 1} tidak ditemukan!` };
         }
-        if (prod.supplierId !== targetPlan.supplierId) {
+        const lineSupplier = prod.supplierId ? suppliers.find((supplier) => supplier.id === prod.supplierId) : undefined;
+        const lineCategoryId = prod.masterCategoryId || lineSupplier?.masterCategoryId;
+        const lineCategory = lineCategoryId ? masterCategories.find((category) => category.id === lineCategoryId) : undefined;
+        if (!lineSupplier || !lineCategory || lineCategory.categoryType !== 'BELI (RESELLER)') {
           posSound.error();
-          return { success: false, message: `Produk pada baris #${i + 1} bukan produk dari supplier rencana!` };
+          return { success: false, message: `Produk pada baris #${i + 1} belum terhubung ke supplier reseller!` };
+        }
+        if (!line.pickupDate) {
+          posSound.error();
+          return { success: false, message: `Pickup date pada baris #${i + 1} wajib diisi!` };
         }
 
-        const qty = Math.floor(Number(line.plannedQuantity));
-        if (isNaN(qty) || qty <= 0) {
+        const qty = Number(line.plannedQuantity);
+        if (!Number.isInteger(qty) || qty <= 0) {
           posSound.error();
           return {
             success: false,
@@ -636,7 +683,11 @@ export function useGoodsReceivingSlice({
           };
         }
 
-        const price = Math.max(0, Number(line.plannedBuyPrice) || 0);
+        const price = Number(line.plannedBuyPrice);
+        if (!Number.isFinite(price) || price < 0) {
+          posSound.error();
+          return { success: false, message: `Harga beli pada baris #${i + 1} harus berupa angka nol atau lebih.` };
+        }
         const lineTotal = qty * price;
 
         let itemType: PurchasePlanItemType = line.itemType || 'direct_purchase';
@@ -650,10 +701,6 @@ export function useGoodsReceivingSlice({
           }
         }
 
-        const lineSupplier = line.supplierId
-          ? suppliers.find((s) => s.id === line.supplierId)
-          : (prod.supplierId ? suppliers.find((s) => s.id === prod.supplierId) : undefined);
-
         formattedLines.push({
           id: `rpl-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
           productId: prod.id,
@@ -663,6 +710,11 @@ export function useGoodsReceivingSlice({
           plannedQuantity: qty,
           plannedBuyPrice: price,
           lineTotal,
+          pickupDate: line.pickupDate,
+          sourceBranchIds: line.sourceBranchIds,
+          sourceBranchNames: line.sourceBranchNames,
+          sourceOrderIds: line.sourceOrderIds,
+          masterCategoryId: lineCategory.id,
           itemType,
           sourcePoRef: line.sourcePoRef,
           supplierId: lineSupplier?.id || line.supplierId,
@@ -683,7 +735,6 @@ export function useGoodsReceivingSlice({
       totalPlannedValue,
       notes: data.notes !== undefined ? data.notes.trim() : targetPlan.notes,
       sourceOrderIds: data.sourceOrderIds !== undefined ? data.sourceOrderIds : targetPlan.sourceOrderIds,
-      attachedPoNumbers: data.attachedPoNumbers !== undefined ? data.attachedPoNumbers : targetPlan.attachedPoNumbers,
       updatedAt: now.toISOString(),
       updatedBy: currentUser.id,
       updatedByName: `${currentUser.name} (${currentUser.role})`,
@@ -758,6 +809,9 @@ export function useGoodsReceivingSlice({
 
   // Lock Purchase Plan for Goods Receipt draft
   const lockPurchasePlanForReceipt = (id: string) => {
+    if (!mainBranch || selectedBranchId !== mainBranch.id) {
+      return { success: false, message: `Rencana reseller hanya dapat diproses di ${mainBranch?.name || 'Cabang Utama'}.` };
+    }
     const targetPlan = purchasePlans.find((p) => p.id === id);
     if (!targetPlan) {
       return { success: false, message: 'Rencana Pembelian tidak ditemukan!' };

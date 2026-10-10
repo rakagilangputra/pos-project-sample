@@ -22,6 +22,7 @@ import {
   FolderPlus,
   PackagePlus,
   Package,
+  ShieldAlert,
 } from 'lucide-react';
 import { Product, Category, Branch } from '../../types';
 import { formatIDR } from '../../utils/formatters';
@@ -124,29 +125,41 @@ export const ProductStockTable: React.FC<ProductStockTableProps> = ({
   const canEditProductInfo = isSuperadmin && !isBranchReadOnly && selectedBranch.status === 'active';
 
   return (
-    <div className="flex flex-col flex-1 h-full bg-[#FDFBF7] overflow-hidden">
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white">
       {/* Top Header inside Produk (Informasi Stok) */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-[#E5DACE] bg-white px-6 py-3.5 shrink-0">
-        <div>
-          <h2 className="text-base font-black text-[#2D241E] flex items-center gap-2">
+      <div className="flex shrink-0 flex-wrap items-start justify-between gap-3 px-4 pb-3 pt-5 sm:px-6 sm:pt-6">
+        <div className="min-w-0">
+          <h2 className="flex flex-wrap items-center gap-2 text-xl font-black text-[#2D241E]">
             <span>Produk (Informasi Stok)</span>
-            <span className="rounded-lg bg-amber-100 text-[#D97706] px-2 py-0.5 text-xs font-bold">
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-[#D97706]">
               {filteredProducts.length} Produk
             </span>
           </h2>
-          <p className="text-xs text-[#8C7B6C]">
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+            <span className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 font-bold text-amber-900">
+              <Building2 className="h-3.5 w-3.5" aria-hidden="true" />
+              {selectedBranch.name} ({selectedBranch.city})
+            </span>
+            {(isBranchReadOnly || selectedBranch.status === 'inactive') && (
+              <span className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 font-bold text-rose-800">
+                <ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />
+                Mode Hanya Baca (Nonaktif)
+              </span>
+            )}
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-[#8C7B6C]">
             Katalog master produk, ketersediaan stok fisik cabang, dan penyesuaian informasi barang.
           </p>
         </div>
 
         {/* Action Buttons: Kategori Master & Tambah Produk Baru */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {onOpenAddCategory && (
             <button
               type="button"
               id="product-stock-btn-add-category"
               onClick={onOpenAddCategory}
-              className="flex items-center gap-1.5 rounded-xl border border-[#E5DACE] bg-white px-3.5 py-2 text-xs font-bold text-[#6D5D50] hover:bg-amber-50 hover:text-[#D97706] shadow-xs active:scale-95 transition"
+              className="flex h-10 items-center gap-2 rounded-lg border border-[#E5DACE] bg-white px-4 text-xs font-bold text-[#2D241E] transition hover:bg-amber-50 hover:text-[#D97706] active:scale-95"
             >
               <FolderPlus className="h-4 w-4" />
               <span>Kategori Master</span>
@@ -159,7 +172,7 @@ export const ProductStockTable: React.FC<ProductStockTableProps> = ({
               id="product-stock-btn-add-product"
               disabled={!canEditProductInfo}
               onClick={onOpenAddProduct}
-              className="flex items-center gap-1.5 rounded-xl bg-[#D97706] px-4 py-2 text-xs font-black text-white hover:bg-amber-700 shadow-xs active:scale-95 transition disabled:opacity-50"
+              className="flex h-10 items-center gap-2 rounded-lg bg-[#D97706] px-4 text-xs font-black text-white shadow-xs transition hover:bg-amber-700 active:scale-95 disabled:opacity-50"
             >
               <PackagePlus className="h-4 w-4" />
               <span>Tambah Produk Baru</span>
@@ -169,30 +182,32 @@ export const ProductStockTable: React.FC<ProductStockTableProps> = ({
       </div>
 
       {/* Main Table Content */}
-      <div className="flex flex-1 flex-col overflow-hidden p-6 space-y-4 min-h-0">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 px-4 pb-4 pt-2 sm:px-6 sm:pb-6">
         {/* -------------------------------------------------------------
             SEARCH & FILTER TOOLBAR
             ------------------------------------------------------------- */}
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white border-2 border-[#E5DACE] p-3.5 rounded-2xl shadow-xs">
+        <div className="flex shrink-0 flex-wrap items-center gap-3">
         {/* Search Bar */}
-        <div className="relative flex-1">
+        <div className="relative min-w-0 basis-full sm:min-w-[220px] sm:flex-[2_1_240px]">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#8C7B6C]" />
           <input
             type="text"
+            aria-label="Cari produk"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Cari nama produk, SKU, atau kategori..."
-            className="w-full rounded-xl border border-[#E5DACE] bg-[#FDFBF7] pl-10 pr-4 py-2 text-xs font-semibold text-[#2D241E] placeholder:text-[#8C7B6C] focus:border-[#D97706] focus:outline-none"
+            className="h-10 w-full rounded-lg border border-[#E5DACE] bg-white pl-10 pr-3 text-xs font-semibold text-[#2D241E] placeholder:text-[#8C7B6C] focus:border-[#D97706] focus:outline-none"
           />
         </div>
 
-        {/* Filter Dropdowns - Hidden as requested */}
-        <div className="hidden" style={{ display: 'none' }}>
+        {/* Existing product filters, presented in a compact toolbar. */}
+        <div className="flex min-w-0 basis-full flex-wrap gap-3 xl:flex-[3_1_480px]">
           {/* Category Filter */}
           <select
+            aria-label="Kategori produk"
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
-            className="rounded-xl border border-[#E5DACE] bg-[#FDFBF7] px-3 py-2 text-xs font-semibold text-[#2D241E] focus:outline-none focus:border-[#D97706]"
+            className="h-10 min-w-0 flex-[1_1_150px] rounded-lg border border-[#E5DACE] bg-white px-3 text-xs font-semibold text-[#2D241E] focus:border-[#D97706] focus:outline-none"
           >
             <option value="all">Semua Kategori</option>
             {categories
@@ -206,9 +221,10 @@ export const ProductStockTable: React.FC<ProductStockTableProps> = ({
 
           {/* Product Type Filter */}
           <select
+            aria-label="Tipe produk"
             value={selectedProductType}
             onChange={(e) => setSelectedProductType(e.target.value)}
-            className="rounded-xl border border-[#E5DACE] bg-[#FDFBF7] px-3 py-2 text-xs font-semibold text-[#2D241E] focus:outline-none focus:border-[#D97706]"
+            className="h-10 min-w-0 flex-[1_1_150px] rounded-lg border border-[#E5DACE] bg-white px-3 text-xs font-semibold text-[#2D241E] focus:border-[#D97706] focus:outline-none"
           >
             <option value="all">Semua Tipe Produk</option>
             <option value="ready_stock">Ready Stock (Etalase)</option>
@@ -218,9 +234,10 @@ export const ProductStockTable: React.FC<ProductStockTableProps> = ({
 
           {/* Stock Condition Filter */}
           <select
+            aria-label="Kondisi stok"
             value={selectedStockCondition}
             onChange={(e) => setSelectedStockCondition(e.target.value)}
-            className="rounded-xl border border-[#E5DACE] bg-[#FDFBF7] px-3 py-2 text-xs font-semibold text-[#2D241E] focus:outline-none focus:border-[#D97706]"
+            className="h-10 min-w-0 flex-[1_1_150px] rounded-lg border border-[#E5DACE] bg-white px-3 text-xs font-semibold text-[#2D241E] focus:border-[#D97706] focus:outline-none"
           >
             <option value="all">Semua Kondisi Stok</option>
             <option value="safe">Stok Aman</option>
@@ -235,7 +252,7 @@ export const ProductStockTable: React.FC<ProductStockTableProps> = ({
       {/* -------------------------------------------------------------
           TABLE: BRANCH-SPECIFIC STOCK INFORMATION
           ------------------------------------------------------------- */}
-      <div className="flex-1 overflow-y-auto rounded-2xl border-2 border-[#E5DACE] bg-white shadow-xs">
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto rounded-xl border border-[#E5DACE] bg-white">
         {filteredProducts.length === 0 ? (
           <div className="flex h-64 flex-col items-center justify-center p-8 text-center text-[#8C7B6C]">
             <Filter className="h-10 w-10 opacity-30 mb-2 text-[#8C7B6C]" />
@@ -245,8 +262,8 @@ export const ProductStockTable: React.FC<ProductStockTableProps> = ({
             </p>
           </div>
         ) : (
-          <table className="w-full text-left text-xs border-collapse">
-            <thead className="sticky top-0 z-10 bg-[#FDFBF7] border-b-2 border-[#E5DACE] text-[11px] font-black uppercase tracking-wider text-[#8C7B6C]">
+          <table className="w-full min-w-[1080px] border-collapse text-left text-xs">
+            <thead className="sticky top-0 z-10 border-b border-[#E5DACE] bg-[#FDFBF7] text-[10px] font-bold uppercase tracking-wide text-[#8C7B6C]">
               <tr>
                 <th className="py-3 px-3.5 w-12 text-center">Foto</th>
                 <th className="py-3 px-3">Produk & SKU</th>
@@ -277,7 +294,7 @@ export const ProductStockTable: React.FC<ProductStockTableProps> = ({
                       <img
                         src={prod.image || 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&auto=format&fit=crop&q=80'}
                         alt={prod.name}
-                        className="h-10 w-10 rounded-xl object-cover border border-[#E5DACE] mx-auto shadow-2xs"
+                        className="mx-auto h-11 w-11 rounded-lg border border-[#E5DACE] object-cover"
                         onError={(e) => {
                           (e.target as HTMLImageElement).src =
                             'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&auto=format&fit=crop&q=80';
@@ -287,8 +304,8 @@ export const ProductStockTable: React.FC<ProductStockTableProps> = ({
 
                     {/* Product & SKU */}
                     <td className="py-2.5 px-3">
-                      <div className="font-black text-[#2D241E] text-xs">{prod.name}</div>
-                      <div className="text-[10px] text-[#8C7B6C] font-mono font-semibold">{prod.sku}</div>
+                      <div className="min-w-[160px] max-w-[260px] text-xs font-black leading-relaxed text-[#2D241E]">{prod.name}</div>
+                      <div className="mt-1 text-[10px] font-semibold text-[#8C7B6C]">{prod.sku}</div>
                     </td>
 
                     {/* Category */}
@@ -339,7 +356,7 @@ export const ProductStockTable: React.FC<ProductStockTableProps> = ({
                         </span>
                       ) : (
                         <div>
-                          <span className={`font-black text-sm ${isOut ? 'text-rose-700' : isLow ? 'text-amber-700' : 'text-[#2D241E]'}`}>
+                          <span className={`text-base font-black tabular-nums ${isOut ? 'text-rose-700' : isLow ? 'text-amber-700' : 'text-[#2D241E]'}`}>
                             {prod.stock}
                           </span>
                           <span className="text-[10px] text-[#8C7B6C] ml-1">pcs</span>
@@ -357,7 +374,7 @@ export const ProductStockTable: React.FC<ProductStockTableProps> = ({
                           {inTransit} pcs
                         </span>
                       ) : (
-                        <span className="text-gray-400 text-xs">0</span>
+                        <span className="text-xs font-semibold tabular-nums text-[#8C7B6C]">0</span>
                       )}
                     </td>
 
@@ -371,26 +388,26 @@ export const ProductStockTable: React.FC<ProductStockTableProps> = ({
                           {badStock} pcs
                         </span>
                       ) : (
-                        <span className="text-gray-400 text-xs">0</span>
+                        <span className="text-xs font-semibold tabular-nums text-[#8C7B6C]">0</span>
                       )}
                     </td>
 
                     {/* Stock Condition */}
                     <td className="py-2.5 px-3 text-center">
                       {isMto ? (
-                        <span className="inline-block rounded-full bg-blue-100 text-blue-800 px-2.5 py-0.5 text-[10px] font-black">
+                        <span className="inline-block whitespace-nowrap rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[10px] font-black text-blue-800">
                           Sesuai Pesanan
                         </span>
                       ) : isOut ? (
-                        <span className="inline-block rounded-full bg-rose-100 text-rose-800 px-2.5 py-0.5 text-[10px] font-black">
+                        <span className="inline-block whitespace-nowrap rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[10px] font-black text-rose-800">
                           Habis (0)
                         </span>
                       ) : isLow ? (
-                        <span className="inline-block rounded-full bg-amber-100 text-amber-900 px-2.5 py-0.5 text-[10px] font-black">
+                        <span className="inline-block whitespace-nowrap rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-900">
                           Menipis (≤{prod.lowStockThreshold})
                         </span>
                       ) : (
-                        <span className="inline-block rounded-full bg-emerald-100 text-emerald-800 px-2.5 py-0.5 text-[10px] font-black">
+                        <span className="inline-block whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-800">
                           Aman
                         </span>
                       )}

@@ -51,7 +51,15 @@ export function useOrgState() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const hasMainBranch = parsed.some((branch: StoreBranch) => branch?.isMainBranch);
+          return parsed.map((branch: StoreBranch) => ({
+            ...branch,
+            // Backward-compatible migration for branches saved before the
+            // centralized receiving flag existed.
+            isMainBranch: branch.isMainBranch ?? (!hasMainBranch && branch.id === 'branch-senopati'),
+          }));
+        }
       } catch {}
     }
     return INITIAL_BRANCHES;

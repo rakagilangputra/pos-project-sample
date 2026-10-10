@@ -12,6 +12,7 @@ export const INITIAL_BRANCHES: StoreBranch[] = [
     assignedSupervisorIds: ["usr-3"],
     receiptHeader: "SweetCrust Bakery — Senopati Flagship Store",
     status: "active",
+    isMainBranch: true,
     createdAt: "2026-01-01T08:00:00Z",
   },
   {

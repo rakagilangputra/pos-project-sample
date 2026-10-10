@@ -1,1861 +1,212 @@
-import React, { useState, useMemo } from 'react';
-import {
-  ClipboardList,
-  Plus,
-  Search,
-  Building2,
-  Truck,
-  CheckCircle2,
-  Clock,
-  AlertTriangle,
-  XCircle,
-  ArrowLeft,
-  Edit3,
-  Ban,
-  FileText,
-  DollarSign,
-  Package,
-  Trash2,
-  Info,
-  ShieldAlert,
-  Calendar,
-  X,
-  Layers,
-  ArrowUpRight,
-  Eye,
-  Paperclip,
-  CheckSquare,
-  Square,
-  Sparkles,
-  ChevronDown,
-  Filter,
-} from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Ban, Calendar, CheckCircle2, ChevronDown, ChevronRight, Clock, Eye, FileText, Package, Plus, Search, ShieldAlert, Trash2, Truck, XCircle } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
-import { PurchasePlan, PurchasePlanStatus, Product, PurchasePlanItemType, Order } from '../types';
-import { formatIDR, formatDateTime } from '../utils/formatters';
+import { Product, PurchasePlan, PurchasePlanStatus } from '../types';
+import { formatIDR } from '../utils/formatters';
 
 interface ProductLineInput {
   tempId: string;
   productId: string;
+  pickupDate: string;
   plannedQuantity: number;
   plannedBuyPrice: number;
-  itemType: PurchasePlanItemType;
-  sourcePoRef?: string;
-  supplierId?: string;
-  notes?: string;
+  sourceBranchNames: string[];
+  sourceOrderIds: string[];
 }
 
+interface DemandEntry {
+  productId: string;
+  sku: string;
+  productName: string;
+  pickupDate: string;
+  quantity: number;
+  supplierName: string;
+  sourceBranchNames: string[];
+  sourceBranchIds: string[];
+  sourceOrderIds: string[];
+}
+
+const today = () => new Date().toISOString().slice(0, 10);
+const dateLabel = (date: string) => new Date(`${date}T00:00:00`).toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+const uniqueStrings = (values: (string | undefined)[]) => Array.from(new Set(values.filter((value): value is string => Boolean(value))));
+
 export const PurchasePlanWorkspace: React.FC = () => {
-  const {
-    currentUser,
-    branches,
-    suppliers,
-    masterCategories,
-    products,
-    purchasePlans,
-    orders,
-    addPurchasePlan,
-    updatePurchasePlan,
-    cancelPurchasePlan,
-  } = usePOS();
-
-  // Superadmin permission verification
+  const { currentUser, branches, products, suppliers, masterCategories, orders, purchasePlans, addPurchasePlan, updatePurchasePlan, cancelPurchasePlan } = usePOS();
   const isSuperadmin = currentUser.role === 'admin';
+  const mainBranch = useMemo(() => branches.find((branch) => branch.isMainBranch) || branches.find((branch) => branch.id === 'branch-senopati') || branches.find((branch) => branch.status === 'active') || branches[0], [branches]);
+  const resellerSupplierIds = useMemo(() => new Set(suppliers.filter((supplier) => masterCategories.find((category) => category.id === supplier.masterCategoryId)?.categoryType === 'BELI (RESELLER)').map((supplier) => supplier.id)), [masterCategories, suppliers]);
+  const resellerProducts = useMemo(() => products.filter((product) => product.supplierId && resellerSupplierIds.has(product.supplierId)), [products, resellerSupplierIds]);
+  const catalogBySku = useMemo(() => {
+    const result = new Map<string, Product>();
+    [...resellerProducts].sort((a, b) => Number(b.branchId === mainBranch?.id) - Number(a.branchId === mainBranch?.id)).forEach((product) => {
+      if (!result.has(product.sku)) result.set(product.sku, product);
+    });
+    return result;
+  }, [mainBranch?.id, resellerProducts]);
+  const catalogProducts = useMemo(() => Array.from(catalogBySku.values()), [catalogBySku]);
 
-  // Navigation state within module: 'list' | 'create' | 'detail' | 'edit'
-  const [viewMode, setViewMode] = useState<'list' | 'create' | 'detail' | 'edit'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'create' | 'edit' | 'detail'>('list');
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
-
-  // List Filters
+  const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterBranchId, setFilterBranchId] = useState('all');
-  const [filterSupplierId, setFilterSupplierId] = useState('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [filterStartDate, setFilterStartDate] = useState('');
-  const [filterEndDate, setFilterEndDate] = useState('');
-
-  // Form State (Create / Edit)
-  const [formNamaRencana, setFormNamaRencana] = useState('');
-  const [formBranchId, setFormBranchId] = useState('');
-  const [formMasterCategoryId, setFormMasterCategoryId] = useState('');
-  const [formSupplierId, setFormSupplierId] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'all' | PurchasePlanStatus>('all');
+  const [formName, setFormName] = useState('');
   const [formNotes, setFormNotes] = useState('');
   const [formLines, setFormLines] = useState<ProductLineInput[]>([]);
-  const [formSourceOrderIds, setFormSourceOrderIds] = useState<string[]>([]);
-  const [formAttachedPoNumbers, setFormAttachedPoNumbers] = useState<string[]>([]);
+  const [newDate, setNewDate] = useState(today());
+  const [manualDateGroups, setManualDateGroups] = useState<string[]>([]);
+  const [manualProductByDate, setManualProductByDate] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
-
-  // Multi-PO Attachment Modal State
-  const [isAttachPoModalOpen, setIsAttachPoModalOpen] = useState(false);
-  const [tempSelectedPoIds, setTempSelectedPoIds] = useState<string[]>([]);
-  const [poSearchQuery, setPoSearchQuery] = useState('');
-
-  // Form Line Type Filter tab in editor
-  const [lineTypeTab, setLineTypeTab] = useState<'all' | PurchasePlanItemType>('all');
-
-  // Cancel Modal State (Superadmin cancellation)
-  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
-  const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
+  const [cancelPlanId, setCancelPlanId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
-  const [cancelError, setCancelError] = useState('');
 
-  const resellerMasterCategories = useMemo(
-    () => masterCategories.filter((category) => category.categoryType === 'BELI (RESELLER)'),
-    [masterCategories]
-  );
-  const resellerSuppliers = useMemo(
-    () => suppliers.filter((supplier) => resellerMasterCategories.some((category) => category.id === supplier.masterCategoryId)),
-    [resellerMasterCategories, suppliers]
-  );
-
-  const formSelectedMasterCategory = useMemo(
-    () => resellerMasterCategories.find((category) => category.id === formMasterCategoryId),
-    [formMasterCategoryId, resellerMasterCategories]
-  );
-
-  const formSupplierOptions = useMemo(
-    () => suppliers.filter((supplier) => supplier.masterCategoryId === formMasterCategoryId),
-    [formMasterCategoryId, suppliers]
-  );
-
-  const supplierProducts = useMemo(
-    () => products.filter((product) => product.supplierId === formSupplierId),
-    [formSupplierId, products]
-  );
-
-  const mtoDemandByProduct = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    const demand = new Map<string, { quantity: number; nearestPickupDate?: string; orderIds: string[] }>();
+  const demandEntries = useMemo<DemandEntry[]>(() => {
+    const demand = new Map<string, DemandEntry>();
+    const activeBranches = new Map(branches.filter((branch) => branch.status !== 'inactive').map((branch) => [branch.id, branch]));
+    const excluded = new Set(['cancelled', 'voided', 'picked_up', 'ready_for_pickup']);
     orders
-      .filter((order) =>
-        order.isMadeToOrder &&
-        order.orderStatus !== 'cancelled' &&
-        order.orderStatus !== 'voided' &&
-        order.orderStatus !== 'picked_up' &&
-        order.orderStatus !== 'ready_for_pickup' &&
-        Boolean(order.pickupDate) &&
-        (order.pickupDate || '') >= today &&
-        order.branchId === formBranchId
-      )
+      .filter((order) => order.isMadeToOrder && !excluded.has(order.orderStatus) && Boolean(order.pickupDate) && (order.pickupDate || '') >= today() && activeBranches.has(order.branchId || ''))
       .sort((a, b) => (a.pickupDate || '').localeCompare(b.pickupDate || ''))
       .forEach((order) => {
+        const branch = activeBranches.get(order.branchId || '');
         order.items.forEach((item) => {
-          const product = products.find((candidate) => candidate.id === item.productId);
-          if (!product || product.supplierId !== formSupplierId) return;
-          const current = demand.get(product.id) || { quantity: 0, nearestPickupDate: order.pickupDate, orderIds: [] };
+          const sourceProduct = products.find((product) => product.id === item.productId);
+          if (!sourceProduct?.supplierId || !resellerSupplierIds.has(sourceProduct.supplierId) || !order.pickupDate) return;
+          const product = catalogBySku.get(sourceProduct.sku) || sourceProduct;
+          const supplier = suppliers.find((candidate) => candidate.id === product.supplierId);
+          if (!supplier) return;
+          const key = `${order.pickupDate}::${product.sku}`;
+          const current = demand.get(key) || {
+            productId: product.id,
+            sku: product.sku,
+            productName: product.name,
+            pickupDate: order.pickupDate,
+            quantity: 0,
+            supplierName: supplier.name,
+            sourceBranchNames: [],
+            sourceBranchIds: [],
+            sourceOrderIds: [],
+          };
           current.quantity += item.quantity;
-          current.nearestPickupDate = current.nearestPickupDate && current.nearestPickupDate < (order.pickupDate || '')
-            ? current.nearestPickupDate
-            : order.pickupDate;
-          if (!current.orderIds.includes(order.id)) current.orderIds.push(order.id);
-          demand.set(product.id, current);
+          if (branch && !current.sourceBranchNames.includes(branch.name)) current.sourceBranchNames.push(branch.name);
+          if (branch && !current.sourceBranchIds.includes(branch.id)) current.sourceBranchIds.push(branch.id);
+          if (!current.sourceOrderIds.includes(order.id)) current.sourceOrderIds.push(order.id);
+          demand.set(key, current);
         });
       });
-    return demand;
-  }, [formBranchId, formSupplierId, orders, products]);
+    return [...demand.values()].sort((a, b) => a.pickupDate.localeCompare(b.pickupDate) || a.productName.localeCompare(b.productName) || a.supplierName.localeCompare(b.supplierName) || a.sourceBranchNames.join(',').localeCompare(b.sourceBranchNames.join(',')));
+  }, [branches, catalogBySku, orders, products, resellerSupplierIds, suppliers]);
+  const demandByKey = useMemo(() => new Map(demandEntries.map((entry) => [`${entry.pickupDate}::${entry.sku}`, entry])), [demandEntries]);
+  const demandDates = useMemo(() => Array.from(new Set(demandEntries.map((entry) => entry.pickupDate))), [demandEntries]);
+  const formDates = useMemo(() => Array.from(new Set([...demandDates, ...manualDateGroups, ...formLines.map((line) => line.pickupDate)].filter(Boolean))).sort(), [demandDates, formLines, manualDateGroups]);
+  const formTotal = useMemo(() => formLines.reduce((sum, line) => sum + line.plannedQuantity * line.plannedBuyPrice, 0), [formLines]);
+  const activePlan = selectedPlanId ? purchasePlans.find((plan) => plan.id === selectedPlanId) : undefined;
 
-  const sortedSupplierProducts = useMemo(
-    () => [...supplierProducts].sort((a, b) => {
-      const aDate = mtoDemandByProduct.get(a.id)?.nearestPickupDate || '9999-12-31';
-      const bDate = mtoDemandByProduct.get(b.id)?.nearestPickupDate || '9999-12-31';
-      return aDate.localeCompare(bDate) || a.name.localeCompare(b.name);
-    }),
-    [mtoDemandByProduct, supplierProducts]
-  );
-  const allProducts = sortedSupplierProducts;
+  const isCompatible = (plan: PurchasePlan) => plan.lines.some((line) => {
+    const product = products.find((candidate) => candidate.id === line.productId);
+    return Boolean((product?.supplierId && resellerSupplierIds.has(product.supplierId)) || (line.supplierId && resellerSupplierIds.has(line.supplierId)));
+  });
+  const visiblePlans = useMemo(() => purchasePlans.filter((plan) => {
+    if (!isCompatible(plan) || (filterStatus !== 'all' && plan.status !== filterStatus)) return false;
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    return plan.id.toLowerCase().includes(query) || plan.namaRencana.toLowerCase().includes(query) || plan.lines.some((line) => line.productName.toLowerCase().includes(query) || line.productSku.toLowerCase().includes(query) || (line.supplierName || '').toLowerCase().includes(query));
+  }), [filterStatus, products, purchasePlans, resellerSupplierIds, searchQuery]);
+  const stats = useMemo(() => ({ total: visiblePlans.length, planned: visiblePlans.filter((plan) => plan.status === 'Direncanakan').length, realized: visiblePlans.filter((plan) => plan.status === 'Terealisasi').length, cancelled: visiblePlans.filter((plan) => plan.status === 'Dibatalkan').length }), [visiblePlans]);
 
-  const availableOrdersForPlanning = useMemo(
-    () => orders.filter((order) => order.orderStatus !== 'voided' && order.orderStatus !== 'cancelled'),
-    [orders]
-  );
-
-  // Total estimation of plan form lines
-  const calculatedFormTotal = useMemo(() => {
-    return formLines.reduce(
-      (sum, l) => sum + (Number(l.plannedQuantity) || 0) * (Number(l.plannedBuyPrice) || 0),
-      0
-    );
-  }, [formLines]);
-
-  // Selected plan detail object
-  const activePlan = useMemo(() => {
-    if (!selectedPlanId) return null;
-    return purchasePlans.find((p) => p.id === selectedPlanId) || null;
-  }, [purchasePlans, selectedPlanId]);
-
-  // Filtered plans list
-  const filteredPlans = useMemo(() => {
-    return purchasePlans.filter((plan) => {
-      const compatible = Boolean(
-        plan.masterCategoryId &&
-        resellerMasterCategories.some((category) => category.id === plan.masterCategoryId) &&
-        suppliers.some((supplier) => supplier.id === plan.supplierId && supplier.masterCategoryId === plan.masterCategoryId)
-      );
-      if (!compatible) return false;
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchId = plan.id.toLowerCase().includes(q);
-        const matchName = plan.namaRencana.toLowerCase().includes(q);
-        const matchSupplier = plan.supplierName.toLowerCase().includes(q);
-        const matchPo = plan.attachedPoNumbers?.some((po) => po.toLowerCase().includes(q));
-        if (!matchId && !matchName && !matchSupplier && !matchPo) return false;
-      }
-
-      if (filterBranchId !== 'all' && plan.branchId !== filterBranchId) {
-        return false;
-      }
-
-      if (filterSupplierId !== 'all' && plan.supplierId !== filterSupplierId) {
-        return false;
-      }
-
-      if (filterStatus !== 'all' && plan.status !== filterStatus) {
-        return false;
-      }
-
-      if (filterStartDate) {
-        const planDateStr = plan.createdAt.substring(0, 10);
-        if (planDateStr < filterStartDate) return false;
-      }
-      if (filterEndDate) {
-        const planDateStr = plan.createdAt.substring(0, 10);
-        if (planDateStr > filterEndDate) return false;
-      }
-
-      return true;
-    });
-  }, [purchasePlans, resellerMasterCategories, suppliers, searchQuery, filterBranchId, filterSupplierId, filterStatus, filterStartDate, filterEndDate]);
-
-  // Statistics counters
-  const stats = useMemo(() => {
-    const visiblePlans = purchasePlans.filter((plan) => Boolean(plan.masterCategoryId && resellerMasterCategories.some((category) => category.id === plan.masterCategoryId) && suppliers.some((supplier) => supplier.id === plan.supplierId && supplier.masterCategoryId === plan.masterCategoryId)));
-    const total = visiblePlans.length;
-    const direncanakan = visiblePlans.filter((p) => p.status === 'Direncanakan').length;
-    const terealisasi = visiblePlans.filter((p) => p.status === 'Terealisasi').length;
-    const dibatalkan = visiblePlans.filter((p) => p.status === 'Dibatalkan').length;
-    const totalPlannedValue = visiblePlans
-      .filter((p) => p.status !== 'Dibatalkan')
-      .reduce((sum, p) => sum + p.totalPlannedValue, 0);
-
-    return { total, direncanakan, terealisasi, dibatalkan, totalPlannedValue };
-  }, [purchasePlans, resellerMasterCategories, suppliers]);
-
-  // Helper to infer item type for an item or product
-  const inferItemType = (prod?: Product, cartItemOwnership?: string): PurchasePlanItemType => {
-    if (!prod) return 'direct_purchase';
-    if (prod.ownershipType === 'consignment' || cartItemOwnership === 'consignment') {
-      return 'consignment';
-    }
-    if (prod.isMadeToOrder || prod.category === 'Pastry' || prod.category === 'Bakery' || prod.categoryLabel?.toLowerCase().includes('pastry') || prod.categoryLabel?.toLowerCase().includes('roti')) {
-      return 'in_house';
-    }
-    return 'direct_purchase';
-  };
-
-  // Initialize Create Form
-  const handleStartCreate = () => {
-    if (!isSuperadmin) return;
-    const firstActiveBranch = branches.find((b) => b.status !== 'inactive') || branches[0];
-    const firstResellerCategory = resellerMasterCategories[0];
-    const firstSupplier = suppliers.find((supplier) => supplier.masterCategoryId === firstResellerCategory?.id);
-    const defaultProduct = products.find((product) => product.supplierId === firstSupplier?.id);
-    const defaultDemandQuantity = defaultProduct
-      ? orders
-          .filter((order) => order.branchId === firstActiveBranch?.id && order.isMadeToOrder && order.orderStatus !== 'cancelled' && order.orderStatus !== 'voided' && order.orderStatus !== 'picked_up' && order.orderStatus !== 'ready_for_pickup' && Boolean(order.pickupDate) && (order.pickupDate || '') >= new Date().toISOString().slice(0, 10))
-          .reduce((sum, order) => sum + order.items.filter((item) => item.productId === defaultProduct.id).reduce((itemSum, item) => itemSum + item.quantity, 0), 0)
-      : 0;
-
-    setFormNamaRencana('');
-    setFormBranchId(firstActiveBranch?.id || '');
-    setFormMasterCategoryId(firstResellerCategory?.id || '');
-    setFormSupplierId(firstSupplier?.id || '');
-    setFormNotes('');
-    setFormSourceOrderIds([]);
-    setFormAttachedPoNumbers([]);
-    setFormLines(
-      defaultProduct
-        ? [
-            {
-              tempId: `line-${Date.now()}-1`,
-              productId: defaultProduct.id,
-              plannedQuantity: defaultDemandQuantity || 1,
-              plannedBuyPrice: defaultProduct.buyPrice ?? 0,
-              itemType: 'direct_purchase',
-              sourcePoRef: 'MTO / Input Manual',
-              supplierId: defaultProduct.supplierId || suppliers[0]?.id,
-            },
-          ]
-        : []
-    );
-    setFormError('');
-    setFormSuccess('');
-    setViewMode('create');
-  };
-
-  // Initialize Edit Form
-  const handleStartEdit = (plan: PurchasePlan) => {
-    if (!isSuperadmin) return;
-    if (plan.status !== 'Direncanakan' || plan.receivingLocked) {
-      alert(`Hanya rencana berstatus "Direncanakan" yang dapat diedit! (Status saat ini: ${plan.status})`);
-      return;
-    }
-
+  const resetForm = () => { setFormName(''); setFormNotes(''); setFormLines([]); setNewDate(today()); setManualDateGroups([]); setManualProductByDate({}); setExpandedDates({}); setFormError(''); setFormSuccess(''); };
+  const startCreate = () => { if (isSuperadmin) { resetForm(); setViewMode('create'); } };
+  const startEdit = (plan: PurchasePlan) => {
+    if (plan.status !== 'Direncanakan' || plan.receivingLocked) { alert('Rencana ini sedang terkunci atau sudah tidak dapat diedit.'); return; }
     setSelectedPlanId(plan.id);
-    setFormNamaRencana(plan.namaRencana);
-    setFormBranchId(plan.branchId); // Locked in UI
-    setFormMasterCategoryId(plan.masterCategoryId || suppliers.find((supplier) => supplier.id === plan.supplierId)?.masterCategoryId || '');
-    setFormSupplierId(plan.supplierId);
+    setFormName(plan.namaRencana);
     setFormNotes(plan.notes || '');
-    setFormSourceOrderIds(plan.sourceOrderIds || []);
-    setFormAttachedPoNumbers(plan.attachedPoNumbers || []);
-    setFormLines(
-      plan.lines.map((l, idx) => ({
-        tempId: `line-${Date.now()}-${idx}`,
-        productId: l.productId,
-        plannedQuantity: l.plannedQuantity,
-        plannedBuyPrice: l.plannedBuyPrice,
-        itemType: l.itemType || 'direct_purchase',
-        sourcePoRef: l.sourcePoRef || 'Rencana Awal',
-        supplierId: l.supplierId,
-        notes: l.notes,
-      }))
-    );
+    setFormLines(plan.lines.map((line, index) => ({ tempId: `${line.id}-${index}`, productId: line.productId, pickupDate: line.pickupDate || today(), plannedQuantity: line.plannedQuantity, plannedBuyPrice: line.plannedBuyPrice, sourceBranchNames: line.sourceBranchNames || [], sourceOrderIds: line.sourceOrderIds || [] })));
+    setNewDate(today());
+    setManualDateGroups([]);
+    setManualProductByDate({});
+    setExpandedDates({});
+    setFormError(''); setFormSuccess(''); setViewMode('edit');
+  };
+  const addLine = (productId: string, pickupDate: string, recommended?: DemandEntry) => {
+    const selectedProduct = products.find((candidate) => candidate.id === productId) || catalogBySku.get(productId);
+    if (!selectedProduct || !pickupDate) return;
+    const product = catalogBySku.get(selectedProduct.sku) || selectedProduct;
+    const existing = formLines.find((line) => line.productId === product.id && line.pickupDate === pickupDate);
+    if (existing) {
+      setFormLines((previous) => previous.map((line) => line.tempId === existing.tempId ? { ...line, plannedQuantity: line.plannedQuantity + (recommended?.quantity || 1) } : line));
+      return;
+    }
+    setFormLines((previous) => [...previous, { tempId: `line-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, productId: product.id, pickupDate, plannedQuantity: recommended?.quantity || 1, plannedBuyPrice: product.buyPrice ?? 0, sourceBranchNames: recommended?.sourceBranchNames || [], sourceOrderIds: recommended?.sourceOrderIds || [] }]);
+    setExpandedDates((previous) => ({ ...previous, [pickupDate]: true }));
+  };
+  const openDateGroup = () => {
+    if (!newDate) {
+      setFormError('Tanggal pickup wajib dipilih.');
+      return;
+    }
+    setManualDateGroups((previous) => previous.includes(newDate) ? previous : [...previous, newDate]);
+    setExpandedDates((previous) => ({ ...previous, [newDate]: true }));
     setFormError('');
-    setFormSuccess('');
-    setViewMode('edit');
   };
-
-  // View Detail
-  const handleViewDetail = (planId: string) => {
-    setSelectedPlanId(planId);
-    setViewMode('detail');
-  };
-
-  // Add line to form
-  const handleAddFormLine = (preferredType: PurchasePlanItemType = 'direct_purchase') => {
-    const prodToAdd = sortedSupplierProducts[0];
-    if (!prodToAdd) {
-      setFormError('Tidak ada produk yang tersedia.');
+  const removeDateGroup = (date: string) => {
+    if (formLines.some((line) => line.pickupDate === date) || demandEntries.some((entry) => entry.pickupDate === date)) {
+      setFormError('Tanggal hanya dapat dihapus jika belum memiliki SKU atau rekomendasi MTO.');
       return;
     }
-    setFormLines((prev) => [
-      ...prev,
-      {
-        tempId: `line-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        productId: prodToAdd.id,
-        plannedQuantity: mtoDemandByProduct.get(prodToAdd.id)?.quantity || 1,
-        plannedBuyPrice: prodToAdd.buyPrice ?? 0,
-        itemType: 'direct_purchase',
-        sourcePoRef: preferredType === 'adhoc' ? 'Stok Tambahan' : 'MTO / Input Manual',
-        supplierId: prodToAdd.supplierId || (suppliers[0]?.id),
-      },
-    ]);
-  };
-
-  // Add Ad-Hoc Plan Line
-  const handleAddAdhocLine = () => {
-    handleAddFormLine('adhoc');
-  };
-
-  // Remove line from form
-  const handleRemoveFormLine = (tempId: string) => {
-    if (formLines.length <= 1) {
-      setFormError('Minimal harus ada 1 baris item produk dalam rencana pembelian!');
-      return;
-    }
-    setFormLines((prev) => prev.filter((l) => l.tempId !== tempId));
-  };
-
-  // Update line in form
-  const handleUpdateFormLine = (
-    tempId: string,
-    field: keyof ProductLineInput,
-    value: any
-  ) => {
-    setFormLines((prev) =>
-      prev.map((l) => {
-        if (l.tempId === tempId) {
-          return { ...l, [field]: value };
-        }
-        return l;
-      })
-    );
-  };
-
-  // Open Multi-PO attach modal
-  const handleOpenAttachPoModal = () => {
-    setTempSelectedPoIds([...formSourceOrderIds]);
-    setPoSearchQuery('');
-    setIsAttachPoModalOpen(true);
-  };
-
-  // Confirm attach selected POs and pull items into formLines
-  const handleConfirmAttachOrders = () => {
-    if (tempSelectedPoIds.length === 0) {
-      setIsAttachPoModalOpen(false);
-      return;
-    }
-
-    const selectedOrders = availableOrdersForPlanning.filter((o) => tempSelectedPoIds.includes(o.id));
-    const attachedPoNumbers = selectedOrders.map((o) => `#${o.orderNumber}`);
-
-    // Aggregate items across selected POs by productId and inferred itemType
-    interface AggregatedItem {
-      productId: string;
-      productName: string;
-      quantity: number;
-      price: number;
-      itemType: PurchasePlanItemType;
-      sourcePos: string[];
-      supplierId?: string;
-    }
-
-    const aggregatedMap = new Map<string, AggregatedItem>();
-
-    selectedOrders.forEach((order) => {
-      order.items.forEach((item) => {
-        const prod = products.find((p) => p.id === item.productId);
-        const itemType = inferItemType(prod, item.ownershipType);
-        const aggKey = `${item.productId}_${itemType}`;
-
-        if (!aggregatedMap.has(aggKey)) {
-          aggregatedMap.set(aggKey, {
-            productId: item.productId,
-            productName: item.productName || prod?.name || 'Item',
-            quantity: item.quantity,
-            price: Math.round(item.unitPrice * 0.6),
-            itemType,
-            sourcePos: [`#${order.orderNumber}`],
-            supplierId: item.supplierId || prod?.supplierId,
-          });
-        } else {
-          const existing = aggregatedMap.get(aggKey)!;
-          existing.quantity += item.quantity;
-          if (!existing.sourcePos.includes(`#${order.orderNumber}`)) {
-            existing.sourcePos.push(`#${order.orderNumber}`);
-          }
-        }
-      });
+    setManualDateGroups((previous) => previous.filter((groupDate) => groupDate !== date));
+    setExpandedDates((previous) => {
+      const next = { ...previous };
+      delete next[date];
+      return next;
     });
-
-    // Retain existing manual/adhoc lines if any, or combine
-    const preservedLines = formLines.filter((l) => !l.sourcePoRef?.startsWith('PO #'));
-
-    const newLinesFromPo: ProductLineInput[] = Array.from(aggregatedMap.values()).map((agg, idx) => ({
-      tempId: `po-line-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
-      productId: agg.productId,
-      plannedQuantity: agg.quantity,
-      plannedBuyPrice: agg.price,
-      itemType: agg.itemType,
-      sourcePoRef: `PO ${agg.sourcePos.join(', ')}`,
-      supplierId: agg.supplierId || (suppliers[0]?.id),
-      notes: `Kebutuhan dari ${agg.sourcePos.join(', ')}`,
-    }));
-
-    const finalLines = [...newLinesFromPo, ...preservedLines];
-
-    setFormLines(finalLines);
-    setFormSourceOrderIds(tempSelectedPoIds);
-    setFormAttachedPoNumbers(attachedPoNumbers);
-
-    // Auto-suggest name if empty
-    if (!formNamaRencana.trim() || formNamaRencana.startsWith('Rencana Pengadaan PO:')) {
-      const summaryPos = attachedPoNumbers.slice(0, 3).join(', ') + (attachedPoNumbers.length > 3 ? ` (+${attachedPoNumbers.length - 3} PO)` : '');
-      setFormNamaRencana(`Rencana Pengadaan PO: ${summaryPos}`);
-    }
-
-    // Default supplier to multi
-    if (!formSupplierId || formSupplierId === '') {
-      setFormSupplierId('multi');
-    }
-
-    setIsAttachPoModalOpen(false);
-  };
-
-  // Selected supplier in form for category preview
-  const formSelectedSupplier = useMemo(() => {
-    return suppliers.find((s) => s.id === formSupplierId);
-  }, [suppliers, formSupplierId]);
-
-  // Handle Save Plan (Create or Edit)
-  const handleSavePlan = (e: React.FormEvent) => {
-    e.preventDefault();
+    setManualProductByDate((previous) => {
+      const next = { ...previous };
+      delete next[date];
+      return next;
+    });
     setFormError('');
-    setFormSuccess('');
+  };
+  const updateLine = (tempId: string, field: 'plannedQuantity' | 'plannedBuyPrice' | 'pickupDate', value: string) => setFormLines((previous) => previous.map((line) => line.tempId === tempId ? { ...line, [field]: field === 'pickupDate' ? value : Number(value) } : line));
 
-    if (!formNamaRencana.trim()) {
-      setFormError('Nama Rencana Pembelian wajib diisi!');
-      return;
+  const savePlan = (event: React.FormEvent) => {
+    event.preventDefault(); setFormError('');
+    if (!formName.trim()) return setFormError('Nama Rencana Pembelian wajib diisi.');
+    if (!formLines.length) return setFormError('Pilih atau tambahkan minimal satu SKU.');
+    for (const [index, line] of formLines.entries()) {
+      if (!line.pickupDate) return setFormError(`Pickup date pada baris ${index + 1} wajib diisi.`);
+      if (!Number.isInteger(line.plannedQuantity) || line.plannedQuantity <= 0) return setFormError(`Quantity pada baris ${index + 1} harus berupa bilangan bulat positif.`);
+      if (!Number.isFinite(line.plannedBuyPrice) || line.plannedBuyPrice < 0) return setFormError(`Harga beli pada baris ${index + 1} tidak valid.`);
     }
-
-    if (!formBranchId) {
-      setFormError('Cabang wajib dipilih!');
-      return;
-    }
-
-    const selectedBranch = branches.find((branch) => branch.id === formBranchId);
-    if (!selectedBranch || selectedBranch.status === 'inactive') {
-      setFormError('Cabang nonaktif tidak dapat digunakan untuk membuat rencana pembelian.');
-      return;
-    }
-
-    if (!formSelectedMasterCategory || !formSupplierId || !formSupplierOptions.some((supplier) => supplier.id === formSupplierId)) {
-      setFormError('Pilih Master Kategori reseller dan Mitra Supplier terlebih dahulu.');
-      return;
-    }
-
-    if (formLines.length === 0) {
-      setFormError('Minimal harus ada 1 baris item produk!');
-      return;
-    }
-
-    // Validate quantities
-    for (let i = 0; i < formLines.length; i++) {
-      const l = formLines[i];
-      if (!l.plannedQuantity || l.plannedQuantity <= 0) {
-        setFormError(`Kuantitas pada baris #${i + 1} harus lebih besar dari 0!`);
-        return;
-      }
-      if (!Number.isFinite(Number(l.plannedBuyPrice)) || Number(l.plannedBuyPrice) < 0) {
-        setFormError(`Harga pembelian pada baris #${i + 1} tidak valid!`);
-        return;
-      }
-      const product = products.find((candidate) => candidate.id === l.productId);
-      if (!product || product.supplierId !== formSupplierId) {
-        setFormError(`Produk pada baris #${i + 1} tidak sesuai dengan supplier yang dipilih!`);
-        return;
-      }
-    }
-
-    const mtoOrderIds: string[] = Array.from(new Set<string>(formLines.flatMap((line) => mtoDemandByProduct.get(line.productId)?.orderIds || [])));
-
-    if (viewMode === 'create') {
-      const res = addPurchasePlan({
-        namaRencana: formNamaRencana,
-        branchId: formBranchId,
-        masterCategoryId: formMasterCategoryId,
-        supplierId: formSupplierId,
-        lines: formLines.map((l) => ({
-          productId: l.productId,
-          plannedQuantity: Number(l.plannedQuantity),
-          plannedBuyPrice: Number(l.plannedBuyPrice) || 0,
-          itemType: l.itemType,
-          sourcePoRef: l.sourcePoRef,
-          supplierId: l.supplierId,
-          notes: l.notes,
-        })),
-        notes: formNotes,
-        sourceOrderIds: mtoOrderIds,
-      });
-
-      if (res.success && res.plan) {
-        setFormSuccess(res.message);
-        setSelectedPlanId(res.plan.id);
-        setTimeout(() => {
-          setViewMode('detail');
-        }, 800);
-      } else {
-        setFormError(res.message);
-      }
-    } else if (viewMode === 'edit' && selectedPlanId) {
-      const res = updatePurchasePlan(selectedPlanId, {
-        namaRencana: formNamaRencana,
-        lines: formLines.map((l) => ({
-          productId: l.productId,
-          plannedQuantity: Number(l.plannedQuantity),
-          plannedBuyPrice: Number(l.plannedBuyPrice) || 0,
-          itemType: l.itemType,
-          sourcePoRef: l.sourcePoRef,
-          supplierId: l.supplierId,
-          notes: l.notes,
-        })),
-        notes: formNotes,
-        sourceOrderIds: mtoOrderIds,
-      });
-
-      if (res.success && res.plan) {
-        setFormSuccess(res.message);
-        setTimeout(() => {
-          setViewMode('detail');
-        }, 800);
-      } else {
-        setFormError(res.message);
-      }
-    }
+    const payloadLines = formLines.map((line) => {
+      const product = products.find((candidate) => candidate.id === line.productId) || catalogBySku.get(line.productId);
+      const demand = product ? demandByKey.get(`${line.pickupDate}::${product.sku}`) : undefined;
+      return { productId: product?.id || line.productId, pickupDate: line.pickupDate, plannedQuantity: line.plannedQuantity, plannedBuyPrice: line.plannedBuyPrice, sourceBranchNames: line.sourceBranchNames.length ? line.sourceBranchNames : demand?.sourceBranchNames, sourceBranchIds: demand?.sourceBranchIds, sourceOrderIds: line.sourceOrderIds.length ? line.sourceOrderIds : demand?.sourceOrderIds, masterCategoryId: product?.masterCategoryId };
+    });
+    const sourceOrderIds = uniqueStrings(payloadLines.flatMap((line) => line.sourceOrderIds || []));
+    const result = viewMode === 'create' ? addPurchasePlan({ namaRencana: formName, lines: payloadLines, notes: formNotes, sourceOrderIds }) : updatePurchasePlan(selectedPlanId || '', { namaRencana: formName, lines: payloadLines, notes: formNotes, sourceOrderIds });
+    if (!result.success || !result.plan) return setFormError(result.message);
+    setFormSuccess(result.message); setSelectedPlanId(result.plan.id); setTimeout(() => setViewMode('detail'), 500);
   };
 
-  // Open Cancel Modal
-  const handleOpenCancelModal = (planId: string) => {
-    setCancelTargetId(planId);
-    setCancelReason('');
-    setCancelError('');
-    setIsCancelModalOpen(true);
+  const statusBadge = (status: PurchasePlanStatus) => {
+    const config = { Direncanakan: ['bg-blue-50 text-blue-700 border-blue-200', Clock], Terealisasi: ['bg-emerald-50 text-emerald-700 border-emerald-200', CheckCircle2], Dibatalkan: ['bg-rose-50 text-rose-700 border-rose-200', XCircle] }[status];
+    const Icon = config[1];
+    return <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-black ${config[0]}`}><Icon className="h-3 w-3" />{status}</span>;
   };
+  const groupedFormLines = formDates.map((date) => ({ date, lines: formLines.filter((line) => line.pickupDate === date), recommendations: demandEntries.filter((entry) => entry.pickupDate === date) }));
+  const groupedPlanLines = (plan: PurchasePlan) => Array.from(new Set(plan.lines.map((line) => line.pickupDate || 'Tanpa tanggal'))).sort().map((date) => ({ date, lines: plan.lines.filter((line) => (line.pickupDate || 'Tanpa tanggal') === date) }));
 
-  // Confirm Cancellation
-  const handleConfirmCancel = () => {
-    if (!cancelTargetId) return;
-    setCancelError('');
+  if (!isSuperadmin) return <div className="flex h-full items-center justify-center bg-[#FAF8F5] p-6"><div className="max-w-md rounded-3xl border-2 border-rose-200 bg-white p-8 text-center shadow-lg"><ShieldAlert className="mx-auto h-10 w-10 text-rose-600" /><h2 className="mt-3 text-xl font-black">Akses Khusus Superadmin</h2><p className="mt-2 text-xs text-[#8C7B6C]">Rencana Pembelian reseller hanya dapat dikelola oleh Superadmin.</p></div></div>;
 
-    const res = cancelPurchasePlan(cancelTargetId, cancelReason.trim());
-    if (res.success) {
-      setIsCancelModalOpen(false);
-      setCancelTargetId(null);
-    } else {
-      setCancelError(res.message);
-    }
-  };
-
-  // Status Badge Component
-  const renderStatusBadge = (status: PurchasePlanStatus) => {
-    switch (status) {
-      case 'Direncanakan':
-        return (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-black text-blue-700 border border-blue-200">
-            <Clock className="h-3 w-3" />
-            <span>Direncanakan</span>
-          </span>
-        );
-      case 'Terealisasi':
-        return (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-700 border border-emerald-200">
-            <CheckCircle2 className="h-3 w-3" />
-            <span>Terealisasi</span>
-          </span>
-        );
-      case 'Dibatalkan':
-        return (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-black text-rose-700 border border-rose-200">
-            <XCircle className="h-3 w-3" />
-            <span>Dibatalkan</span>
-          </span>
-        );
-      default:
-        return null;
-    }
-  };
-
-  // If not Superadmin, block access cleanly
-  if (!isSuperadmin) {
-    return (
-      <div className="flex h-full w-full items-center justify-center p-6 bg-[#FAF8F5]">
-        <div className="max-w-md rounded-3xl border-2 border-rose-200 bg-white p-8 text-center shadow-lg">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-100 text-rose-600">
-            <ShieldAlert className="h-7 w-7" />
-          </div>
-          <h2 className="text-xl font-black text-[#2D241E]">Akses Khusus Superadmin</h2>
-          <p className="mt-2 text-xs text-[#8C7B6C] leading-relaxed">
-            Modul <strong>Rencana Pembelian (PO Owned Goods)</strong> hanya dapat diakses, dibuat, dan dikelola oleh peran <strong>Superadmin</strong>. Peran Anda saat ini: <span className="font-bold text-rose-600 uppercase">{currentUser.role}</span>.
-          </p>
-        </div>
-      </div>
-    );
+  if (viewMode === 'detail' && activePlan) {
+    return <div className="flex h-full flex-col overflow-auto bg-[#FAF8F5] p-6"><div className="mx-auto w-full max-w-6xl space-y-4"><button className="text-xs font-black text-[#B86206]" onClick={() => setViewMode('list')}>← Kembali ke Rencana Pembelian</button><section className="rounded-3xl border border-[#E5DACE] bg-white p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-[10px] font-black uppercase tracking-widest text-[#8C7B6C]">{activePlan.id}</p><h1 className="mt-1 text-2xl font-black">{activePlan.namaRencana}</h1><p className="mt-1 text-xs text-[#8C7B6C]">Penerimaan terpusat: {activePlan.branchName}</p></div><div className="flex gap-2">{statusBadge(activePlan.status)}{activePlan.receivingLocked && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-700">Terkunci penerimaan</span>}</div></div><div className="mt-5 grid gap-3 sm:grid-cols-4"><div className="rounded-2xl bg-[#FDFBF7] p-3"><p className="text-[10px] text-[#8C7B6C]">SKU</p><p className="text-lg font-black">{activePlan.lines.length}</p></div><div className="rounded-2xl bg-[#FDFBF7] p-3"><p className="text-[10px] text-[#8C7B6C]">Quantity</p><p className="text-lg font-black">{activePlan.lines.reduce((sum, line) => sum + line.plannedQuantity, 0)}</p></div><div className="rounded-2xl bg-[#FDFBF7] p-3"><p className="text-[10px] text-[#8C7B6C]">Supplier</p><p className="text-lg font-black">{uniqueStrings(activePlan.lines.map((line) => line.supplierId)).length}</p></div><div className="rounded-2xl bg-[#FDFBF7] p-3"><p className="text-[10px] text-[#8C7B6C]">Nilai rencana</p><p className="text-lg font-black">{formatIDR(activePlan.totalPlannedValue)}</p></div></div></section>{groupedPlanLines(activePlan).map((group) => <section key={group.date} className="rounded-3xl border border-[#E5DACE] bg-white p-5"><h2 className="flex items-center gap-2 text-sm font-black"><Calendar className="h-4 w-4 text-[#B86206]" />{group.date === 'Tanpa tanggal' ? group.date : dateLabel(group.date)}</h2><div className="mt-3 overflow-x-auto"><table className="w-full min-w-[760px] text-left text-xs"><thead className="border-b border-[#E5DACE] text-[10px] uppercase tracking-wider text-[#8C7B6C]"><tr><th className="p-2">SKU</th><th className="p-2">Supplier</th><th className="p-2">Sumber cabang</th><th className="p-2 text-right">Qty</th><th className="p-2 text-right">Harga beli</th><th className="p-2 text-right">Subtotal</th></tr></thead><tbody>{group.lines.map((line) => <tr key={line.id} className="border-b border-[#F0E9E1]"><td className="p-2"><strong>{line.productName}</strong><span className="ml-2 text-[10px] text-[#8C7B6C]">{line.productSku}</span></td><td className="p-2">{line.supplierName || '-'}</td><td className="p-2">{line.sourceBranchNames?.join(', ') || 'Input manual'}</td><td className="p-2 text-right font-black">{line.plannedQuantity}</td><td className="p-2 text-right">{formatIDR(line.plannedBuyPrice)}</td><td className="p-2 text-right font-black">{formatIDR(line.lineTotal)}</td></tr>)}</tbody></table></div></section>)}{activePlan.notes && <section className="rounded-3xl border border-[#E5DACE] bg-white p-5 text-xs"><strong>Catatan:</strong> {activePlan.notes}</section>}<div className="flex gap-2">{activePlan.status === 'Direncanakan' && !activePlan.receivingLocked && <><button onClick={() => startEdit(activePlan)} className="rounded-xl bg-[#DF7900] px-4 py-2.5 text-xs font-black text-white">Edit Rencana</button><button onClick={() => setCancelPlanId(activePlan.id)} className="rounded-xl border border-rose-200 px-4 py-2.5 text-xs font-black text-rose-700">Batalkan</button></>}<button onClick={() => setViewMode('list')} className="rounded-xl border border-[#E5DACE] px-4 py-2.5 text-xs font-black">Tutup</button></div></div></div>;
   }
 
-  return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-white">
-      {/* ========================================================================= */}
-      {/* 1. LIST VIEW */}
-      {/* ========================================================================= */}
-      {viewMode === 'list' && (
-        <div className="flex flex-col h-full overflow-hidden">
-          {/* Top Banner & Module Header */}
-          <div className="border-b-2 border-[#E5DACE] bg-[#FDFBF7] px-6 py-3.5 shrink-0">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-600 text-white shadow-xs font-black">
-                  <ClipboardList className="h-5 w-5" />
-                </div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-base font-black text-[#2D241E]">
-                    Rencana Pembelian Barang (Purchase Plan)
-                  </h2>
-                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-black text-blue-800 border border-blue-200 uppercase">
-                    Reseller Purchases
-                  </span>
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-800 border border-amber-200 uppercase">
-                    Superadmin Only
-                  </span>
-                </div>
-              </div>
+  if (viewMode === 'create' || viewMode === 'edit') {
+    return <div className="flex h-full flex-col overflow-auto bg-[#FAF8F5] p-6"><form onSubmit={savePlan} className="mx-auto w-full max-w-6xl space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><button type="button" className="text-xs font-black text-[#B86206]" onClick={() => setViewMode('list')}>← Kembali</button><h1 className="mt-2 text-2xl font-black">{viewMode === 'create' ? 'Buat Rencana Pembelian' : 'Edit Rencana Pembelian'}</h1><p className="mt-1 text-xs text-[#8C7B6C]">Semua SKU reseller akan diterima di {mainBranch?.name || 'Cabang Utama'}.</p></div><div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-800"><Truck className="mr-1 inline h-4 w-4" />Penerimaan terpusat</div></div>{(formError || formSuccess) && <div className={`rounded-2xl border p-3 text-xs font-bold ${formError ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{formError || formSuccess}</div>}<section className="rounded-3xl border border-[#E5DACE] bg-white p-5"><label className="text-xs font-black">Nama Rencana Pembelian <span className="text-rose-500">*</span></label><input value={formName} onChange={(event) => setFormName(event.target.value)} className="mt-2 w-full rounded-xl border border-[#DCCFC1] px-4 py-3 text-sm font-bold outline-none" placeholder="Contoh: Pembelian reseller minggu ini" /><label className="mt-4 block text-xs font-black">Catatan (opsional)</label><textarea value={formNotes} onChange={(event) => setFormNotes(event.target.value)} className="mt-2 w-full rounded-xl border border-[#DCCFC1] px-4 py-3 text-xs outline-none" rows={2} /></section><section className="rounded-3xl border border-[#E5DACE] bg-white p-5"><div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-sm font-black">Rekomendasi SKU dari MTO</h2><p className="mt-1 text-[11px] text-[#8C7B6C]">Demand semua cabang aktif; cabang hanya informasi sumber.</p></div><div className="flex items-end gap-2"><label className="text-[10px] font-black text-[#8C7B6C]">Tambah tanggal<input type="date" value={newDate} onChange={(event) => setNewDate(event.target.value)} className="mt-1 block rounded-lg border border-[#DCCFC1] px-2 py-2 text-xs" /></label><button type="button" onClick={openDateGroup} className="rounded-xl border border-[#DCCFC1] px-3 py-2 text-xs font-black">Tambah tanggal pembelian</button></div></div><div className="mt-4 space-y-3">{groupedFormLines.map((group) => { const open = expandedDates[group.date] !== false; const isManualDate = manualDateGroups.includes(group.date); const canRemoveDate = isManualDate && group.lines.length === 0 && group.recommendations.length === 0; return <div key={group.date} className="rounded-2xl border border-[#E5DACE] bg-[#FDFBF7]"><div className="flex items-center gap-2"><button type="button" onClick={() => setExpandedDates((previous) => ({ ...previous, [group.date]: !open }))} className="flex w-full items-center justify-between px-4 py-3 text-left"><span className="flex items-center gap-2 text-xs font-black"><Calendar className="h-4 w-4 text-[#B86206]" />{dateLabel(group.date)}<span className="rounded-full bg-white px-2 py-0.5 text-[10px] text-[#8C7B6C]">{group.lines.length} dipilih / {group.recommendations.length} rekomendasi</span></span>{open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</button>{canRemoveDate && <button type="button" onClick={() => removeDateGroup(group.date)} className="mr-3 rounded-lg p-2 text-rose-600 hover:bg-rose-50" aria-label="Hapus tanggal" title="Hapus tanggal"><Trash2 className="h-4 w-4" /></button>}</div>{open && <div className="border-t border-[#E5DACE] p-3"><div className="space-y-2">{group.recommendations.map((recommendation) => { const selected = formLines.some((line) => line.productId === recommendation.productId && line.pickupDate === group.date); return <div key={`${recommendation.pickupDate}-${recommendation.sku}`} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50/50 p-3 text-xs"><div><p className="font-black">{recommendation.productName} <span className="ml-1 text-[10px] text-[#8C7B6C]">{recommendation.sku}</span></p><p className="mt-1 text-[10px]">{recommendation.supplierName} · Demand MTO {recommendation.quantity} pcs · Cabang: {recommendation.sourceBranchNames.join(', ')}</p></div><button type="button" disabled={selected} onClick={() => addLine(recommendation.productId, group.date, recommendation)} className="rounded-lg bg-blue-600 px-3 py-2 text-[10px] font-black text-white disabled:bg-slate-300">{selected ? 'Sudah dipilih' : '+ Pilih SKU'}</button></div>; })}{group.recommendations.length === 0 && <p className="py-3 text-xs text-[#8C7B6C]">Tidak ada demand MTO. Gunakan SKU manual di bawah.</p>}</div><div className="mt-3 flex flex-wrap items-end gap-2 rounded-xl border border-dashed border-[#DCCFC1] bg-white p-3"><label className="min-w-[220px] flex-1 text-[10px] font-black text-[#8C7B6C]">SKU reseller manual<select value={manualProductByDate[group.date] || ''} onChange={(event) => setManualProductByDate((previous) => ({ ...previous, [group.date]: event.target.value }))} className="mt-1 w-full rounded-lg border border-[#DCCFC1] px-2 py-2 text-xs font-bold"><option value="">Pilih SKU</option>{catalogProducts.sort((a, b) => a.name.localeCompare(b.name)).map((product) => <option key={product.id} value={product.id}>{product.name} ({product.sku})</option>)}</select></label><button type="button" onClick={() => { const productId = manualProductByDate[group.date]; if (!productId) { setFormError(`Pilih SKU manual untuk tanggal ${dateLabel(group.date)}.`); return; } addLine(productId, group.date); setManualProductByDate((previous) => ({ ...previous, [group.date]: '' })); setFormError(''); }} className="rounded-lg bg-[#DF7900] px-3 py-2 text-[10px] font-black text-white">+ Tambah SKU</button></div><div className="mt-3 space-y-2">{group.lines.map((line) => { const product = products.find((candidate) => candidate.id === line.productId) || catalogBySku.get(line.productId); const demand = product ? demandByKey.get(`${line.pickupDate}::${product.sku}`) : undefined; return <div key={line.tempId} className="grid gap-2 rounded-xl border border-[#E5DACE] bg-white p-3 md:grid-cols-[minmax(0,1.6fr)_110px_150px_auto]"><div><p className="text-xs font-black">{product?.name || line.productId} <span className="ml-1 text-[10px] font-normal text-[#8C7B6C]">{product?.sku}</span></p><p className="text-[10px] text-[#8C7B6C]">{product?.supplierName || suppliers.find((supplier) => supplier.id === product?.supplierId)?.name || '-'} · {demand ? `Rekomendasi ${demand.quantity} pcs` : 'Input manual'}</p>{(demand?.sourceBranchNames || line.sourceBranchNames).length > 0 && <p className="text-[10px] text-blue-700">Sumber cabang: {(demand?.sourceBranchNames || line.sourceBranchNames).join(', ')}</p>}</div><label className="text-[10px] font-black text-[#8C7B6C]">Quantity<input type="number" min="1" step="1" value={line.plannedQuantity} onChange={(event) => updateLine(line.tempId, 'plannedQuantity', event.target.value)} className="mt-1 w-full rounded-lg border border-[#DCCFC1] px-2 py-2 text-xs font-black" /></label><label className="text-[10px] font-black text-[#8C7B6C]">Harga beli<input type="number" min="0" step="1" value={line.plannedBuyPrice} onChange={(event) => updateLine(line.tempId, 'plannedBuyPrice', event.target.value)} className="mt-1 w-full rounded-lg border border-[#DCCFC1] px-2 py-2 text-xs font-black" /></label><button type="button" onClick={() => setFormLines((previous) => previous.filter((item) => item.tempId !== line.tempId))} className="self-end rounded-lg p-2 text-rose-600" aria-label="Hapus SKU"><Trash2 className="h-4 w-4" /></button></div>; })}</div></div>}</div>; })}</div></section><section className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-[#E5DACE] bg-white p-5"><div className="text-xs">{formLines.length} SKU · {formLines.reduce((sum, line) => sum + line.plannedQuantity, 0)} pcs · {formatIDR(formTotal)}</div><div className="flex gap-2"><button type="button" onClick={() => setViewMode('list')} className="rounded-xl border border-[#DCCFC1] px-4 py-2.5 text-xs font-black">Batal</button><button type="submit" className="rounded-xl bg-[#DF7900] px-5 py-2.5 text-xs font-black text-white">{viewMode === 'create' ? 'Simpan Rencana' : 'Simpan Perubahan'}</button></div></section></form></div>;
+  }
 
-              <div className="flex items-center gap-3">
-                <button
-                  id="btn-buat-rencana-baru"
-                  type="button"
-                  onClick={handleStartCreate}
-                  className="flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-xs font-black text-white hover:bg-amber-700 active:scale-95 transition shadow-xs"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span>Buat Rencana Baru</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Filter Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[#E5DACE] bg-[#FDFBF7] px-6 py-3 shrink-0">
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Search */}
-              <div className="relative">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-[#8C7B6C]" />
-                <input
-                  id="search-purchase-plan-input"
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Cari ID (RP-...) / Nama Rencana..."
-                  className="w-60 rounded-xl border-2 border-[#E5DACE] bg-white pl-9 pr-3 py-1.5 text-xs font-semibold text-[#2D241E] focus:border-amber-600 focus:outline-none"
-                />
-              </div>
-
-              {/* Branch Filter */}
-              <select
-                id="filter-branch-select"
-                value={filterBranchId}
-                onChange={(e) => setFilterBranchId(e.target.value)}
-                className="rounded-xl border-2 border-[#E5DACE] bg-white px-3 py-1.5 text-xs font-bold text-[#2D241E] focus:border-amber-600 focus:outline-none"
-              >
-                <option value="all">Semua Cabang</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name} ({b.code})
-                  </option>
-                ))}
-              </select>
-
-              {/* Supplier Filter */}
-              <select
-                id="filter-supplier-select"
-                value={filterSupplierId}
-                onChange={(e) => setFilterSupplierId(e.target.value)}
-                className="rounded-xl border-2 border-[#E5DACE] bg-white px-3 py-1.5 text-xs font-bold text-[#2D241E] focus:border-amber-600 focus:outline-none"
-              >
-                <option value="all">Semua Supplier</option>
-                {resellerSuppliers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-
-              {/* Status Filter */}
-              <select
-                id="filter-status-select"
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="rounded-xl border-2 border-[#E5DACE] bg-white px-3 py-1.5 text-xs font-bold text-[#2D241E] focus:border-amber-600 focus:outline-none"
-              >
-                <option value="all">Semua Status</option>
-                <option value="Direncanakan">Direncanakan</option>
-                <option value="Terealisasi">Terealisasi</option>
-                <option value="Dibatalkan">Dibatalkan</option>
-              </select>
-
-              {/* Date Range */}
-              <div className="flex items-center gap-1 text-xs text-[#8C7B6C] bg-white border-2 border-[#E5DACE] rounded-xl px-2.5 py-1">
-                <Calendar className="h-3.5 w-3.5 text-[#8C7B6C]" />
-                <span className="text-[10px] font-bold">Dari:</span>
-                <input
-                  type="date"
-                  value={filterStartDate}
-                  onChange={(e) => setFilterStartDate(e.target.value)}
-                  className="text-xs font-semibold text-[#2D241E] focus:outline-none bg-transparent"
-                />
-                <span className="text-[10px] font-bold ml-1">S/D:</span>
-                <input
-                  type="date"
-                  value={filterEndDate}
-                  onChange={(e) => setFilterEndDate(e.target.value)}
-                  className="text-xs font-semibold text-[#2D241E] focus:outline-none bg-transparent"
-                />
-              </div>
-
-              {(searchQuery || filterBranchId !== 'all' || filterSupplierId !== 'all' || filterStatus !== 'all' || filterStartDate || filterEndDate) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchQuery('');
-                    setFilterBranchId('all');
-                    setFilterSupplierId('all');
-                    setFilterStatus('all');
-                    setFilterStartDate('');
-                    setFilterEndDate('');
-                  }}
-                  className="flex items-center gap-1 rounded-xl px-2 py-1 text-xs font-bold text-rose-600 hover:bg-rose-50 transition"
-                >
-                  <X className="h-3.5 w-3.5" />
-                  <span>Reset Filter</span>
-                </button>
-              )}
-            </div>
-
-            <span className="text-xs font-bold text-[#8C7B6C]">
-              Menampilkan {filteredPlans.length} dari {purchasePlans.length} rencana
-            </span>
-          </div>
-
-          {/* Table Container */}
-          <div className="flex-1 overflow-y-auto p-6 scrollbar-thin">
-            {filteredPlans.length === 0 ? (
-              <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#E5DACE] bg-[#FAF8F5] p-12 text-center">
-                <ClipboardList className="h-12 w-12 text-[#8C7B6C] opacity-40 mb-3" />
-                <h3 className="text-sm font-black text-[#2D241E]">Tidak Ada Rencana Pembelian Ditemukan</h3>
-                <p className="text-xs text-[#8C7B6C] mt-1 max-w-sm">
-                  Tidak ada data yang cocok dengan kriteria pencarian atau filter yang dipilih. Silakan buat rencana baru atau bersihkan filter.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleStartCreate}
-                  className="mt-4 flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-xs font-black text-white hover:bg-amber-700 shadow-xs transition"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span>Buat Rencana Pembelian Baru</span>
-                </button>
-              </div>
-            ) : (
-              <div className="overflow-hidden rounded-2xl border-2 border-[#E5DACE] bg-white shadow-xs">
-                <table className="w-full text-left text-xs text-[#2D241E]">
-                  <thead className="border-b-2 border-[#E5DACE] bg-[#FDFBF7] text-[11px] font-black uppercase tracking-wider text-[#8C7B6C]">
-                    <tr>
-                      <th className="px-4 py-3">ID Rencana</th>
-                      <th className="px-4 py-3">Nama Rencana</th>
-                      <th className="px-4 py-3">Cabang</th>
-                      <th className="px-4 py-3">Supplier & Kategori</th>
-                      <th className="px-4 py-3 text-center">Baris Item</th>
-                      <th className="px-4 py-3 text-right">Total Nilai Rencana</th>
-                      <th className="px-4 py-3 text-center">Status</th>
-                      <th className="px-4 py-3 text-center">Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#E5DACE]/60 font-semibold">
-                    {filteredPlans.map((plan) => (
-                      <tr key={plan.id} className="hover:bg-[#FAF8F5] transition">
-                        <td className="px-4 py-3 font-mono font-black text-amber-900">
-                          {plan.id}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="font-bold text-[#2D241E]">{plan.namaRencana}</div>
-                          <div className="text-[11px] text-[#8C7B6C]">{formatDateTime(plan.createdAt)}</div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="font-bold text-[#2D241E]">{plan.branchName}</span>
-                          <span className="block text-[10px] text-[#8C7B6C]">{plan.branchCode}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="font-bold text-[#2D241E]">{plan.supplierName}</span>
-                          <span className="inline-block ml-1.5 rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-black text-gray-700 border border-gray-200">
-                            {plan.supplierCategory || 'Umum'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-black text-gray-800">
-                            {plan.lines.length} produk
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right font-black text-amber-900">
-                          {formatIDR(plan.totalPlannedValue)}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {renderStatusBadge(plan.status)}
-                          {plan.linkedReceiptNumber && (
-                            <span className="block mt-1 text-[10px] font-bold text-emerald-700">
-                              Ref: {plan.linkedReceiptNumber}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              id={`btn-detail-plan-${plan.id}`}
-                              type="button"
-                              onClick={() => handleViewDetail(plan.id)}
-                              className="rounded-lg bg-gray-100 p-1.5 text-gray-700 hover:bg-amber-100 hover:text-amber-900 transition"
-                              title="Lihat Detail Rencana"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </button>
-
-                            {plan.status === 'Direncanakan' && !plan.receivingLocked && isSuperadmin && (
-                              <>
-                                <button
-                                  id={`btn-edit-plan-${plan.id}`}
-                                  type="button"
-                                  onClick={() => handleStartEdit(plan)}
-                                  className="rounded-lg bg-blue-50 p-1.5 text-blue-700 hover:bg-blue-100 transition"
-                                  title="Edit Rencana"
-                                >
-                                  <Edit3 className="h-4 w-4" />
-                                </button>
-                                <button
-                                  id={`btn-cancel-plan-${plan.id}`}
-                                  type="button"
-                                  onClick={() => handleOpenCancelModal(plan.id)}
-                                  className="rounded-lg bg-rose-50 p-1.5 text-rose-700 hover:bg-rose-100 transition"
-                                  title="Batalkan Rencana"
-                                >
-                                  <Ban className="h-4 w-4" />
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 2. DETAIL VIEW */}
-      {/* ========================================================================= */}
-      {viewMode === 'detail' && activePlan && (
-        <div className="flex flex-col h-full overflow-hidden">
-          {/* Header Bar */}
-          <div className="border-b-2 border-[#E5DACE] bg-[#FDFBF7] px-6 py-4 shrink-0">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('list')}
-                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#E5DACE] bg-white text-gray-700 hover:bg-gray-100 transition"
-                  title="Kembali ke Daftar Rencana"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                </button>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-sm font-black text-amber-900 bg-amber-100 px-2 py-0.5 rounded-lg">
-                      {activePlan.id}
-                    </span>
-                    {renderStatusBadge(activePlan.status)}
-                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-black text-blue-800 border border-blue-200 uppercase">
-                      Reseller Purchases
-                    </span>
-                  </div>
-                  <h2 className="text-base font-black text-[#2D241E] mt-1">{activePlan.namaRencana}</h2>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2">
-                {activePlan.status === 'Direncanakan' && !activePlan.receivingLocked && isSuperadmin && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => handleStartEdit(activePlan)}
-                      className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-blue-700 active:scale-95 transition shadow-xs"
-                    >
-                      <Edit3 className="h-3.5 w-3.5" />
-                      <span>Edit Rencana</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenCancelModal(activePlan.id)}
-                      className="flex items-center gap-1.5 rounded-xl bg-rose-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-rose-700 active:scale-95 transition shadow-xs"
-                    >
-                      <Ban className="h-3.5 w-3.5" />
-                      <span>Batalkan Rencana</span>
-                    </button>
-                  </>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setViewMode('list')}
-                  className="rounded-xl border border-[#E5DACE] bg-white px-4 py-2 text-xs font-bold text-[#8C7B6C] hover:bg-[#E5DACE] transition"
-                >
-                  Tutup / Kembali
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Content Area */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin">
-            {/* Notice */}
-            <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 text-xs text-amber-900 flex items-start gap-3">
-              <Info className="h-5 w-5 shrink-0 text-amber-700 mt-0.5" />
-              <div>
-                <p className="font-bold">Informasi Stok & Alur Penerimaan:</p>
-                <p className="mt-0.5 text-amber-800 leading-relaxed">
-                  Rencana pembelian ini merupakan dokumen acuan pengadaan. Kuantitas stok produk di cabang <strong>{activePlan.branchName}</strong> tidak bertambah sampai bukti penerimaan resmi dicatat pada menu <em>Penerimaan Barang Baru &gt; Dibeli Sendiri &gt; Dari Rencana Pembelian</em>.
-                </p>
-              </div>
-            </div>
-
-            {/* Plan Header Card */}
-            <div className="rounded-3xl border-2 border-[#E5DACE] bg-white p-6 shadow-xs">
-              <h3 className="text-xs font-black uppercase tracking-wider text-[#8C7B6C] mb-4">
-                Header Rencana Pembelian
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="rounded-2xl border border-[#E5DACE] bg-[#FAF8F5] p-3.5">
-                  <span className="text-[10px] font-bold uppercase text-[#8C7B6C] block">Cabang Alokasi</span>
-                  <span className="text-xs font-black text-[#2D241E] mt-0.5 block">{activePlan.branchName}</span>
-                  <span className="text-[11px] text-[#8C7B6C] block">Kode: {activePlan.branchCode}</span>
-                </div>
-
-                <div className="rounded-2xl border border-[#E5DACE] bg-[#FAF8F5] p-3.5">
-                  <span className="text-[10px] font-bold uppercase text-[#8C7B6C] block">Mitra Supplier</span>
-                  <span className="text-xs font-black text-[#2D241E] mt-0.5 block">{activePlan.supplierName}</span>
-                  <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded inline-block mt-0.5">
-                    Kategori: {activePlan.supplierCategory || 'Umum'} (Read-only)
-                  </span>
-                </div>
-
-                <div className="rounded-2xl border border-[#E5DACE] bg-[#FAF8F5] p-3.5">
-                  <span className="text-[10px] font-bold uppercase text-[#8C7B6C] block">Waktu Dibuat & Pembuat</span>
-                  <span className="text-xs font-bold text-[#2D241E] mt-0.5 block">{formatDateTime(activePlan.createdAt)}</span>
-                  <span className="text-[11px] text-[#8C7B6C] block">Oleh: {activePlan.createdByName}</span>
-                </div>
-
-                <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-3.5">
-                  <span className="text-[10px] font-bold uppercase text-amber-800 block">Total Nilai Rencana</span>
-                  <span className="text-base font-black text-amber-900 mt-0.5 block">
-                    {formatIDR(activePlan.totalPlannedValue)}
-                  </span>
-                  <span className="text-[11px] text-amber-700 block">{activePlan.lines.length} baris produk</span>
-                </div>
-              </div>
-
-              {activePlan.linkedReceiptNumber && (
-                <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3.5 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-700" />
-                    <span className="text-xs font-bold text-emerald-900">
-                      Telah Terealisasi melalui Bukti Penerimaan Barang: <strong>{activePlan.linkedReceiptNumber}</strong>
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Attached Customer POs Card */}
-              {activePlan.attachedPoNumbers && activePlan.attachedPoNumbers.length > 0 && (
-                <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-3.5">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <Paperclip className="h-4 w-4 text-indigo-700" />
-                    <span className="text-xs font-black text-indigo-950 uppercase tracking-wider">
-                      Terhubung Dengan {activePlan.attachedPoNumbers.length} PO Pelanggan / Pesanan Penjualan
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {activePlan.attachedPoNumbers.map((poNum) => (
-                      <span
-                        key={poNum}
-                        className="inline-flex items-center gap-1 rounded-lg border border-indigo-300 bg-white px-2.5 py-1 text-xs font-extrabold text-indigo-900 shadow-2xs"
-                      >
-                        <CheckSquare className="h-3.5 w-3.5 text-indigo-600" />
-                        {poNum}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {activePlan.notes && (
-                <div className="mt-4 rounded-xl bg-gray-50 p-3 text-xs text-gray-700 border border-gray-200">
-                  <span className="font-bold text-gray-900 block mb-0.5">Catatan Rencana:</span>
-                  <p className="italic">{activePlan.notes}</p>
-                </div>
-              )}
-            </div>
-
-            {/* Product Lines Table */}
-            <div className="rounded-3xl border-2 border-[#E5DACE] bg-white p-6 shadow-xs space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-                    Daftar Baris Produk Yang Direncanakan (Product Lines)
-                  </h3>
-                  <p className="text-[11px] text-[#8C7B6C]">
-                    Termasuk barang Pembelian Langsung, Produksi In-House, Titipan Konsinyasi, dan Item Ad-Hoc.
-                  </p>
-                </div>
-                <span className="text-xs font-black text-amber-900 bg-amber-50 border border-amber-200 px-3 py-1 rounded-xl">
-                  Total: {formatIDR(activePlan.totalPlannedValue)}
-                </span>
-              </div>
-
-              <div className="overflow-hidden rounded-2xl border border-[#E5DACE]">
-                <table className="w-full text-left text-xs text-[#2D241E]">
-                  <thead className="border-b border-[#E5DACE] bg-[#FDFBF7] text-[10px] font-black uppercase tracking-wider text-[#8C7B6C]">
-                    <tr>
-                      <th className="px-4 py-3 text-center">No</th>
-                      <th className="px-4 py-3">Tipe & Sumber</th>
-                      <th className="px-4 py-3">Produk</th>
-                      <th className="px-4 py-3">Kategori & Supplier</th>
-                      <th className="px-4 py-3 text-right">Rencana Qty</th>
-                      <th className="px-4 py-3 text-right">Harga Beli</th>
-                      <th className="px-4 py-3 text-right">Subtotal Rencana</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#E5DACE]/60 font-semibold">
-                    {activePlan.lines.map((line, idx) => {
-                      const itemTypeLabel =
-                        line.itemType === 'in_house'
-                          ? 'Produksi In-House'
-                          : line.itemType === 'consignment'
-                          ? 'Titipan Konsinyasi'
-                          : line.itemType === 'adhoc'
-                          ? 'Ad-Hoc / Tambahan'
-                          : 'Pembelian Langsung';
-
-                      const itemTypeStyle =
-                        line.itemType === 'in_house'
-                          ? 'bg-blue-100 text-blue-900 border-blue-200'
-                          : line.itemType === 'consignment'
-                          ? 'bg-purple-100 text-purple-900 border-purple-200'
-                          : line.itemType === 'adhoc'
-                          ? 'bg-amber-100 text-amber-900 border-amber-200'
-                          : 'bg-emerald-100 text-emerald-900 border-emerald-200';
-
-                      return (
-                        <tr key={line.id} className="hover:bg-[#FAF8F5]">
-                          <td className="px-4 py-3 text-center font-bold text-gray-500">{idx + 1}</td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={`inline-block rounded-md border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${itemTypeStyle}`}
-                            >
-                              {itemTypeLabel}
-                            </span>
-                            {line.sourcePoRef && (
-                              <div className="text-[10px] font-bold text-indigo-700 mt-1 flex items-center gap-1">
-                                <Paperclip className="h-3 w-3" />
-                                <span>{line.sourcePoRef}</span>
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="font-bold text-[#2D241E]">{line.productName}</div>
-                            <div className="text-[10px] font-mono text-[#8C7B6C]">{line.productSku}</div>
-                            {line.notes && <div className="text-[10px] italic text-gray-600 mt-0.5">{line.notes}</div>}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="inline-block rounded-lg bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-700 border border-gray-200">
-                              {line.category || 'Umum'}
-                            </span>
-                            {line.supplierName && (
-                              <div className="text-[10px] font-semibold text-gray-600 mt-0.5">
-                                Supplier: {line.supplierName}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-right font-black text-blue-900">
-                            {line.plannedQuantity} pcs
-                          </td>
-                          <td className="px-4 py-3 text-right font-bold text-gray-800">
-                            {formatIDR(line.plannedBuyPrice)}
-                          </td>
-                          <td className="px-4 py-3 text-right font-black text-amber-900">
-                            {formatIDR(line.lineTotal)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot className="border-t-2 border-[#E5DACE] bg-[#FDFBF7] font-black">
-                    <tr>
-                      <td colSpan={4} className="px-4 py-3 text-right text-xs uppercase tracking-wider text-[#8C7B6C]">
-                        Total Nilai Rencana Pembelian:
-                      </td>
-                      <td className="px-4 py-3 text-right text-xs text-blue-900">
-                        {activePlan.lines.reduce((sum, l) => sum + l.plannedQuantity, 0)} pcs
-                      </td>
-                      <td className="px-4 py-3"></td>
-                      <td className="px-4 py-3 text-right text-sm text-amber-900">
-                        {formatIDR(activePlan.totalPlannedValue)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 3. CREATE & EDIT FORM */}
-      {/* ========================================================================= */}
-      {(viewMode === 'create' || viewMode === 'edit') && (
-        <div className="flex flex-col h-full overflow-hidden">
-          {/* Header */}
-          <div className="border-b-2 border-[#E5DACE] bg-[#FDFBF7] px-6 py-4 shrink-0">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setViewMode(viewMode === 'edit' ? 'detail' : 'list')}
-                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#E5DACE] bg-white text-gray-700 hover:bg-gray-100 transition"
-                  title="Kembali"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                </button>
-                <div>
-                  <h2 className="text-base font-black text-[#2D241E]">
-                    {viewMode === 'create' ? 'Buat Rencana Pembelian Baru' : `Edit Rencana: ${selectedPlanId}`}
-                  </h2>
-                  <p className="text-xs text-[#8C7B6C]">
-                    {viewMode === 'create'
-                      ? 'ID akan otomatis dibuat sesuai format: RP-{BRANCHCODE}-{YYYYMM}-{NNNN}'
-                      : 'Cabang tidak dapat diubah setelah rencana dibuat.'}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setViewMode(viewMode === 'edit' ? 'detail' : 'list')}
-                className="rounded-xl border border-[#E5DACE] bg-white px-4 py-2 text-xs font-bold text-[#8C7B6C] hover:bg-[#E5DACE] transition"
-              >
-                Tutup / Batal
-              </button>
-            </div>
-          </div>
-
-          {/* Form Body */}
-          <form onSubmit={handleSavePlan} className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin">
-            {formError && (
-              <div className="rounded-xl border-2 border-rose-300 bg-rose-50 p-4 text-xs font-bold text-rose-800">
-                {formError}
-              </div>
-            )}
-            {formSuccess && (
-              <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-4 text-xs font-bold text-emerald-800">
-                {formSuccess}
-              </div>
-            )}
-
-            {/* General Information Card */}
-            <div className="rounded-3xl border-2 border-[#E5DACE] bg-white p-6 shadow-xs space-y-4">
-              <h3 className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-                Informasi Utama Rencana
-              </h3>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {/* Plan Name */}
-                <div className="sm:col-span-3 space-y-1.5">
-                  <label className="text-xs font-bold text-[#2D241E]">
-                    Nama / Keterangan Rencana Pembelian <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    id="input-plan-name"
-                    type="text"
-                    value={formNamaRencana}
-                    onChange={(e) => setFormNamaRencana(e.target.value)}
-                    placeholder="Contoh: Pengadaan Tepung & Butter Awal Pekan"
-                    className="w-full rounded-xl border-2 border-[#E5DACE] bg-[#FDFBF7] px-3.5 py-2 text-xs font-bold text-[#2D241E] focus:border-amber-600 focus:outline-none"
-                    required
-                  />
-                </div>
-
-                {/* Branch Selection (IMMUTABLE on edit) */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-[#2D241E]">
-                    Cabang Alokasi <span className="text-rose-500">*</span>
-                    {viewMode === 'edit' && (
-                      <span className="ml-1 text-[10px] text-amber-700 font-normal">(Terkunci - Tidak dapat diubah)</span>
-                    )}
-                  </label>
-                  <select
-                    id="input-plan-branch"
-                    value={formBranchId}
-                    disabled={viewMode === 'edit'}
-                    onChange={(e) => setFormBranchId(e.target.value)}
-                    className={`w-full rounded-xl border-2 border-[#E5DACE] px-3 py-2 text-xs font-bold text-[#2D241E] focus:border-amber-600 focus:outline-none ${
-                      viewMode === 'edit' ? 'bg-gray-100 cursor-not-allowed opacity-80' : 'bg-[#FDFBF7]'
-                    }`}
-                  >
-                    {branches.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.name} ({b.code})
-                        </option>
-                      ))}
-                  </select>
-                </div>
-
-                {/* Reseller Master Category */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-[#2D241E]">Master Kategori Reseller <span className="text-rose-500">*</span></label>
-                  <select id="input-plan-master-category" value={formMasterCategoryId} disabled={viewMode === 'edit'} onChange={(e) => { setFormMasterCategoryId(e.target.value); setFormSupplierId(''); setFormLines([]); }} className="w-full rounded-xl border-2 border-[#E5DACE] bg-[#FDFBF7] px-3 py-2 text-xs font-bold text-[#2D241E] focus:border-amber-600 focus:outline-none disabled:bg-gray-100">
-                    <option value="">-- Pilih Master Kategori Reseller --</option>
-                    {resellerMasterCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                  </select>
-                </div>
-
-                {/* Supplier Selection */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-[#2D241E]">
-                    Mitra Supplier <span className="text-rose-500">*</span>
-                  </label>
-                  <select
-                    id="input-plan-supplier"
-                    value={formSupplierId}
-                    onChange={(e) => setFormSupplierId(e.target.value)}
-                    disabled={viewMode === 'edit' || !formMasterCategoryId}
-                    className="w-full rounded-xl border-2 border-[#E5DACE] bg-[#FDFBF7] px-3 py-2 text-xs font-bold text-[#2D241E] focus:border-amber-600 focus:outline-none"
-                  >
-                    {false && <option value="multi">
-                      ⭐ Multi-Sumber / Terpadu (In-House, Konsinyasi & Supplier)
-                    </option>}
-                    {formSupplierOptions.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Read-Only Supplier Category */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-[#2D241E]">
-                    Kategori Sumber <span className="text-[10px] text-gray-500 font-normal">(Read-only)</span>
-                  </label>
-                  <div className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-3.5 py-2 text-xs font-black text-gray-700 truncate">
-                    {formSelectedMasterCategory?.name || 'Pilih Master Kategori Reseller'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Customer PO Attachment Card is retained only for legacy state; new plans derive MTO demand automatically. */}
-              {false && (
-              <div className="rounded-2xl border-2 border-indigo-200 bg-indigo-50/60 p-4 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Paperclip className="h-4 w-4 text-indigo-700" />
-                    <div>
-                      <h4 className="text-xs font-black text-indigo-950 uppercase tracking-wider">
-                        Tautkan Dengan Pesanan Pelanggan (PO)
-                      </h4>
-                      <p className="text-[11px] text-indigo-800">
-                        Otomatis tarik seluruh item produk dari multiple PO pelanggan ke dalam rencana pembelian ini.
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleOpenAttachPoModal}
-                    className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-1.5 text-xs font-black text-white hover:bg-indigo-700 active:scale-95 transition shadow-2xs"
-                  >
-                    <Plus className="h-4 w-4" />
-                    <span>{formAttachedPoNumbers.length > 0 ? 'Kelola Tautan PO' : 'Pilih Multi-PO Pelanggan'}</span>
-                  </button>
-                </div>
-
-                {formAttachedPoNumbers.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {formAttachedPoNumbers.map((poNum) => (
-                      <span
-                        key={poNum}
-                        className="inline-flex items-center gap-1 rounded-lg border border-indigo-300 bg-white px-2.5 py-1 text-xs font-black text-indigo-900 shadow-2xs"
-                      >
-                        <CheckSquare className="h-3.5 w-3.5 text-indigo-600" />
-                        {poNum}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-[11px] italic text-indigo-700/80">
-                    Belum ada PO pelanggan yang ditautkan. Anda dapat menambah item secara manual di bawah.
-                  </div>
-                )}
-              </div>
-              )}
-
-              {/* Notes */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-[#2D241E]">Catatan Tambahan Rencana (Opsional)</label>
-                <textarea
-                  rows={2}
-                  value={formNotes}
-                  onChange={(e) => setFormNotes(e.target.value)}
-                  placeholder="Catatan jadwal pengiriman, syarat kemasan, instruksi khusus, dll."
-                  className="w-full rounded-xl border-2 border-[#E5DACE] bg-[#FDFBF7] px-3.5 py-2 text-xs font-semibold text-[#2D241E] focus:border-amber-600 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Product Lines Card */}
-            <div className="rounded-3xl border-2 border-[#E5DACE] bg-white p-6 shadow-xs space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
-                    Baris Produk Rencana (Product Lines)
-                  </h3>
-                  <p className="text-[11px] text-[#8C7B6C]">
-                    Produk reseller diurutkan berdasarkan kebutuhan MTO terdekat; jumlah akhir dapat disesuaikan untuk stok tambahan.
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => handleAddFormLine('direct_purchase')}
-                    className="flex items-center gap-1 rounded-xl bg-emerald-50 border border-emerald-300 px-2.5 py-1.5 text-xs font-bold text-emerald-900 hover:bg-emerald-100 transition"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span>+ Tambah Produk</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleAddFormLine('in_house')}
-                    className="hidden"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span>+ In-House</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleAddFormLine('consignment')}
-                    className="hidden"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span>+ Konsinyasi</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleAddAdhocLine}
-                    className="hidden"
-                  >
-                    <Sparkles className="h-3.5 w-3.5" />
-                    <span>+ Ad-Hoc</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                {formLines.map((line, idx) => {
-                  const selectedProd = products.find((p) => p.id === line.productId);
-                  const lineTotal = Math.max(0, line.plannedQuantity) * Math.max(0, line.plannedBuyPrice);
-
-                  return (
-                    <div
-                      key={line.tempId}
-                      className="rounded-2xl border-2 border-[#E5DACE] bg-[#FAF8F5] p-3.5 space-y-2.5"
-                    >
-                      <div className="flex flex-wrap sm:flex-nowrap items-center gap-3">
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#E5DACE] text-xs font-black text-[#2D241E]">
-                          {idx + 1}
-                        </span>
-
-                        {/* Item Type Select */}
-                        <div className="hidden w-36">
-                          <label className="text-[10px] font-bold text-[#8C7B6C] block mb-1">Tipe Item</label>
-                          <select
-                            value={line.itemType}
-                            onChange={(e) =>
-                              handleUpdateFormLine(
-                                line.tempId,
-                                'itemType',
-                                e.target.value as PurchasePlanItemType
-                              )
-                            }
-                            className="w-full rounded-xl border border-[#E5DACE] bg-white px-2.5 py-1.5 text-xs font-bold text-[#2D241E] focus:outline-none"
-                          >
-                            <option value="direct_purchase">Pembelian Direct</option>
-                            <option value="in_house">Produksi In-House</option>
-                            <option value="consignment">Titipan Konsinyasi</option>
-                            <option value="adhoc">Ad-Hoc / Tambahan</option>
-                          </select>
-                        </div>
-
-                        {/* Product Select */}
-                        <div className="flex-1 min-w-[180px]">
-                          <label className="text-[10px] font-bold text-[#8C7B6C] block mb-1">
-                            Pilih Produk <span className="text-rose-500">*</span>
-                          </label>
-                          <select
-                            value={line.productId}
-                            onChange={(e) => {
-                              const newProdId = e.target.value;
-                              const newProd = products.find((p) => p.id === newProdId);
-                              handleUpdateFormLine(line.tempId, 'productId', newProdId);
-                              if (newProd) {
-                                handleUpdateFormLine(
-                                  line.tempId,
-                                  'plannedQuantity',
-                                  mtoDemandByProduct.get(newProd.id)?.quantity || 1
-                                );
-                                handleUpdateFormLine(
-                                  line.tempId,
-                                  'plannedBuyPrice',
-                                  newProd.buyPrice ?? 0
-                                );
-                                if (newProd.supplierId) {
-                                  handleUpdateFormLine(line.tempId, 'supplierId', newProd.supplierId);
-                                }
-                              }
-                            }}
-                            className="w-full rounded-xl border border-[#E5DACE] bg-white px-3 py-1.5 text-xs font-bold text-[#2D241E] focus:outline-none"
-                          >
-                            {allProducts.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.name} ({p.sku}) [{p.category || 'Umum'}]
-                              </option>
-                            ))}
-                          </select>
-                          {(() => {
-                            const demand = mtoDemandByProduct.get(line.productId);
-                            return demand ? <p className="mt-1 text-[10px] font-semibold text-blue-700">Kebutuhan MTO: {demand.quantity} pcs • Pickup terdekat: {demand.nearestPickupDate}</p> : <p className="mt-1 text-[10px] text-[#8C7B6C]">Tidak ada kebutuhan MTO aktif; sesuaikan untuk stok tambahan.</p>;
-                          })()}
-                        </div>
-
-                        {/* Supplier (if multi-sumber) */}
-                        {formSupplierId === 'multi' && (
-                          <div className="w-44">
-                            <label className="text-[10px] font-bold text-[#8C7B6C] block mb-1">Supplier/Sumber</label>
-                            <select
-                              value={line.supplierId || ''}
-                              onChange={(e) => handleUpdateFormLine(line.tempId, 'supplierId', e.target.value)}
-                              className="w-full rounded-xl border border-[#E5DACE] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#2D241E] focus:outline-none"
-                            >
-                              <option value="">(Bawaan Master/In-House)</option>
-                              {suppliers.map((s) => (
-                                <option key={s.id} value={s.id}>
-                                  {s.name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-
-                        {/* Planned Quantity */}
-                        <div className="w-24">
-                          <label className="text-[10px] font-bold text-[#8C7B6C] block mb-1">
-                            Qty (pcs) <span className="text-rose-500">*</span>
-                          </label>
-                          <input
-                            type="number"
-                            min={1}
-                            value={line.plannedQuantity}
-                            onChange={(e) =>
-                              handleUpdateFormLine(
-                                line.tempId,
-                                'plannedQuantity',
-                                parseInt(e.target.value) || 0
-                              )
-                            }
-                            className="w-full rounded-xl border border-[#E5DACE] bg-white px-2.5 py-1.5 text-xs font-black text-blue-900 focus:outline-none"
-                          />
-                        </div>
-
-                        {/* Planned Buy Price */}
-                        <div className="w-32">
-                          <label className="text-[10px] font-bold text-[#8C7B6C] block mb-1">
-                            Harga Beli (Rp)
-                          </label>
-                          <input
-                            type="number"
-                            min={0}
-                            value={line.plannedBuyPrice}
-                            onChange={(e) =>
-                              handleUpdateFormLine(
-                                line.tempId,
-                                'plannedBuyPrice',
-                                parseFloat(e.target.value) || 0
-                              )
-                            }
-                            className="w-full rounded-xl border border-[#E5DACE] bg-white px-2.5 py-1.5 text-xs font-bold text-[#2D241E] focus:outline-none"
-                          />
-                        </div>
-
-                        {/* Line Subtotal */}
-                        <div className="w-32 text-right">
-                          <span className="text-[10px] font-bold text-[#8C7B6C] block">Subtotal</span>
-                          <span className="text-xs font-black text-amber-900 block mt-1 truncate">
-                            {formatIDR(lineTotal)}
-                          </span>
-                        </div>
-
-                        {/* Delete */}
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveFormLine(line.tempId)}
-                          className="rounded-xl p-2 text-rose-600 hover:bg-rose-100 transition shrink-0"
-                          title="Hapus baris"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-
-                      {/* Source PO & Notes Sub-Row */}
-                      <div className="flex flex-wrap items-center gap-2 pl-10 text-[11px]">
-                        {line.sourcePoRef && (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-indigo-100 text-indigo-900 px-2 py-0.5 font-bold">
-                            <Paperclip className="h-3 w-3" />
-                            {line.sourcePoRef}
-                          </span>
-                        )}
-                        <input
-                          type="text"
-                          value={line.notes || ''}
-                          onChange={(e) => handleUpdateFormLine(line.tempId, 'notes', e.target.value)}
-                          placeholder="Catatan khusus baris ini (misal: stok cadangan ad-hoc)..."
-                          className="flex-1 rounded-lg border border-[#E5DACE] bg-white px-2.5 py-1 text-xs text-[#2D241E] focus:outline-none"
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Summary Footer */}
-              <div className="flex items-center justify-between pt-4 border-t-2 border-[#E5DACE]">
-                <span className="text-xs font-bold text-[#8C7B6C]">
-                  Total Item: {formLines.length} baris produk
-                </span>
-                <div className="text-right">
-                  <span className="text-xs text-[#8C7B6C] mr-2">Total Estimasi Nilai Rencana:</span>
-                  <span className="text-base font-black text-amber-900">{formatIDR(calculatedFormTotal)}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Bottom Form Actions */}
-            <div className="flex items-center justify-end gap-3 pt-4 border-t-2 border-[#E5DACE]">
-              <button
-                type="button"
-                onClick={() => setViewMode(viewMode === 'edit' ? 'detail' : 'list')}
-                className="rounded-xl border border-[#E5DACE] bg-white px-5 py-2.5 text-xs font-bold text-[#8C7B6C] hover:bg-[#E5DACE] transition"
-              >
-                Tutup / Batal
-              </button>
-              <button
-                id="btn-simpan-rencana-pembelian"
-                type="submit"
-                className="flex items-center gap-2 rounded-xl bg-amber-600 px-6 py-2.5 text-xs font-black text-white hover:bg-amber-700 active:scale-95 transition shadow-xs"
-              >
-                <CheckCircle2 className="h-4 w-4" />
-                <span>
-                  {viewMode === 'create' ? 'Simpan Rencana Pembelian' : 'Simpan Perubahan'}
-                </span>
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 4. CANCEL CONFIRMATION MODAL (NO NESTED POPUPS, BOTTOM-RIGHT TUTUP BUTTON) */}
-      {/* ========================================================================= */}
-      {isCancelModalOpen && cancelTargetId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border-2 border-[#E5DACE] space-y-4">
-            <div className="flex items-center gap-3 text-rose-700">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-rose-100">
-                <Ban className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-[#2D241E]">Batalkan Rencana Pembelian?</h3>
-                <p className="text-xs text-[#8C7B6C]">ID: {cancelTargetId}</p>
-              </div>
-            </div>
-
-            <p className="text-xs text-[#2D241E] leading-relaxed">
-              Rencana pembelian yang dibatalkan tidak akan dapat ditautkan ke proses penerimaan barang. Tindakan ini hanya dapat dilakukan oleh Superadmin.
-            </p>
-
-            {cancelError && (
-              <div className="rounded-xl bg-rose-50 border border-rose-200 p-2.5 text-xs font-bold text-rose-800">
-                {cancelError}
-              </div>
-            )}
-
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-[#2D241E]">Alasan Pembatalan (Opsional):</label>
-              <textarea
-                rows={2}
-                value={cancelReason}
-                onChange={(e) => setCancelReason(e.target.value)}
-                placeholder="Contoh: Supplier kehabisan stok bahan baku / perubahan rencana anggaran"
-                className="w-full rounded-xl border-2 border-[#E5DACE] bg-[#FDFBF7] p-2.5 text-xs text-[#2D241E] focus:outline-none"
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#E5DACE]">
-              <button
-                type="button"
-                onClick={handleConfirmCancel}
-                className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700 transition"
-              >
-                Konfirmasi Batal
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsCancelModalOpen(false);
-                  setCancelTargetId(null);
-                }}
-                className="rounded-xl bg-[#2D241E] px-5 py-2 text-xs font-bold text-white hover:bg-black transition"
-              >
-                Tutup
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 5. MULTI-PO ATTACHMENT MODAL */}
-      {/* ========================================================================= */}
-      {isAttachPoModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl border-2 border-[#E5DACE] space-y-4 max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-[#E5DACE] pb-3 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-700">
-                  <Paperclip className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black text-[#2D241E]">
-                    Tautkan Pesanan Pelanggan (PO) ke Rencana Pembelian
-                  </h3>
-                  <p className="text-xs text-[#8C7B6C]">
-                    Pilih satu atau beberapa PO pelanggan sekaligus. Item akan otomatis digabungkan ke rencana.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsAttachPoModalOpen(false)}
-                className="rounded-xl p-2 text-gray-500 hover:bg-gray-100"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Search filter for POs */}
-            <div className="relative shrink-0">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8C7B6C]" />
-              <input
-                type="text"
-                value={poSearchQuery}
-                onChange={(e) => setPoSearchQuery(e.target.value)}
-                placeholder="Cari No. PO (#1001), Nama Pelanggan, atau Produk..."
-                className="w-full rounded-xl border border-[#E5DACE] bg-[#FAF8F5] pl-9 pr-3 py-2 text-xs font-semibold text-[#2D241E] focus:outline-none"
-              />
-            </div>
-
-            {/* PO List */}
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-thin">
-              {availableOrdersForPlanning.filter((order) => {
-                if (!poSearchQuery.trim()) return true;
-                const q = poSearchQuery.toLowerCase();
-                const matchNum = order.orderNumber.toLowerCase().includes(q);
-                const matchCust = order.customerName?.toLowerCase().includes(q);
-                const matchItem = order.items.some((i) => i.productName.toLowerCase().includes(q));
-                return matchNum || matchCust || matchItem;
-              }).length === 0 ? (
-                <div className="p-8 text-center text-xs text-gray-500 bg-gray-50 rounded-2xl border border-dashed border-gray-300">
-                  Tidak ada Pesanan Pelanggan (PO) aktif yang sesuai dengan pencarian.
-                </div>
-              ) : (
-                availableOrdersForPlanning
-                  .filter((order) => {
-                    if (!poSearchQuery.trim()) return true;
-                    const q = poSearchQuery.toLowerCase();
-                    const matchNum = order.orderNumber.toLowerCase().includes(q);
-                    const matchCust = order.customerName?.toLowerCase().includes(q);
-                    const matchItem = order.items.some((i) => i.productName.toLowerCase().includes(q));
-                    return matchNum || matchCust || matchItem;
-                  })
-                  .map((order) => {
-                    const isSelected = tempSelectedPoIds.includes(order.id);
-                    return (
-                      <div
-                        key={order.id}
-                        onClick={() => {
-                          if (isSelected) {
-                            setTempSelectedPoIds(tempSelectedPoIds.filter((id) => id !== order.id));
-                          } else {
-                            setTempSelectedPoIds([...tempSelectedPoIds, order.id]);
-                          }
-                        }}
-                        className={`cursor-pointer rounded-2xl border-2 p-3.5 transition flex items-start gap-3 ${
-                          isSelected
-                            ? 'border-indigo-600 bg-indigo-50/70 shadow-xs'
-                            : 'border-[#E5DACE] bg-[#FAF8F5] hover:bg-white'
-                        }`}
-                      >
-                        <div className="pt-0.5">
-                          {isSelected ? (
-                            <CheckSquare className="h-5 w-5 text-indigo-700" />
-                          ) : (
-                            <Square className="h-5 w-5 text-gray-400" />
-                          )}
-                        </div>
-
-                        <div className="flex-1 min-w-0 space-y-1">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-black text-[#2D241E]">
-                              PO #{order.orderNumber}
-                            </span>
-                            <span className="text-xs font-black text-amber-900">
-                              {formatIDR(order.totalAmount)}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-2 text-[11px] text-gray-600">
-                            <span className="font-semibold">{order.customerName || 'Pelanggan Umum'}</span>
-                            <span>•</span>
-                            <span>{formatDateTime(order.createdAt)}</span>
-                            <span>•</span>
-                            <span className="font-bold text-indigo-900">{order.items.length} item</span>
-                          </div>
-
-                          {/* Preview item list */}
-                          <div className="flex flex-wrap gap-1 pt-1">
-                            {order.items.slice(0, 4).map((it, i) => (
-                              <span
-                                key={i}
-                                className="inline-block rounded bg-white px-2 py-0.5 text-[10px] font-semibold text-gray-700 border border-gray-200"
-                              >
-                                {it.productName} ({it.quantity}x)
-                              </span>
-                            ))}
-                            {order.items.length > 4 && (
-                              <span className="inline-block rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-600">
-                                +{order.items.length - 4} item lagi
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="flex items-center justify-between pt-3 border-t border-[#E5DACE] shrink-0">
-              <span className="text-xs font-bold text-indigo-900">
-                Terpilih: <strong>{tempSelectedPoIds.length} PO Pelanggan</strong>
-              </span>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAttachPoModalOpen(false)}
-                  className="rounded-xl border border-[#E5DACE] bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-100 transition"
-                >
-                  Batal
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmAttachOrders}
-                  className="rounded-xl bg-indigo-600 px-5 py-2 text-xs font-black text-white hover:bg-indigo-700 transition shadow-xs"
-                >
-                  Terapkan & Tarik Item
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  return <div className="flex h-full flex-col overflow-auto bg-[#FAF8F5] p-6"><div className="mx-auto w-full max-w-6xl space-y-5"><div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-widest text-[#B86206]">Backoffice HQ</p><h1 className="mt-1 text-2xl font-black">Rencana Pembelian Reseller</h1><p className="mt-1 text-xs text-[#8C7B6C]">Pembelian terpusat di {mainBranch?.name || 'Cabang Utama'} untuk distribusi melalui transfer stok.</p></div><button onClick={startCreate} className="rounded-xl bg-[#DF7900] px-4 py-3 text-xs font-black text-white"><Plus className="mr-1 inline h-4 w-4" />Buat Rencana</button></div><div className="grid gap-3 sm:grid-cols-4"><div className="rounded-2xl border border-[#E5DACE] bg-white p-4"><p className="text-[10px] text-[#8C7B6C]">Total</p><p className="text-2xl font-black">{stats.total}</p></div><div className="rounded-2xl border border-blue-100 bg-blue-50 p-4"><p className="text-[10px] text-blue-700">Direncanakan</p><p className="text-2xl font-black text-blue-800">{stats.planned}</p></div><div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4"><p className="text-[10px] text-emerald-700">Terealisasi</p><p className="text-2xl font-black text-emerald-800">{stats.realized}</p></div><div className="rounded-2xl border border-rose-100 bg-rose-50 p-4"><p className="text-[10px] text-rose-700">Dibatalkan</p><p className="text-2xl font-black text-rose-800">{stats.cancelled}</p></div></div><div className="flex flex-wrap gap-2 rounded-2xl border border-[#E5DACE] bg-white p-3"><div className="relative min-w-[240px] flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-[#8C7B6C]" /><input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Cari ID, nama, SKU, supplier..." className="w-full rounded-xl border border-[#DCCFC1] py-2 pl-9 pr-3 text-xs outline-none" /></div><select value={filterStatus} onChange={(event) => setFilterStatus(event.target.value as 'all' | PurchasePlanStatus)} className="rounded-xl border border-[#DCCFC1] px-3 py-2 text-xs font-bold"><option value="all">Semua status</option><option value="Direncanakan">Direncanakan</option><option value="Terealisasi">Terealisasi</option><option value="Dibatalkan">Dibatalkan</option></select></div><section className="overflow-hidden rounded-3xl border border-[#E5DACE] bg-white"><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-xs"><thead className="bg-[#FDFBF7] text-[10px] uppercase tracking-wider text-[#8C7B6C]"><tr><th className="p-4">ID / Nama Rencana</th><th className="p-4">Pickup date</th><th className="p-4">Supplier</th><th className="p-4">SKU</th><th className="p-4">Nilai</th><th className="p-4">Status</th><th className="p-4">Aksi</th></tr></thead><tbody>{visiblePlans.map((plan) => <tr key={plan.id} className="border-t border-[#F0E9E1]"><td className="p-4"><p className="font-black">{plan.namaRencana}</p><p className="text-[10px] text-[#8C7B6C]">{plan.id} · {plan.branchName}</p></td><td className="p-4">{uniqueStrings(plan.lines.map((line) => line.pickupDate)).map((date) => dateLabel(date)).join(', ') || '-'}</td><td className="p-4">{uniqueStrings(plan.lines.map((line) => line.supplierName)).join(', ') || plan.supplierName}</td><td className="p-4">{plan.lines.length}</td><td className="p-4 font-black">{formatIDR(plan.totalPlannedValue)}</td><td className="p-4">{statusBadge(plan.status)}</td><td className="p-4"><div className="flex gap-1"><button title="Detail" onClick={() => { setSelectedPlanId(plan.id); setViewMode('detail'); }} className="rounded-lg p-2 text-blue-700"><Eye className="h-4 w-4" /></button>{plan.status === 'Direncanakan' && !plan.receivingLocked && <button title="Edit" onClick={() => startEdit(plan)} className="rounded-lg p-2 text-[#B86206]"><FileText className="h-4 w-4" /></button>}{plan.status === 'Direncanakan' && !plan.receivingLocked && <button title="Batalkan" onClick={() => setCancelPlanId(plan.id)} className="rounded-lg p-2 text-rose-700"><Ban className="h-4 w-4" /></button>}</div></td></tr>)}</tbody></table>{visiblePlans.length === 0 && <div className="p-12 text-center text-xs text-[#8C7B6C]"><Package className="mx-auto mb-2 h-8 w-8 opacity-40" />Belum ada rencana pembelian reseller yang sesuai filter.</div>}</div></section><p className="text-[11px] text-[#8C7B6C]">{visiblePlans.length} dokumen · Cabang penerimaan tetap {mainBranch?.name || 'Cabang Utama'}.</p>{cancelPlanId && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-xl"><h2 className="text-lg font-black">Batalkan rencana pembelian?</h2><p className="mt-2 text-xs text-[#8C7B6C]">Dokumen tidak dihapus dan tetap tersimpan sebagai Dibatalkan.</p><textarea value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} className="mt-4 w-full rounded-xl border border-[#DCCFC1] p-3 text-xs" rows={3} /><div className="mt-4 flex justify-end gap-2"><button onClick={() => setCancelPlanId(null)} className="rounded-xl border border-[#DCCFC1] px-4 py-2 text-xs font-black">Tutup</button><button onClick={() => { const result = cancelPurchasePlan(cancelPlanId, cancelReason); if (result.success) { setCancelPlanId(null); setCancelReason(''); } }} className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-black text-white">Batalkan</button></div></div></div>}</div></div>;
 };
