@@ -107,7 +107,7 @@ export const GoodsReceivingWorkspace: React.FC = () => {
   const eligiblePurchasePlans = useMemo(() => {
     return purchasePlans.filter((p) => {
       const branchMatches = !p.branchId || p.branchId === selectedBranchId;
-      const statusMatches = p.status === 'Direncanakan' || p.id === selectedPlanId;
+      const statusMatches = (p.status === 'Direncanakan' && !p.receivingLocked) || p.id === selectedPlanId;
       return branchMatches && statusMatches;
     });
   }, [purchasePlans, selectedBranchId, selectedPlanId]);
@@ -172,7 +172,7 @@ export const GoodsReceivingWorkspace: React.FC = () => {
 
     const plan = purchasePlans.find((p) => p.id === planId);
     if (plan) {
-      // Lock plan as Terkait Penerimaan
+      // Lock plan internally while the receiving draft is open
       lockPurchasePlanForReceipt(plan.id);
       setSupplierId(plan.supplierId);
 
@@ -948,7 +948,7 @@ export const GoodsReceivingWorkspace: React.FC = () => {
                           <Layers className="h-4 w-4 text-purple-700 shrink-0" />
                           <span>
                             Rencana <strong>{activePlanObj.id}</strong> otomatis terkunci sebagai{' '}
-                            <span className="underline">Terkait Penerimaan</span>. Setelah penerimaan berhasil disimpan, status rencana akan otomatis menjadi <span className="underline text-emerald-700">Terealisasi</span>.
+                            Rencana akan dikunci sementara. Setelah penerimaan berhasil disimpan, status rencana akan otomatis menjadi <span className="underline text-emerald-700">Terealisasi</span>.
                           </span>
                         </div>
                       )}

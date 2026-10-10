@@ -133,6 +133,7 @@ export const StockWorkspace: React.FC = () => {
   const [newName, setNewName] = useState('');
   const [newCategory, setNewCategory] = useState(categories.find((c) => c.id !== 'all')?.id || 'roti');
   const [newPrice, setNewPrice] = useState<string>('15000');
+  const [newBuyPrice, setNewBuyPrice] = useState<string>('');
   const [isPriceCustomizable, setIsPriceCustomizable] = useState(false);
   const [newOpeningStock, setNewOpeningStock] = useState<string>('20');
   const [newLowStockThreshold, setNewLowStockThreshold] = useState<string>('5');
@@ -202,6 +203,7 @@ export const StockWorkspace: React.FC = () => {
 
     const trimmedName = newName.trim();
     const numPrice = parseInt(newPrice || '0', 10);
+    const numBuyPrice = newBuyPrice.trim() === '' ? undefined : parseInt(newBuyPrice, 10);
     const numStock = 0;
     const numLowStock = 5;
 
@@ -211,6 +213,10 @@ export const StockWorkspace: React.FC = () => {
     }
     if (isNaN(numPrice) || numPrice < 0) {
       setFormError('Harga jual wajib diisi dan tidak boleh bernilai negatif!');
+      return;
+    }
+    if (numBuyPrice !== undefined && (isNaN(numBuyPrice) || numBuyPrice < 0)) {
+      setFormError('Harga beli harus berupa angka nol atau lebih.');
       return;
     }
 
@@ -236,6 +242,7 @@ export const StockWorkspace: React.FC = () => {
       category: isMadeToOrderCat ? 'custom_cake' : newCategory,
       categoryLabel: catLabel,
       price: numPrice,
+      buyPrice: numBuyPrice,
       isPriceCustomizable,
       stock: numStock,
       lowStockThreshold: numLowStock,
@@ -260,6 +267,7 @@ export const StockWorkspace: React.FC = () => {
     setTimeout(() => {
       setNewName('');
       setNewPrice('');
+      setNewBuyPrice('');
       setNewDescription('');
       setNewProductStatus('active');
       setSupervisorPin('');
@@ -499,6 +507,26 @@ export const StockWorkspace: React.FC = () => {
                     />
                   </div>
                 </div>
+              </div>
+
+              <div className="space-y-1.5 md:ml-[calc(50%+0.5rem)]">
+                <label htmlFor="product-buy-price-input" className="text-xs font-black uppercase tracking-wider text-[#8C7B6C]">
+                  Harga Beli (Rp) <span className="text-[10px] font-semibold normal-case tracking-normal text-[#8C7B6C]">(opsional)</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-2.5 text-xs font-bold text-[#8C7B6C]">Rp</span>
+                  <input
+                    id="product-buy-price-input"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={newBuyPrice}
+                    onChange={(e) => setNewBuyPrice(e.target.value)}
+                    placeholder="Contoh: 9000"
+                    className="w-full rounded-2xl border-2 border-[#E5DACE] bg-white pl-10 pr-3.5 py-2.5 text-xs font-bold text-[#2D241E] focus:border-[#D97706] focus:outline-none shadow-xs"
+                  />
+                </div>
+                <p className="text-[10px] text-[#8C7B6C]">Referensi harga beli master produk; harga aktual dicatat saat penerimaan barang.</p>
               </div>
 
               <div className="space-y-1.5">

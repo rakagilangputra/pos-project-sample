@@ -62,6 +62,22 @@ export const INITIAL_SUPPLIERS: Supplier[] = [
     balance: 0,
     createdAt: '2026-03-15T10:00:00Z',
   },
+  {
+    id: 'sup-rsl-1',
+    branchId: 'branch-senopati',
+    masterCategoryId: 'KAT-RSL-01',
+    isInternal: false,
+    name: 'Distributor Reseller Snack & Minuman Jakarta',
+    category: 'Minuman Kemasan & Botol',
+    categories: ['Minuman Kemasan & Botol'],
+    picName: 'Bapak Arif Nugroho',
+    phone: '0812-7000-4400',
+    scheduleType: 'weekly',
+    weeklyFrequency: 'twice',
+    weeklyDays: ['Selasa', 'Jumat'],
+    balance: 0,
+    createdAt: '2026-03-20T09:00:00Z',
+  },
 ];
 
 
