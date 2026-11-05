@@ -5,6 +5,8 @@ import { ProductCatalog } from './components/ProductCatalog';
 import { OrderCart } from './components/OrderCart';
 import { CustomerModal } from './components/CustomerModal';
 import { PaymentModal } from './components/PaymentModal';
+import { CreateMtoModal } from './components/CreateMtoModal';
+import type { Order } from './types';
 import { ReceiptModal } from './components/ReceiptModal';
 import { SessionModal } from './components/SessionModal';
 import { HandoffModal } from './components/HandoffModal';
@@ -42,6 +44,8 @@ const POSMainContent: React.FC = () => {
 
   // Cashier internal sub-view: 'catalog' | 'history'
   const [cashierSubView, setCashierSubView] = useState<'catalog' | 'history'>('catalog');
+  const [salesMode, setSalesMode] = useState<'ready' | 'mto'>('ready');
+  const [duplicateMtoOrder, setDuplicateMtoOrder] = useState<Order | null>(null);
 
   // Core Cashier Modals
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
@@ -98,7 +102,12 @@ const POSMainContent: React.FC = () => {
       <main className="relative flex flex-1 min-h-0 overflow-hidden p-2.5 sm:p-4">
         {/* TAB 1: KASIR (POS) */}
         {currentTab === 'pos' && (
-          <div className="flex h-full w-full gap-3 sm:gap-4 overflow-hidden">
+          <div className="flex h-full w-full flex-col gap-3 overflow-hidden">
+            <div className="flex shrink-0 gap-2 rounded-xl bg-white p-1.5 border border-[#E5DACE] self-start">
+              <button type="button" onClick={() => setSalesMode('ready')} className={`rounded-lg px-4 py-2 text-sm font-bold ${salesMode === 'ready' ? 'bg-amber-600 text-white' : 'text-[#6B7280]'}`}>Ready Stock</button>
+              <button type="button" onClick={() => setSalesMode('mto')} className={`rounded-lg px-4 py-2 text-sm font-bold ${salesMode === 'mto' ? 'bg-amber-600 text-white' : 'text-[#6B7280]'}`}>Made-to-Order</button>
+            </div>
+            <div className={`${salesMode === 'ready' ? 'flex' : 'hidden'} min-h-0 flex-1 gap-3 sm:gap-4 overflow-hidden`}>
             {/* Left Main Pane: Either Catalog OR Transaction History Sub-View */}
             <section className="flex-1 overflow-hidden flex flex-col">
               {cashierSubView === 'catalog' ? (
@@ -167,6 +176,10 @@ const POSMainContent: React.FC = () => {
                 </div>
               </div>
             )}
+            </div>
+            <div className={`${salesMode === 'mto' ? 'block' : 'hidden'} min-h-0 flex-1`}>
+              <CreateMtoModal isOpen={salesMode === 'mto'} onClose={() => setSalesMode('ready')} onNavigateToOrders={() => setCurrentTab('pesanan')} duplicateOrder={duplicateMtoOrder} onDuplicateConsumed={() => setDuplicateMtoOrder(null)} />
+            </div>
           </div>
         )}
 
@@ -175,6 +188,7 @@ const POSMainContent: React.FC = () => {
           <Suspense fallback={<WorkspaceFallback label="Pesanan PO" />}>
             <PesananWorkspace
               onNavigateToPOS={() => setCurrentTab('pos')}
+              onDuplicateMto={(order) => { setDuplicateMtoOrder(order); setSalesMode('mto'); setCurrentTab('pos'); }}
             />
           </Suspense>
         )}
