@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from 'react';
+import { useRef, type Dispatch, type SetStateAction } from 'react';
 import { generatePONumber, generateReceiptNumber, posSound } from '../../utils/formatters';
 import type { AddAuditFn } from './sliceTypes';
 import { STORE_INFO } from '../../data/mockData';
@@ -26,17 +26,13 @@ interface UseOrderSliceDeps {
   verifySupervisorPin: (pin: string) => { success: boolean; supervisor?: User; message: string };
   taxApplied: boolean;
   orders: Order[];
+  customers: Customer[];
   products: Product[];
   setActiveReceiptOrder: (order: Order | null) => void;
-  setSelectedCustomer: (customer: Customer) => void;
   addAudit: AddAuditFn;
-  setCart: Dispatch<SetStateAction<CartItem[]>>;
   setCurrentSession: Dispatch<SetStateAction<CashierSession | null>>;
   setCustomers: Dispatch<SetStateAction<Customer[]>>;
   setExpiryBatches: Dispatch<SetStateAction<ProductExpiryBatch[]>>;
-  setOrderDiscountReason: Dispatch<SetStateAction<string>>;
-  setOrderDiscountType: Dispatch<SetStateAction<'percent' | 'fixed' | null>>;
-  setOrderDiscountValue: Dispatch<SetStateAction<number>>;
   setOrders: Dispatch<SetStateAction<Order[]>>;
   setProducts: Dispatch<SetStateAction<Product[]>>;
   setStockAdjustments: Dispatch<SetStateAction<StockAdjustmentRecord[]>>;
@@ -59,21 +55,20 @@ export function useOrderSlice({
   verifySupervisorPin,
   taxApplied,
   orders,
+  customers,
   products,
   setActiveReceiptOrder,
-  setSelectedCustomer,
   addAudit,
-  setCart,
   setCurrentSession,
   setCustomers,
   setExpiryBatches,
-  setOrderDiscountReason,
-  setOrderDiscountType,
-  setOrderDiscountValue,
   setOrders,
   setProducts,
   setStockAdjustments,
 }: UseOrderSliceDeps) {
+  const processedCancellations = useRef(new Set<string>());
+  const processedPickups = useRef(new Set<string>());
+  const processedPayments = useRef(new Set<string>());
   const createMtoOrder = (input: {
     productId?: string;
     quantity?: number;
@@ -88,6 +83,13 @@ export function useOrderSlice({
     if (!currentSession || currentSession.status !== 'active') {
       posSound.error();
       return { success: false, message: 'Tidak ada sesi kasir yang aktif' };
+    }
+    if (selectedBranch.status === 'inactive' || (currentSession.branchId && currentSession.branchId !== selectedBranchId) || (input.customer.branchId && input.customer.branchId !== selectedBranchId) || input.customer.category === 'Walk-in') {
+      return { success: false, message: 'Pilih pelanggan bernama pada cabang aktif.' };
+    }
+    const pickupAt = new Date(`${input.pickupDate}T${input.pickupTime}:00`);
+    if (!input.pickupDate || !input.pickupTime || !Number.isFinite(pickupAt.getTime()) || pickupAt.getTime() < Date.now()) {
+      return { success: false, message: 'Jadwal ambil harus berada di masa depan.' };
     }
 
     // Support both multiple items array and single item backward compatibility
@@ -119,7 +121,10 @@ export function useOrderSlice({
         posSound.error();
         return { success: false, message: `Produk tidak valid` };
       }
-      if (itemInput.quantity <= 0) {
+      if (!product.isMadeToOrder || product.status === 'inactive' || (product.branchId && product.branchId !== selectedBranchId)) {
+        return { success: false, message: 'Pilih produk MTO aktif dari cabang saat ini.' };
+      }
+      if (!Number.isInteger(itemInput.quantity) || itemInput.quantity <= 0) {
         posSound.error();
         return { success: false, message: `Jumlah pesanan untuk "${product.name}" harus lebih dari 0` };
       }
@@ -128,6 +133,7 @@ export function useOrderSlice({
         itemInput.customPrice !== undefined && itemInput.customPrice >= 0
           ? itemInput.customPrice
           : product.price;
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) return { success: false, message: 'Harga produk tidak valid.' };
 
       const lineTotal = unitPrice * itemInput.quantity;
       subtotal += lineTotal;
@@ -162,11 +168,13 @@ export function useOrderSlice({
     const taxAmount = Math.round(subtotal * taxRate);
     const total = subtotal + taxAmount;
 
+    if (input.payments.length > 1 || input.payments.some((p) => !Number.isFinite(p.amount) || p.amount <= 0 || p.method === 'pay_tomorrow')) {
+      return { success: false, message: 'Gunakan satu metode untuk pembayaran awal yang valid, atau simpan tanpa pembayaran.' };
+    }
     const totalPaid = input.payments.reduce((sum, p) => sum + p.amount, 0);
-    const hasPayTomorrow = input.payments.some((p) => p.method === 'pay_tomorrow');
-    if (totalPaid <= 0 && !hasPayTomorrow) {
-      posSound.error();
-      return { success: false, message: 'Harap masukkan pembayaran DP atau pilih metode Dibayar Besok!' };
+    if (totalPaid > total) return { success: false, message: 'Pembayaran melebihi total PO.' };
+    if (input.payments[0]?.method === 'deposit' && (customers.find((c) => c.id === input.customer.id)?.depositBalance ?? 0) < totalPaid) {
+      return { success: false, message: 'Saldo deposit pelanggan tidak mencukupi.' };
     }
 
     const isUnpaid = totalPaid === 0;
@@ -213,6 +221,9 @@ export function useOrderSlice({
     };
 
     setOrders((prev) => [newOrder, ...prev]);
+    if (input.payments[0]?.method === 'deposit') {
+      setCustomers((prev) => prev.map((c) => c.id === input.customer.id ? { ...c, depositBalance: c.depositBalance - totalPaid } : c));
+    }
 
     // Register batches for order items so they appear in Daily Closing (Requirement 2 & 3)
     const orderBatches: ProductExpiryBatch[] = [];
@@ -262,7 +273,7 @@ export function useOrderSlice({
       if (!prev) return null;
       return {
         ...prev,
-        totalTransactions: prev.totalTransactions + (totalPaid > 0 ? 1 : 0),
+        totalTransactions: prev.totalTransactions + 1,
         totalSales: prev.totalSales + totalPaid,
         cashSales: prev.cashSales + cashPortion,
         qrisSales: prev.qrisSales + qrisPortion,
@@ -271,8 +282,8 @@ export function useOrderSlice({
       };
     });
 
-    const paymentSummaryText = hasPayTomorrow
-      ? `Dibayar Besok (DP Rp ${totalPaid.toLocaleString('id-ID')}, Sisa Rp ${(total - totalPaid).toLocaleString('id-ID')})`
+    const paymentSummaryText = totalPaid === 0
+      ? `Belum dibayar (Sisa Rp ${total.toLocaleString('id-ID')})`
       : `DP/Bayar: Rp ${totalPaid.toLocaleString('id-ID')}`;
 
     addAudit(
@@ -289,78 +300,21 @@ export function useOrderSlice({
   };
 
   // Settle Made-to-Order Remaining Balance (POS-US-014)
-  const settleMadeToOrder = (orderId: string, payment: PaymentComponent) => {
-    const target = orders.find((o) => o.id === orderId);
-    if (!target) return { success: false, message: 'Pesanan tidak ditemukan' };
-
-    const newPaid = target.paidAmount + payment.amount;
-    const newRemaining = Math.max(0, target.total - newPaid);
-    const isNowPaid = newRemaining === 0;
-
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id === orderId) {
-          return {
-            ...o,
-            paidAmount: newPaid,
-            remainingBalance: newRemaining,
-            paymentStatus: isNowPaid ? 'paid' : 'partial',
-            orderStatus: isNowPaid ? 'completed' : 'awaiting_settlement',
-            payments: [...o.payments, payment],
-          };
-        }
-        return o;
-      })
-    );
-
-    // If fully settled, now deduct the base stock! (POS-US-014, POS-US-020)
-    if (isNowPaid) {
-      setProducts((prev) =>
-        prev.map((prod) => {
-          // deduct base cake tart
-          if (prod.id === 'prod-11') {
-            return { ...prod, stock: Math.max(0, prod.stock - 1) };
-          }
-          return prod;
-        })
-      );
-    }
-
-    // Update session
-    if (currentSession && payment.method === 'cash') {
-      setCurrentSession((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          cashSales: prev.cashSales + payment.amount,
-          expectedCash: prev.expectedCash + payment.amount,
-        };
-      });
-    }
-
-    addAudit(
-      'ORDER_SETTLEMENT',
-      'order',
-      orderId,
-      `Pelunasan Pesanan Custom ${target.receiptNumber} sebesar Rp ${payment.amount.toLocaleString('id-ID')}`
-    );
-
-    posSound.cashRegister();
-    return { success: true, message: 'Pelunasan pesanan berhasil dicatat!' };
-  };
+  const settleMadeToOrder = (orderId: string, payment: PaymentComponent) => settlePoPayment(orderId, [payment]);
 
   // MTO Purchase Order (PO) Management
-  const updatePoPickupTime = (orderId: string, newTime: string) => {
+  const updatePoPickupSchedule = (orderId: string, newDate: string, newTime: string) => {
     const target = orders.find((o) => o.id === orderId);
     if (!target) {
       posSound.error();
       return { success: false, message: 'Pesanan tidak ditemukan' };
     }
-    if (target.orderStatus === 'picked_up' || target.orderStatus === 'cancelled') {
+    if (!target.isMadeToOrder || (target.branchId && target.branchId !== selectedBranchId) || selectedBranch.status === 'inactive' || !['active', 'ready_for_pickup', 'overdue'].includes(target.orderStatus)) {
       posSound.error();
       return { success: false, message: 'Jam ambil pesanan yang sudah selesai atau batal tidak dapat diubah!' };
     }
-    if (!newTime.trim()) {
+    const scheduledAt = new Date(`${newDate}T${newTime}:00`);
+    if (!newDate || !newTime || !Number.isFinite(scheduledAt.getTime()) || scheduledAt.getTime() < Date.now()) {
       posSound.error();
       return { success: false, message: 'Jam pengambilan baru wajib diisi!' };
     }
@@ -369,6 +323,8 @@ export function useOrderSlice({
     const now = new Date().toISOString();
 
     const historyEntry = {
+      previousDate: target.pickupDate || '',
+      newDate,
       previousTime: prevTime,
       newTime: newTime.trim(),
       updatedBy: currentUser.name,
@@ -389,6 +345,7 @@ export function useOrderSlice({
         o.id === orderId
           ? {
               ...o,
+              pickupDate: newDate,
               pickupTime: newTime.trim(),
               orderStatus: newStatus,
               pickupTimeHistory: [...(o.pickupTimeHistory || []), historyEntry],
@@ -401,15 +358,16 @@ export function useOrderSlice({
       'PO_RESCHEDULE_TIME',
       'order',
       orderId,
-      `Perubahan jam ambil PO ${target.poNumber || target.receiptNumber} dari ${prevTime} ke ${newTime.trim()} oleh ${currentUser.name}`
+      `Perubahan jadwal ambil PO ${target.poNumber || target.receiptNumber} dari ${target.pickupDate} ${prevTime} ke ${newDate} ${newTime.trim()} oleh ${currentUser.name}`
     );
 
     posSound.beep();
     return {
       success: true,
-      message: `Jam pengambilan berhasil diubah menjadi ${newTime.trim()}!`,
+      message: `Jadwal pengambilan berhasil diubah menjadi ${newDate} ${newTime.trim()}!`,
     };
   };
+  const updatePoPickupTime = (orderId: string, newTime: string) => updatePoPickupSchedule(orderId, orders.find((o) => o.id === orderId)?.pickupDate || '', newTime);
 
   // Requirement 3: Penyesuaian Kuantitas dan Tanggal Expiry Date Item Pesanan
   const updateOrderItemExpiryAndQty = (
@@ -423,6 +381,7 @@ export function useOrderSlice({
       posSound.error();
       return { success: false, message: 'Pesanan tidak ditemukan!' };
     }
+    if (target.isMadeToOrder) return { success: false, message: 'Item PO MTO yang sudah disimpan tidak dapat diubah.' };
     const targetItem = target.items.find((it) => it.id === itemId || it.productId === itemId);
     if (!targetItem) {
       posSound.error();
@@ -529,10 +488,20 @@ export function useOrderSlice({
       posSound.error();
       return { success: false, message: 'Pesanan tidak ditemukan' };
     }
-    if (target.orderStatus === 'picked_up' || target.orderStatus === 'cancelled') {
+    if (!target.isMadeToOrder || (target.branchId && target.branchId !== selectedBranchId) || selectedBranch.status === 'inactive' || !['active', 'ready_for_pickup', 'overdue'].includes(target.orderStatus)) {
       posSound.error();
       return { success: false, message: 'Pesanan yang selesai atau batal tidak dapat dilakukan pelunasan!' };
     }
+    if (newPayments.length !== 1 || newPayments[0].method === 'pay_tomorrow' || !Number.isFinite(newPayments[0].amount) || newPayments[0].amount <= 0 || newPayments[0].amount > target.remainingBalance) {
+      return { success: false, message: 'Gunakan satu metode dan nominal tidak melebihi sisa tagihan.' };
+    }
+    if (newPayments[0].method === 'deposit') {
+      const customer = customers.find((c) => c.id === target.customer.id);
+      if (!customer || customer.depositBalance < newPayments[0].amount) return { success: false, message: 'Saldo deposit tidak mencukupi.' };
+    }
+    const paymentKey = `${orderId}:${target.paidAmount}`;
+    if (processedPayments.current.has(paymentKey)) return { success: false, message: 'Pembayaran ini sudah diproses.' };
+    processedPayments.current.add(paymentKey);
 
     const additionalPaid = newPayments.reduce((s, p) => s + p.amount, 0);
     if (additionalPaid <= 0) {
@@ -613,7 +582,7 @@ export function useOrderSlice({
       posSound.error();
       return { success: false, message: 'Pesanan tidak ditemukan' };
     }
-    if (target.orderStatus === 'picked_up' || target.orderStatus === 'cancelled') {
+    if (!target.isMadeToOrder || (target.branchId && target.branchId !== selectedBranchId) || selectedBranch.status === 'inactive' || !['active', 'overdue'].includes(target.orderStatus)) {
       posSound.error();
       return { success: false, message: 'Status pesanan tidak dapat diubah!' };
     }
@@ -648,23 +617,22 @@ export function useOrderSlice({
   };
 
   const confirmPoPickup = (orderId: string, collectorName: string) => {
+    if (processedPickups.current.has(orderId)) return { success: false, message: 'Pengambilan PO sudah diproses.' };
     const target = orders.find((o) => o.id === orderId);
     if (!target) {
       posSound.error();
       return { success: false, message: 'Pesanan tidak ditemukan' };
     }
-    if (target.orderStatus === 'picked_up') {
+    if (!target.isMadeToOrder || (target.branchId && target.branchId !== selectedBranchId) || selectedBranch.status === 'inactive' || target.orderStatus !== 'ready_for_pickup') {
       posSound.error();
-      return { success: false, message: 'Pesanan ini sudah pernah diambil!' };
-    }
-    if (target.orderStatus === 'cancelled') {
-      posSound.error();
-      return { success: false, message: 'Pesanan ini sudah dibatalkan!' };
+      return { success: false, message: 'Hanya PO Siap Diambil pada cabang aktif yang dapat diserahkan.' };
     }
     if (!collectorName.trim()) {
       posSound.error();
       return { success: false, message: 'Nama pengambil pesanan wajib diisi!' };
     }
+    if (target.remainingBalance > 0) return { success: false, message: 'Lunasi seluruh sisa tagihan sebelum konfirmasi pengambilan.' };
+    processedPickups.current.add(orderId);
 
     const now = new Date().toISOString();
 
@@ -737,18 +705,15 @@ export function useOrderSlice({
   };
 
   const cancelPoWithSupervisor = (orderId: string, reason: string, supervisorPin: string) => {
+    if (processedCancellations.current.has(orderId)) return { success: false, message: 'Pembatalan PO sudah diproses.' };
     const target = orders.find((o) => o.id === orderId);
     if (!target) {
       posSound.error();
       return { success: false, message: 'Pesanan tidak ditemukan' };
     }
-    if (target.orderStatus === 'picked_up') {
+    if (!target.isMadeToOrder || (target.branchId && target.branchId !== selectedBranchId) || selectedBranch.status === 'inactive' || !['active', 'overdue'].includes(target.orderStatus)) {
       posSound.error();
-      return { success: false, message: 'Pesanan yang sudah diambil tidak dapat dibatalkan!' };
-    }
-    if (target.orderStatus === 'cancelled') {
-      posSound.error();
-      return { success: false, message: 'Pesanan ini sudah dibatalkan sebelumnya!' };
+      return { success: false, message: 'Hanya PO aktif pada cabang ini yang dapat dibatalkan.' };
     }
     if (!reason.trim()) {
       posSound.error();
@@ -760,6 +725,7 @@ export function useOrderSlice({
       posSound.error();
       return { success: false, message: 'Otorisasi Supervisor diperlukan untuk membatalkan pesanan!' };
     }
+    processedCancellations.current.add(orderId);
 
     const now = new Date().toISOString();
     const creditRef = `REF-BATAL-${target.poNumber || target.receiptNumber}`;
@@ -785,7 +751,7 @@ export function useOrderSlice({
           ? {
               ...o,
               orderStatus: 'cancelled',
-              paymentStatus: 'refunded',
+              paymentStatus: o.paymentStatus,
               cancellationReason: reason.trim(),
               cancellationApprovedBy: auth.supervisor!.name,
               cancellationCreditRef: creditRef,
@@ -809,83 +775,15 @@ export function useOrderSlice({
     };
   };
 
-  const duplicatePoToCart = (orderId: string, selectedItemIds: string[]) => {
-    const target = orders.find((o) => o.id === orderId);
-    if (!target) {
-      posSound.error();
-      return { success: false, message: 'Pesanan tidak ditemukan' };
-    }
-    if (target.orderStatus !== 'picked_up') {
-      posSound.error();
-      return {
-        success: false,
-        message: 'Duplikat pesanan hanya diizinkan untuk pesanan yang sudah Selesai (Picked Up)!',
-      };
-    }
-    if (selectedItemIds.length === 0) {
-      posSound.error();
-      return { success: false, message: 'Pilih minimal satu item untuk diduplikasi!' };
-    }
-
-    const itemsToDuplicate = target.items.filter((i) => selectedItemIds.includes(i.id));
-    if (itemsToDuplicate.length === 0) {
-      posSound.error();
-      return { success: false, message: 'Tidak ada item yang cocok untuk diduplikasi!' };
-    }
-
-    // Reset payment, customization notes, schedule, fulfillment status
-    const freshCartItems: CartItem[] = itemsToDuplicate.map((item, idx) => {
-      const prodMaster = products.find((p) => p.id === item.productId);
-      return {
-        id: 'dup-' + Date.now().toString().slice(-6) + '-' + idx,
-        productId: item.productId,
-        productName: item.productName,
-        unitPrice: item.unitPrice,
-        originalPrice: item.originalPrice || item.unitPrice,
-        quantity: item.quantity,
-        isPriceOverridden: item.isPriceOverridden,
-        overrideReason: item.overrideReason,
-        isMadeToOrder: item.isMadeToOrder,
-        baseProductId: item.baseProductId,
-        category: item.category,
-        stockAvailable: prodMaster?.stock ?? item.stockAvailable,
-        ownershipType: item.ownershipType,
-        supplierId: item.supplierId,
-        supplierName: item.supplierName,
-        commissionMethod: item.commissionMethod,
-        commissionValue: item.commissionValue,
-        commissionBasis: item.commissionBasis,
-      };
-    });
-
-    setCart(freshCartItems);
-    setSelectedCustomer(target.customer);
-    setOrderDiscountType(null);
-    setOrderDiscountValue(0);
-    setOrderDiscountReason('');
-
-    addAudit(
-      'PO_DUPLICATE_DRAFT',
-      'order',
-      orderId,
-      `Duplikasi pesanan selesai ${target.poNumber || target.receiptNumber} ke keranjang kasir untuk ${target.customer.name}. Jumlah item: ${freshCartItems.length}`
-    );
-
-    posSound.cashRegister();
-    return {
-      success: true,
-      message: `Berhasil menduplikasi ${freshCartItems.length} item ke Kasir untuk pelanggan ${target.customer.name}!`,
-    };
-  };
   return {
     createMtoOrder,
     settleMadeToOrder,
     updatePoPickupTime,
+    updatePoPickupSchedule,
     updateOrderItemExpiryAndQty,
     settlePoPayment,
     markPoReadyForPickup,
     confirmPoPickup,
     cancelPoWithSupervisor,
-    duplicatePoToCart,
   };
 }

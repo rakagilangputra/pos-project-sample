@@ -1,12 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Trash2, Package, Calendar, Clock, User, CreditCard } from 'lucide-react';
 import { usePOS } from '../context/POSContext';
-import { PaymentComponent, MtoOrderItemInput, ProductExpiryType } from '../types';
+import { PaymentComponent, MtoOrderItemInput, ProductExpiryType, Order } from '../types';
 import { formatIDR, posSound } from '../utils/formatters';
+import { STORE_INFO } from '../data/mockData';
 
 interface CreateMtoModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onNavigateToOrders?: () => void;
+  duplicateOrder?: Order | null;
+  onDuplicateConsumed?: () => void;
 }
 
 interface ProductRowState {
@@ -20,13 +24,15 @@ interface ProductRowState {
   expiryDate?: string;
 }
 
-export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
-  const { products, customers, suppliers, createMtoOrder } = usePOS();
-  const mtoProducts = products.filter((p) => p.isMadeToOrder);
-  const selectableProducts = mtoProducts.length > 0 ? mtoProducts : products;
+export function CreateMtoModal({ isOpen, onClose, onNavigateToOrders, duplicateOrder, onDuplicateConsumed }: CreateMtoModalProps) {
+  const { products, customers, suppliers, createMtoOrder, selectedBranchId, setActiveReceiptOrder, taxApplied, isBranchReadOnly } = usePOS();
+  const selectableProducts = products.filter((p) => p.isMadeToOrder && p.status !== 'inactive' && (!p.branchId || p.branchId === selectedBranchId));
+  const namedCustomers = customers.filter((c) => c.category !== 'Walk-in' && (!c.branchId || c.branchId === selectedBranchId));
+  const [createdOrder, setCreatedOrder] = useState<Order | null>(null);
+  const submitting = useRef(false);
 
   const createInitialRow = (): ProductRowState => {
-    const defaultProduct = selectableProducts[0] || products[0];
+    const defaultProduct = selectableProducts[0];
     const isMultiDay = defaultProduct?.expiryType === 'multi_day';
     const shelfDays = defaultProduct?.shelfLifeDays || 7;
     const defaultExpiry = isMultiDay
@@ -46,14 +52,14 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
   };
 
   const [productRows, setProductRows] = useState<ProductRowState[]>([createInitialRow()]);
-  const [selectedCustomerId, setSelectedCustomerId] = useState(customers[0]?.id || 'cust-1');
+  const [selectedCustomerId, setSelectedCustomerId] = useState('');
 
   const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
   const [pickupDate, setPickupDate] = useState(tomorrow);
   const [pickupTime, setPickupTime] = useState('10:00');
   const [customizationNotes, setCustomizationNotes] = useState('');
 
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'qris' | 'transfer' | 'deposit' | 'pay_tomorrow'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'qris' | 'transfer' | 'deposit'>('cash');
   const [paidAmountInput, setPaidAmountInput] = useState('');
 
   // Reset or sync rows when modal opens
@@ -63,8 +69,30 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!duplicateOrder) return;
+    submitting.current = false;
+    setCreatedOrder(null);
+    setProductRows(duplicateOrder.items.map((item) => ({
+      id: `dup-${item.id}-${Math.random().toString(36).slice(2)}`,
+      productId: item.productId,
+      quantity: item.quantity,
+      customPrice: String(item.unitPrice),
+      customizationNotes: item.customizationNotes || '',
+      supplierId: item.supplierId || 'internal',
+      expiryType: item.expiryType,
+      expiryDate: item.expiryDate,
+    })));
+    setSelectedCustomerId(duplicateOrder.customer.id);
+    setCustomizationNotes(duplicateOrder.customizationNotes || '');
+    setPickupDate('');
+    setPickupTime('');
+    setPaidAmountInput('');
+    onDuplicateConsumed?.();
+  }, [duplicateOrder]);
+
   const handleAddRow = () => {
-    const defaultProduct = selectableProducts[0] || products[0];
+    const defaultProduct = selectableProducts[0];
     const isMultiDay = defaultProduct?.expiryType === 'multi_day';
     const shelfDays = defaultProduct?.shelfLifeDays || 7;
     const defaultExpiry = isMultiDay
@@ -159,21 +187,23 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
 
   // Calculate Subtotal & Total
   const totalItemsCount = productRows.reduce((sum, r) => sum + (r.quantity || 1), 0);
-  const total = productRows.reduce((sum, r) => {
+  const subtotal = productRows.reduce((sum, r) => {
     const prod = products.find((p) => p.id === r.productId);
     const unitPrice = parseFloat(r.customPrice) >= 0 ? parseFloat(r.customPrice) : (prod?.price || 0);
     return sum + unitPrice * (r.quantity || 1);
   }, 0);
+  const total = subtotal + (taxApplied ? Math.round(subtotal * STORE_INFO.taxRate) : 0);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const cust = customers.find((c) => c.id === selectedCustomerId) || customers[0];
+    if (submitting.current) return;
+    const cust = namedCustomers.find((c) => c.id === selectedCustomerId);
     if (!cust) {
       alert('Pilih pelanggan terlebih dahulu');
       return;
     }
 
-    if (productRows.length === 0) {
+    if (productRows.length === 0 || productRows.some((r) => !r.productId || !selectableProducts.some((p) => p.id === r.productId))) {
       alert('Tambahkan minimal 1 produk pesanan');
       return;
     }
@@ -201,15 +231,12 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
       };
     });
 
-    const isPayTomorrow = paymentMethod === 'pay_tomorrow';
-    const paidAmt = parseFloat(paidAmountInput) >= 0 ? parseFloat(paidAmountInput) : 0;
-
-    if (!isPayTomorrow && paidAmt <= 0) {
-      alert('Masukkan jumlah pembayaran DP atau pembayaran pertama yang valid');
+    const paidAmt = paidAmountInput.trim() === '' ? 0 : Number(paidAmountInput);
+    if (!Number.isFinite(paidAmt) || paidAmt < 0 || paidAmt > total) {
+      alert('Nominal pembayaran tidak valid');
       return;
     }
-
-    const payments: PaymentComponent[] = [
+    const payments: PaymentComponent[] = paidAmt === 0 ? [] : [
       {
         method: paymentMethod,
         amount: paidAmt,
@@ -218,6 +245,7 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
       },
     ];
 
+    submitting.current = true;
     const res = createMtoOrder({
       items,
       customer: cust,
@@ -227,26 +255,39 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
       payments,
     });
 
-    if (res.success) {
+    if (res.success && res.order) {
       posSound.cashRegister();
-      alert(res.message);
+      setCreatedOrder(res.order);
       // Reset form
       setProductRows([createInitialRow()]);
+      setSelectedCustomerId('');
+      setPickupDate(tomorrow);
+      setPickupTime('10:00');
       setCustomizationNotes('');
       setPaidAmountInput('');
       setPaymentMethod('cash');
-      onClose();
     } else {
       alert(res.message);
+      submitting.current = false;
     }
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs animate-fadeIn">
-      <div className="w-full max-w-2xl rounded-3xl bg-white border-2 border-[#E5DACE] p-6 shadow-2xl overflow-y-auto max-h-[92vh]">
-        {/* Modal Header */}
+    <div className={`${isOpen ? 'flex' : 'hidden'} h-full w-full min-h-0 justify-center overflow-y-auto bg-[#FDFBF7] p-3 sm:p-5`}>
+      <div className="w-full max-w-5xl rounded-3xl bg-white border-2 border-[#E5DACE] p-6 shadow-sm h-fit">
+        {createdOrder ? (
+          <div className="space-y-4">
+            <h3 className="text-xl font-black text-emerald-800">PO Aktif: {createdOrder.poNumber}</h3>
+            <p>{createdOrder.customer.name} · {createdOrder.pickupDate} {createdOrder.pickupTime} · Total {formatIDR(createdOrder.total)} · Dibayar {formatIDR(createdOrder.paidAmount)} · Sisa {formatIDR(createdOrder.remainingBalance)}</p>
+            <ul className="list-disc pl-5">{createdOrder.items.map((item) => <li key={item.id}>{item.quantity}× {item.productName} — {formatIDR(item.unitPrice)}</li>)}</ul>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => setActiveReceiptOrder(createdOrder)} className="rounded-xl border px-4 py-2">Cetak PO/Nota</button>
+              <button type="button" onClick={() => { submitting.current = false; setCreatedOrder(null); }} className="rounded-xl bg-amber-600 px-4 py-2 text-white">Buat Pesanan Baru</button>
+              <button type="button" onClick={onNavigateToOrders} className="rounded-xl border px-4 py-2">Lihat di Pesanan</button>
+            </div>
+          </div>
+        ) : (<>
+        {/* Composer Header */}
         <div className="flex items-center justify-between border-b border-[#E5DACE] pb-4 mb-4">
           <div className="flex items-center gap-2">
             <span className="text-2xl">🎂</span>
@@ -265,6 +306,7 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {selectableProducts.length === 0 && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">Tidak ada produk MTO aktif pada cabang ini.</p>}
           {/* Multiple Products Section */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -330,7 +372,7 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
                           onChange={(e) => handleProductChange(row.id, e.target.value)}
                           className="w-full rounded-xl border border-[#E5DACE] bg-white px-3 py-2 text-sm font-semibold text-[#2D241E] focus:border-amber-500 focus:outline-none"
                         >
-                          {products.map((p) => (
+                          {selectableProducts.map((p) => (
                             <option key={p.id} value={p.id}>
                               {p.name} {p.isMadeToOrder ? '🎂 [MTO]' : ''} — Standar {formatIDR(p.price)}
                             </option>
@@ -517,7 +559,8 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
               onChange={(e) => setSelectedCustomerId(e.target.value)}
               className="w-full rounded-xl border border-[#E5DACE] px-3 py-2 text-sm font-semibold bg-[#FDFBF7] text-[#2D241E]"
             >
-              {customers.map((c) => (
+              <option value="">Pilih pelanggan bernama</option>
+              {namedCustomers.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name} ({c.phone || 'Tanpa No. Telp'})
                 </option>
@@ -532,6 +575,7 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
               <input
                 type="date"
                 value={pickupDate}
+                min={new Date().toLocaleDateString('en-CA')}
                 onChange={(e) => setPickupDate(e.target.value)}
                 className="w-full rounded-xl border border-[#E5DACE] px-3 py-2 text-sm font-semibold"
               />
@@ -571,37 +615,20 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
                 <select
                   id="select-mto-payment-method"
                   value={paymentMethod}
-                  onChange={(e) => {
-                    const nextMethod = e.target.value as any;
-                    setPaymentMethod(nextMethod);
-                    if (nextMethod === 'pay_tomorrow') {
-                      setPaidAmountInput('0');
-                    } else if (paidAmountInput === '0') {
-                      setPaidAmountInput('');
-                    }
-                  }}
+                  onChange={(e) => setPaymentMethod(e.target.value as typeof paymentMethod)}
                   className="w-full rounded-xl border border-[#E5DACE] px-3 py-2 text-sm font-semibold bg-[#FDFBF7] text-[#2D241E] focus:border-[#D97706] focus:outline-none focus:ring-1 focus:ring-[#D97706] transition"
                 >
                   <option value="cash">Tunai (Cash)</option>
                   <option value="qris">QRIS</option>
                   <option value="transfer">Transfer Bank</option>
                   <option value="deposit">Deposit Pelanggan</option>
-                  <option value="pay_tomorrow">Dibayar Besok (DP Rp 0 / Bayar Saat Ambil)</option>
                 </select>
               </div>
 
               <div>
                 <label id="lbl-paid-amount" className="block text-xs font-bold text-[#6B7280] mb-1 flex items-center justify-between">
                   <span>Nominal Dibayar (DP/Lunas)</span>
-                  {paymentMethod === 'pay_tomorrow' ? (
-                    <span className="text-[10px] text-blue-700 font-bold bg-blue-100 px-1.5 py-0.5 rounded">
-                      Boleh Kosong / Rp 0
-                    </span>
-                  ) : (
-                    <span className="text-[10px] text-amber-700 font-medium">
-                      Minimal DP/Lunas
-                    </span>
-                  )}
+                  <span className="text-[10px] text-blue-700 font-medium">Rp0 juga diperbolehkan</span>
                 </label>
                 <input
                   id="input-mto-paid-amount"
@@ -609,20 +636,17 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
                   min={0}
                   value={paidAmountInput}
                   onChange={(e) => setPaidAmountInput(e.target.value)}
-                  placeholder={paymentMethod === 'pay_tomorrow' ? '0 (Dibayar saat ambil)' : `Total: ${formatIDR(total)}`}
+                  placeholder={`Rp0 hingga ${formatIDR(total)}`}
                   className="w-full rounded-xl border border-[#E5DACE] px-3 py-2 text-sm font-semibold text-[#2D241E] focus:border-[#D97706] focus:outline-none focus:ring-1 focus:ring-[#D97706] transition placeholder:text-gray-400"
                 />
               </div>
             </div>
 
-            {paymentMethod === 'pay_tomorrow' && (
-              <div className="rounded-xl bg-blue-50/80 border border-blue-200 p-2.5 text-xs text-blue-900 flex items-start gap-2">
-                <span className="text-base leading-none">🗓️</span>
-                <div>
-                  <strong className="font-bold">Dibayar Besok:</strong> Pelanggan tidak membayar DP saat pemesanan dibuat (DP Rp 0). Seluruh tagihan sebesar <strong>{formatIDR(total)}</strong> akan dilunasi saat pesanan diambil esok hari.
-                </div>
-              </div>
-            )}
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setPaidAmountInput('0')} className="rounded-lg border px-3 py-1.5 text-xs">Rp0</button>
+              <button type="button" onClick={() => setPaidAmountInput(String(Math.round(total / 2)))} className="rounded-lg border px-3 py-1.5 text-xs">50% DP</button>
+              <button type="button" onClick={() => setPaidAmountInput(String(total))} className="rounded-lg border px-3 py-1.5 text-xs">Lunas</button>
+            </div>
           </div>
 
           {/* Summary Box */}
@@ -650,12 +674,15 @@ export function CreateMtoModal({ isOpen, onClose }: CreateMtoModalProps) {
             </button>
             <button
               type="submit"
+              disabled={selectableProducts.length === 0 || isBranchReadOnly}
               className="rounded-xl bg-[#D97706] px-5 py-2.5 text-xs font-black text-white hover:bg-amber-700 transition shadow-xs"
             >
-              Buat PO Made-to-Order ({productRows.length} Produk)
+              Simpan &amp; Buat PO ({productRows.length} Produk)
             </button>
           </div>
         </form>
+        </>
+        )}
       </div>
     </div>
   );

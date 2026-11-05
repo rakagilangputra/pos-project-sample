@@ -80,6 +80,7 @@ export function useCartSlice({
 
   // Cart Operations (POS-US-008, POS-US-009, POS-US-020)
   const addToCart = (product: Product, quantity = 1) => {
+    if (product.isMadeToOrder) return { success: false, warning: 'Gunakan mode Made-to-Order untuk produk ini.' };
     if (!currentSession || currentSession.status !== 'active') {
       posSound.error();
       return { success: false, warning: 'Buka sesi kasir terlebih dahulu sebelum memulai transaksi!' };
@@ -338,6 +339,7 @@ export function useCartSlice({
 
     const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
     const hasMadeToOrder = cart.some((i) => i.isMadeToOrder);
+    if (hasMadeToOrder) return { success: false, message: 'Produk MTO harus dibuat melalui mode Made-to-Order di POS.' };
     const isDeposit = Boolean(options?.isDeposit);
 
     // Validation: Normal checkout requires full payment

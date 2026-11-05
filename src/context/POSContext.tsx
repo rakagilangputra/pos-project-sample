@@ -271,6 +271,7 @@ interface POSContextType {
   orders: Order[];
   settleMadeToOrder: (orderId: string, payment: PaymentComponent) => { success: boolean; message: string };
   updatePoPickupTime: (orderId: string, newTime: string) => { success: boolean; message: string };
+  updatePoPickupSchedule: (orderId: string, newDate: string, newTime: string) => { success: boolean; message: string };
   updateOrderItemExpiryAndQty: (
     orderId: string,
     itemId: string,
@@ -281,7 +282,6 @@ interface POSContextType {
   markPoReadyForPickup: (orderId: string) => { success: boolean; message: string };
   confirmPoPickup: (orderId: string, collectorName: string) => { success: boolean; message: string };
   cancelPoWithSupervisor: (orderId: string, reason: string, supervisorPin: string) => { success: boolean; message: string };
-  duplicatePoToCart: (orderId: string, selectedItemIds: string[]) => { success: boolean; message: string };
   voidOrder: (orderId: string, reason: string, supervisorPin: string) => { success: boolean; message: string };
   refundOrder: (
     orderId: string,
@@ -440,8 +440,8 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   } = useOrgState();
 
   const selectedBranch = branches.find((b) => b.id === selectedBranchId) || branches[0];
-  // Superadmin has full operational access across all stores; other roles follow branch active/inactive status
-  const isBranchReadOnly = currentUser?.role === 'admin' ? false : (selectedBranch?.status === "inactive");
+  // Inactive branches are read-only for all roles.
+  const isBranchReadOnly = selectedBranch?.status === "inactive";
 
   // Locale & Sound — extracted to slice (src/context/slices/usePreferencesSlice.ts)
   const { lang, setLang, soundEnabled, setSoundEnabled } = usePreferencesSlice();
@@ -1274,12 +1274,12 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     createMtoOrder,
     settleMadeToOrder,
     updatePoPickupTime,
+    updatePoPickupSchedule,
     updateOrderItemExpiryAndQty,
     settlePoPayment,
     markPoReadyForPickup,
     confirmPoPickup,
     cancelPoWithSupervisor,
-    duplicatePoToCart,
   } = useOrderSlice({
     branches,
     selectedBranchId,
@@ -1289,17 +1289,13 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     verifySupervisorPin,
     taxApplied,
     orders,
+    customers,
     products,
     setActiveReceiptOrder,
-    setSelectedCustomer,
     addAudit,
-    setCart,
     setCurrentSession,
     setCustomers,
     setExpiryBatches,
-    setOrderDiscountReason,
-    setOrderDiscountType,
-    setOrderDiscountValue,
     setOrders,
     setProducts,
     setStockAdjustments,
@@ -1935,12 +1931,12 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         orders: branchOrders,
         settleMadeToOrder,
         updatePoPickupTime,
+        updatePoPickupSchedule,
         updateOrderItemExpiryAndQty,
         settlePoPayment,
         markPoReadyForPickup,
         confirmPoPickup,
         cancelPoWithSupervisor,
-        duplicatePoToCart,
         voidOrder,
         refundOrder,
         reprintReceipt,

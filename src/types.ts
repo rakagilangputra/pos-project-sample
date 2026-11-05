@@ -182,6 +182,8 @@ export type OrderStatus =
 export type PaymentStatus = 'paid' | 'partial' | 'unpaid' | 'refunded';
 
 export interface PickupTimeEditLog {
+  previousDate?: string;
+  newDate?: string;
   previousTime: string;
   newTime: string;
   updatedBy: string;

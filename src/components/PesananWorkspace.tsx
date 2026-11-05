@@ -42,28 +42,27 @@ import {
 import { usePOS } from '../context/POSContext';
 import { Order, CartItem, PaymentComponent } from '../types';
 import { formatIDR, formatDateTime, posSound } from '../utils/formatters';
-import { CreateMtoModal } from './CreateMtoModal';
 import { SupplierNotificationWorkspace } from './SupplierNotificationWorkspace';
 
 interface PesananWorkspaceProps {
   onNavigateToPOS?: () => void;
+  onDuplicateMto?: (order: Order) => void;
 }
 
-export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateToPOS }) => {
+export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateToPOS, onDuplicateMto }) => {
   const {
     orders,
+    isBranchReadOnly,
     currentUser,
     products,
     categories,
     customers,
     masterCategories,
-    createMtoOrder,
-    updatePoPickupTime,
+    updatePoPickupSchedule,
     settlePoPayment,
     markPoReadyForPickup,
     confirmPoPickup,
     cancelPoWithSupervisor,
-    duplicatePoToCart,
     setActiveReceiptOrder,
     suppliers,
     supplierNotificationBatches,
@@ -72,7 +71,6 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
 
   // Primary workspace tabs (viewMode removed - strictly row style)
   const [activeTab, setActiveTab] = useState<'active' | 'schedule' | 'history' | 'supplier_notification'>('active');
-  const [isCreateMtoOpen, setIsCreateMtoOpen] = useState(false);
   const [expandedPreviewOrderId, setExpandedPreviewOrderId] = useState<string | null>(null);
 
   // Helper to extract Supplier names for an order
@@ -189,13 +187,13 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
   // Detail Drawer Action States
   const [isEditingPickupTime, setIsEditingPickupTime] = useState(false);
   const [newPickupTimeInput, setNewPickupTimeInput] = useState('');
+  const [newPickupDateInput, setNewPickupDateInput] = useState('');
   const [collectorNameInput, setCollectorNameInput] = useState('');
 
   // Settlement Form State (In-drawer)
   const [isSettlementOpen, setIsSettlementOpen] = useState(false);
-  const [settlementMethod, setSettlementMethod] = useState<'cash' | 'qris' | 'deposit' | 'split'>('cash');
+  const [settlementMethod, setSettlementMethod] = useState<'cash' | 'qris' | 'transfer' | 'deposit'>('cash');
   const [settlementAmountInput, setSettlementAmountInput] = useState('');
-  const [settlementSplitCashInput, setSettlementSplitCashInput] = useState('');
 
   // Cancellation Form State (In-drawer)
   const [isCancelOpen, setIsCancelOpen] = useState(false);
@@ -454,10 +452,10 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
     setIsOrderItemsAccordionOpen(true);
     setIsEditingPickupTime(false);
     setNewPickupTimeInput(order.pickupTime || '');
+    setNewPickupDateInput(order.pickupDate || '');
     setCollectorNameInput(order.collectorName || order.customer.name);
     setIsSettlementOpen(false);
     setSettlementAmountInput(order.remainingBalance > 0 ? String(order.remainingBalance) : '');
-    setSettlementSplitCashInput('');
     setIsCancelOpen(false);
     setCancelReasonInput('');
     setSupervisorPinInput('');
@@ -480,7 +478,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
       showFeedback('Jam pengambilan baru wajib diisi!', 'error');
       return;
     }
-    const res = updatePoPickupTime(selectedOrder.id, newPickupTimeInput);
+    const res = updatePoPickupSchedule(selectedOrder.id, newPickupDateInput, newPickupTimeInput);
     if (res.success) {
       showFeedback(res.message, 'success');
       setIsEditingPickupTime(false);
@@ -547,9 +545,10 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
         timestamp,
       });
     } else if (settlementMethod === 'deposit') {
-      if (selectedOrder.customer.depositBalance < amountToPay) {
+      const depositBalance = customers.find((customer) => customer.id === selectedOrder.customer.id)?.depositBalance || 0;
+      if (depositBalance < amountToPay) {
         showFeedback(
-          `Saldo deposit pelanggan (Rp ${selectedOrder.customer.depositBalance.toLocaleString('id-ID')}) tidak mencukupi!`,
+          `Saldo deposit pelanggan (Rp ${depositBalance.toLocaleString('id-ID')}) tidak mencukupi!`,
           'error'
         );
         return;
@@ -560,26 +559,8 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
         reference: `DEPOSIT-LUNAS-${selectedOrder.customer.id}`,
         timestamp,
       });
-    } else if (settlementMethod === 'split') {
-      const cashPortion = parseInt(settlementSplitCashInput || '0', 10);
-      const qrisPortion = amountToPay - cashPortion;
-      if (cashPortion <= 0 || qrisPortion <= 0) {
-        showFeedback('Masukkan porsi tunai dan QRIS yang valid!', 'error');
-        return;
-      }
-      payments.push({
-        method: 'cash',
-        amount: cashPortion,
-        tenderedCash: cashPortion,
-        change: 0,
-        timestamp,
-      });
-      payments.push({
-        method: 'qris',
-        amount: qrisPortion,
-        reference: 'SPLIT-QRIS-LUNAS-' + Date.now().toString().slice(-4),
-        timestamp,
-      });
+    } else if (settlementMethod === 'transfer') {
+      payments.push({ method: 'transfer', amount: amountToPay, timestamp, reference: `TRANSFER-${Date.now()}` });
     }
 
     const res = settlePoPayment(selectedOrder.id, payments);
@@ -617,16 +598,9 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
   // 6. Action: Duplicate PO (From completed order)
   const handleExecuteDuplicate = () => {
     if (!selectedOrder) return;
-    const res = duplicatePoToCart(selectedOrder.id, selectedItemIdsForDup);
-    if (res.success) {
-      showFeedback(res.message, 'success');
-      handleCloseDetail();
-      if (onNavigateToPOS) {
-        onNavigateToPOS();
-      }
-    } else {
-      showFeedback(res.message, 'error');
-    }
+    if (selectedOrder.orderStatus !== 'picked_up' || !onDuplicateMto) return;
+    onDuplicateMto({ ...selectedOrder, items: selectedOrder.items.filter((item) => selectedItemIdsForDup.includes(item.id)) });
+    handleCloseDetail();
   };
 
   // Helper for status badge
@@ -678,7 +652,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
     if (order.orderStatus === 'cancelled' && order.paymentStatus === 'refunded') {
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-[11px] font-bold text-purple-800">
-          Deposit Ref
+          Kredit Deposit
         </span>
       );
     }
@@ -692,7 +666,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
     if (order.paidAmount === 0 || order.paymentStatus === 'unpaid' || order.payments.some((p) => p.method === 'pay_tomorrow')) {
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-800 border border-blue-200">
-          Dibayar Besok ({formatIDR(order.remainingBalance)})
+          Belum Dibayar ({formatIDR(order.remainingBalance)})
         </span>
       );
     }
@@ -755,17 +729,6 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
               </div>
             )}
 
-            {/* Upper Right Action Button */}
-            <button
-              onClick={() => {
-                setIsCreateMtoOpen(true);
-                posSound.beep();
-              }}
-              className="flex items-center gap-1.5 shrink-0 rounded-xl bg-[#D97706] px-4 py-2 text-xs font-bold text-white hover:bg-amber-700 shadow-xs active:scale-95 transition"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Create MTO</span>
-            </button>
           </div>
         </div>
 
@@ -1447,7 +1410,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                 </div>
 
                 {/* Tombol Pelunasan di pojok kanan bawah di bawah Sisa Tagihan */}
-                {selectedOrder.remainingBalance > 0 && selectedOrder.orderStatus !== 'cancelled' && (
+                {selectedOrder.remainingBalance > 0 && selectedOrder.orderStatus !== 'cancelled' && !isBranchReadOnly && (
                   <div className="flex justify-end pt-1">
                     <button
                       type="button"
@@ -1476,7 +1439,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                         { id: 'cash', label: 'Tunai (Cash)', icon: Banknote },
                         { id: 'qris', label: 'QRIS', icon: QrCode },
                         { id: 'deposit', label: 'Akun Deposit', icon: Wallet },
-                        { id: 'split', label: 'Split (Cash+QRIS)', icon: Split },
+                        { id: 'transfer', label: 'Transfer', icon: CreditCard },
                       ].map((m) => {
                         const Icon = m.icon;
                         const isSelected = settlementMethod === m.id;
@@ -1522,34 +1485,6 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                         </button>
                       </div>
                     </div>
-
-                    {/* Split details if split */}
-                    {settlementMethod === 'split' && (
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-[11px] font-semibold text-emerald-950 mb-1">Porsi Tunai</label>
-                          <input
-                            type="number"
-                            value={settlementSplitCashInput}
-                            onChange={(e) => setSettlementSplitCashInput(e.target.value)}
-                            placeholder="Rp Tunai"
-                            className="w-full rounded-lg border border-emerald-300 bg-white px-2.5 py-1 text-xs font-bold text-[#1F2937]"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-semibold text-emerald-950 mb-1">Porsi QRIS (Otomatis)</label>
-                          <div className="rounded-lg border border-emerald-300 bg-emerald-100/50 px-2.5 py-1 text-xs font-bold text-emerald-900">
-                            {formatIDR(
-                              Math.max(
-                                0,
-                                parseInt(settlementAmountInput || '0', 10) -
-                                  parseInt(settlementSplitCashInput || '0', 10)
-                              )
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    )}
 
                     {settlementMethod === 'deposit' && (
                       <p className="text-[11px] text-emerald-800">
@@ -1700,7 +1635,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                                 </div>
                               </div>
 
-                              {selectedOrder.status !== 'cancelled' && !isEditingThisItem && (
+                              {!selectedOrder.isMadeToOrder && selectedOrder.orderStatus !== 'cancelled' && !isEditingThisItem && (
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -1722,7 +1657,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                             </div>
 
                             {/* Inline adjustment form (Requirement 3) */}
-                            {isEditingThisItem && (
+                            {!selectedOrder.isMadeToOrder && isEditingThisItem && (
                               <div className="rounded-xl border border-blue-300 bg-blue-50/80 p-3 space-y-3 mt-2">
                                 <div className="flex items-center justify-between border-b border-blue-200 pb-2">
                                   <span className="text-xs font-black text-blue-950 flex items-center gap-1.5">
@@ -1899,7 +1834,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                       </div>
                     </div>
 
-                    {selectedOrder.orderStatus !== 'picked_up' && selectedOrder.orderStatus !== 'cancelled' && (
+                    {!isBranchReadOnly && ['active', 'ready_for_pickup'].includes(selectedOrder.orderStatus) && (
                       <button
                         type="button"
                         onClick={() => setIsEditingPickupTime(!isEditingPickupTime)}
@@ -1908,10 +1843,10 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                             ? 'border-neutral-300 bg-white text-[#6B7280] hover:text-[#1F2937] hover:bg-neutral-100'
                             : 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 hover:border-amber-400 active:scale-95'
                         }`}
-                        title="Ubah jam pengambilan pesanan ini"
+                        title="Ubah tanggal dan jam pengambilan pesanan ini"
                       >
                         <Pencil className="h-3.5 w-3.5 text-[#D97706]" />
-                        <span>{isEditingPickupTime ? 'Batal' : 'Ubah Jam'}</span>
+                        <span>{isEditingPickupTime ? 'Batal' : 'Ubah Jadwal Ambil'}</span>
                       </button>
                     )}
                   </div>
@@ -1920,6 +1855,10 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                 {/* Edit Form for Pickup Time */}
                 {isEditingPickupTime && (
                   <div className="rounded-xl bg-[#F7F7F5] border border-[#E5E7EB] p-3 space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#1F2937] mb-1">Tanggal Pengambilan Baru</label>
+                      <input type="date" value={newPickupDateInput} onChange={(e) => setNewPickupDateInput(e.target.value)} className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-xs font-bold" />
+                    </div>
                     <div>
                       <label className="block text-xs font-semibold text-[#1F2937] mb-1">
                         Masukkan Jam Pengambilan Baru (WIB)
@@ -1937,7 +1876,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                         onClick={handleSavePickupTime}
                         className="rounded-lg bg-[#D97706] px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-amber-700 active:scale-95 transition"
                       >
-                        Simpan Perubahan Jam
+                        Simpan Jadwal Ambil
                       </button>
                       <button
                         type="button"
@@ -1955,11 +1894,11 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                   <div className="mt-2 space-y-1 pt-2 border-t border-[#F3F4F6]">
                     <span className="text-[11px] font-bold text-[#6B7280] flex items-center gap-1">
                       <History className="h-3 w-3" />
-                      Riwayat Perubahan Jam Pengambilan:
+                      Riwayat Perubahan Jadwal Pengambilan:
                     </span>
                     {selectedOrder.pickupTimeHistory.map((log, idx) => (
                       <p key={idx} className="text-[11px] text-[#6B7280]">
-                        • {log.previousTime} → <strong>{log.newTime} WIB</strong> oleh {log.updatedBy} ({formatDateTime(log.timestamp)})
+                        • {log.previousDate || selectedOrder.pickupDate} {log.previousTime} → <strong>{log.newDate || selectedOrder.pickupDate} {log.newTime} WIB</strong> oleh {log.updatedBy} ({formatDateTime(log.timestamp)})
                       </p>
                     ))}
                   </div>
@@ -1972,7 +1911,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                   Status Operasional & Pengambilan
                 </span>
 
-                {selectedOrder.orderStatus === 'active' && (
+                {selectedOrder.orderStatus === 'active' && !isBranchReadOnly && (
                   <div className="flex items-center justify-between rounded-xl bg-amber-50 border border-amber-200 p-3">
                     <div>
                       <h5 className="text-xs font-bold text-amber-900">Pesanan Sedang Dipersiapkan / Dipanggang</h5>
@@ -1989,7 +1928,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                   </div>
                 )}
 
-                {(selectedOrder.orderStatus === 'ready_for_pickup' || isOrderOverdue(selectedOrder)) && (
+                {selectedOrder.orderStatus === 'ready_for_pickup' && !isBranchReadOnly && (
                   <div className="rounded-xl bg-teal-50 border border-teal-200 p-3 space-y-3">
                     <div className="flex items-center justify-between">
                       <div>
@@ -2012,11 +1951,13 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                       />
                       <button
                         onClick={handleConfirmPickup}
+                        disabled={selectedOrder.remainingBalance > 0}
                         className="rounded-lg bg-teal-700 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-teal-800 active:scale-95 transition whitespace-nowrap"
                       >
                         Konfirmasi Diambil
                       </button>
                     </div>
+                    {selectedOrder.remainingBalance > 0 && <p className="text-xs font-bold text-rose-700">Lunasi sisa {formatIDR(selectedOrder.remainingBalance)} sebelum menyerahkan pesanan.</p>}
                   </div>
                 )}
 
@@ -2046,12 +1987,13 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                     <p className="text-[11px] font-mono text-purple-800 font-bold">
                       Referensi Kredit Saldo: {selectedOrder.cancellationCreditRef}
                     </p>
+                    <p className="text-[11px]">Kredit ke Deposit Pelanggan: {formatIDR(selectedOrder.paidAmount)}</p>
                   </div>
                 )}
               </div>
 
               {/* Duplikasi Pesanan (Strictly for completed orders) */}
-              {selectedOrder.orderStatus === 'picked_up' && (
+              {selectedOrder.orderStatus === 'picked_up' && !isBranchReadOnly && (
                 <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-4 space-y-3 shadow-xs">
                   <div className="flex items-center justify-between">
                     <div>
@@ -2096,7 +2038,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
               )}
 
               {/* Balon 6: Batalkan Pesanan PO (Dibuat dalam bentuk Button untuk kemudahan layar sentuh) */}
-              {selectedOrder.orderStatus !== 'picked_up' && selectedOrder.orderStatus !== 'cancelled' && (
+              {!isBranchReadOnly && ['active', 'overdue'].includes(selectedOrder.orderStatus) && (
                 <div className="pt-2">
                   {!isCancelOpen ? (
                     <button
@@ -2105,7 +2047,7 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
                       className="w-full flex items-center justify-center gap-2 rounded-xl border-2 border-rose-300 bg-rose-50 px-4 py-3.5 text-xs sm:text-sm font-bold text-rose-700 hover:bg-rose-100 hover:border-rose-400 active:scale-98 transition shadow-xs"
                     >
                       <ShieldAlert className="h-4 w-4 text-rose-600 shrink-0" />
-                      <span>Batalkan Pesanan PO</span>
+                      <span>Batalkan PO</span>
                     </button>
                   ) : (
                     <div className="rounded-xl border border-rose-300 bg-rose-50/80 p-4 space-y-3 shadow-xs">
@@ -2201,8 +2143,6 @@ export const PesananWorkspace: React.FC<PesananWorkspaceProps> = ({ onNavigateTo
         </div>
       )}
 
-      {/* Create MTO Modal */}
-      <CreateMtoModal isOpen={isCreateMtoOpen} onClose={() => setIsCreateMtoOpen(false)} />
     </div>
   );
 };
